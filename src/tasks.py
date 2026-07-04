@@ -73,9 +73,11 @@ class TaskStore:
         q, args = "SELECT * FROM tasks", []
         conds = []
         if status:
-            conds.append("status=?"); args.append(status)
+            conds.append("status=?")
+            args.append(status)
         if model:
-            conds.append("model=?"); args.append(model)
+            conds.append("model=?")
+            args.append(model)
         if conds:
             q += " WHERE " + " AND ".join(conds)
         q += " ORDER BY created DESC LIMIT ?"
@@ -92,17 +94,22 @@ class TaskStore:
                 return
             sets, args = ["updated=?"], [time.time()]
             if status:
-                sets.append("status=?"); args.append(status)
+                sets.append("status=?")
+                args.append(status)
             if progress is not None:
-                sets.append("progress=?"); args.append(json.dumps(progress))
+                sets.append("progress=?")
+                args.append(json.dumps(progress))
             if timing:
                 t = json.loads(r["timings"] or "{}")
                 t.update(timing)
-                sets.append("timings=?"); args.append(json.dumps(t))
+                sets.append("timings=?")
+                args.append(json.dumps(t))
             if result is not None:
-                sets.append("result=?"); args.append(json.dumps(result))
+                sets.append("result=?")
+                args.append(json.dumps(result))
             if error is not None:
-                sets.append("error=?"); args.append(json.dumps(error))
+                sets.append("error=?")
+                args.append(json.dumps(error))
             args.append(tid)
             self._db.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", args)
             self._db.commit()
