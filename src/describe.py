@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Mikhail Yurasov <me@yurasov.me>
 # SPDX-License-Identifier: Apache-2.0
 
-"""GET /v1/describe — the API explains itself to an AI agent that has never seen it.
+"""GET /v1/describe - the API explains itself to an AI agent that has never seen it.
 
 The markdown body is authored in res/describe.md (repo root); this module fills in the
 dynamic parts: {{version}} and {{models}} (installed models merged with catalog
@@ -67,7 +67,7 @@ def _render_models(core) -> str:
     for m in models:
         flag = " **(default)**" if m["default"] else ""
         lines += [
-            f"### `{m['slug']}`{flag} — {m['state']}",
+            f"### `{m['slug']}`{flag} - {m['state']}",
             f"- HF id: `{m['hf_id']}`; native video: {'yes' if m['supports_native_video'] else 'no'}"
             + (f"; license: {m['license']}" if m["license"] else ""),
         ]

@@ -1,4 +1,4 @@
-# AISee v{{version}} — API guide for AI agents
+# AISee v{{version}} - API guide for AI agents
 
 **AISee is a tool that gives AI agents eyes.** Send it images or video files with a question (`look`), an expectation to verify (`assert`), or a whole video to analyze chunk by chunk (`watch`); it runs a vision-language model on this host and returns the answer. Everything is asynchronous: you submit a task and poll it.
 
@@ -18,20 +18,20 @@
 
 ## Task lifecycle (how to use this API)
 
-1. `POST /v1/tasks` — returns `{"id": "..."}` immediately (non-blocking).
+1. `POST /v1/tasks` - returns `{"id": "..."}` immediately (non-blocking).
 2. Poll `GET /v1/tasks/{id}` every 2-5 s. `status` walks through:
    `queued -> preparing_media -> model_loading (only if the model is cold) -> running -> done`
    (`failed` / `canceled` are terminal too). `progress` holds a human-readable `step` + `detail`,
    and for `watch` a `chunk: {i, n, t_start, t_end}` counter.
 3. **`model_loading` can take minutes** (cold model start; the largest models take ~9 minutes on
-   first load). This is normal — keep polling; `progress.detail` explains what is happening.
+   first load). This is normal - keep polling; `progress.detail` explains what is happening.
 4. Read `result` when `status == "done"`; on `failed`, `error.message` says why.
 
 Task kinds and their `result` shapes:
-- `look` — free-form question about the media. Result: `{"answer": "<text>"}`.
-- `assert` — pass/fail judgment of an `expectation`. Result:
+- `look` - free-form question about the media. Result: `{"answer": "<text>"}`.
+- `assert` - pass/fail judgment of an `expectation`. Result:
   `{"pass": bool, "reason": str, "evidence": str}`. Use for visual regression / e2e checks.
-- `watch` — chunked whole-video analysis. With `expectation`: per-chunk verdicts +
+- `watch` - chunked whole-video analysis. With `expectation`: per-chunk verdicts +
   `{"pass": bool, "failing_ranges": [...]}` (timestamps where it broke). With `question`:
   per-chunk findings + a synthesized `answer` over the whole video.
 
@@ -58,7 +58,7 @@ curl -s http://HOST:PORT/v1/tasks/3f2a...
 
 ## Practical limits
 
-- Image inputs are capped per model (typically 8 per request) — sample videos accordingly.
+- Image inputs are capped per model (typically 8 per request) - sample videos accordingly.
 - Prefer `assert` over `look` when you need a machine-checkable verdict.
 - Pass `context` for domain knowledge the model can't see ("the left panel is the scene tree").
 - One inference runs at a time per model; tasks queue FIFO. Idle models are auto-stopped after
