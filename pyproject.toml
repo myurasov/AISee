@@ -29,11 +29,12 @@ dependencies = [
 aisee = "aisee.cli:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build]
-dev-mode-dirs = ["src"]
+# flat src/ layout: src/*.py IS the aisee package
+[tool.setuptools]
+packages = ["aisee"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/aisee"]
+[tool.setuptools.package-dir]
+aisee = "src"

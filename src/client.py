@@ -51,10 +51,12 @@ class Client:
             return True
         paths.ensure_layout()
         log = open(paths.api_log(), "ab")
+        # -P (safe path) keeps the cwd off sys.path so a directory named "aisee"
+        # in the working directory can never shadow the installed package
         proc = subprocess.Popen(
-            [sys.executable, "-m", "aisee.server"],
+            [sys.executable, "-P", "-m", "aisee.server"],
             stdout=log, stderr=log, stdin=subprocess.DEVNULL,
-            start_new_session=True, cwd=str(Path.home()))
+            start_new_session=True, cwd=str(paths.home()))
         paths.api_pidfile().write_text(str(proc.pid))
         deadline = time.time() + wait_s
         while time.time() < deadline:
