@@ -9,11 +9,23 @@ Entries carry serving requirements plus agent-facing strengths / weaknesses / pi
 
 DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 
+# Media/context defaults assume the main mode of operation: ONE model resident per GPU.
+# gpu_frac defaults are GPU-aware (see registry.default_gpu_frac): ~1.0 on discrete GPUs,
+# slightly less on unified-memory systems (GB10) where the OS shares the same pool.
+# KV-cache reservation scales with max_model_len, so co-locating several models means
+# lowering gpu_frac AND max_model_len per model. The dense 32B stays at 64k context so it
+# also fits a 96 GB discrete GPU (128k KV alone is ~34 GiB on top of ~63 GiB weights).
+DEFAULT_MAX_IMAGES = 16
+DEFAULT_VIDEO_FRAMES = 64
+DEFAULT_MAX_MODEL_LEN = 131072
+GPU_FRAC_UNIFIED = 0.90   # unified memory (GB10): leave headroom for system processes
+GPU_FRAC_DISCRETE = 1.0   # dedicated VRAM
+
 CATALOG: dict[str, dict] = {
     "qwen3-vl-30b-a3b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.55,
+        "max_model_len": 131072,
         "extra_args": ["--enforce-eager"],
         "supports_native_video": True,
         "reasoning": False,
@@ -29,7 +41,8 @@ CATALOG: dict[str, dict] = {
     "qwen3-vl-32b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-32B-Instruct",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.70,
+        
+        "max_model_len": 65536,
         "extra_args": [],
         "supports_native_video": True,
         "reasoning": False,
@@ -43,7 +56,7 @@ CATALOG: dict[str, dict] = {
     "nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad": {
         "hf_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.22,
+        "max_model_len": 131072,
         "extra_args": ["--trust-remote-code", "--enforce-eager"],
         "supports_native_video": True,
         "reasoning": False,
@@ -59,7 +72,7 @@ CATALOG: dict[str, dict] = {
     "holo1-5-7b": {
         "hf_id": "Hcompany/Holo1.5-7B",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.20,
+        "max_model_len": 131072,
         "extra_args": ["--enforce-eager"],
         "supports_native_video": False,
         "reasoning": False,
@@ -73,7 +86,7 @@ CATALOG: dict[str, dict] = {
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.25,  # 0.22 leaves ~4.2 GiB KV, 0.28 GiB short for max_len 32768
+        "max_model_len": 131072,
         "extra_args": ["--reasoning-parser", "qwen3"],
         "supports_native_video": True,
         "reasoning": True,
@@ -88,7 +101,8 @@ CATALOG: dict[str, dict] = {
     "cosmos3-nano": {
         "hf_id": "nvidia/Cosmos3-Nano",
         "image": "vllm/vllm-omni:cosmos3-aarch64",
-        "gpu_frac": 0.55,
+        
+        "max_model_len": 131072,
         "extra_args": ["--hf-overrides", '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code"],
         "supports_native_video": True,
@@ -104,7 +118,7 @@ CATALOG: dict[str, dict] = {
     "ui-tars-1-5-7b": {
         "hf_id": "ByteDance-Seed/UI-TARS-1.5-7B",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.25,
+        "max_model_len": 131072,
         "extra_args": ["--trust-remote-code", "--enforce-eager"],
         "supports_native_video": False,
         "reasoning": False,

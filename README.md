@@ -109,15 +109,25 @@ drops the entry; weights stay in the shared cache.
 The built-in catalog covers seven models measured on a DGX Spark GB10 (2026-07). Installing by
 slug applies the serving flags each one needs:
 
-| Slug | GPU slice | Notes |
+| Slug | Context | Notes |
 |---|---|---|
-| `qwen3-vl-30b-a3b-instruct` | 0.55 | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
-| `qwen3-vl-32b-instruct` | 0.70 | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs |
-| `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 0.22 | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
-| `holo1-5-7b` | 0.20 | UI element grounding; stills only |
-| `cosmos-reason2-8b` | 0.22 | temporal / physical video reasoning |
-| `cosmos3-nano` | 0.55 | video reasoning with correct OCR; ~9 min cold load; aarch64 omni image |
-| `ui-tars-1-5-7b` | 0.25 | GUI-agent model (action generation later); stills only |
+| `qwen3-vl-30b-a3b-instruct` | 128k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
+| `qwen3-vl-32b-instruct` | 64k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs |
+| `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
+| `holo1-5-7b` | 128k | UI element grounding; stills only |
+| `cosmos-reason2-8b` | 128k | temporal / physical video reasoning |
+| `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; aarch64 omni image |
+| `ui-tars-1-5-7b` | 128k | GUI-agent model (action generation later); stills only |
+
+Catalog defaults assume the **main mode of operation: a single resident model per GPU**.
+`gpu_frac` is chosen automatically for the GPU: **1.0 on discrete GPUs** (dedicated VRAM, e.g. a
+96 GB RTX Pro 6000) and **0.90 on unified-memory systems** (GB10/Grace class, where the GPU pool
+is also system RAM and the OS needs headroom). Context is 128k with 16 images / 64 video frames
+per request; the dense 32B stays at 64k so it also fits a 96 GB discrete GPU (its 128k KV cache
+alone would be ~34 GiB on top of ~63 GiB weights). Context length is the expensive knob - vLLM
+reserves KV-cache memory for the full `max_model_len` inside the model's `gpu_frac` slice, so
+raising it costs GPU memory even for short requests, and each image/frame costs roughly 1-2.5k
+tokens.
 
 ### Other Models
 
@@ -147,11 +157,14 @@ Things to know when going off-catalog:
 - **Different serving image**: `--image` swaps the container image per model (e.g. an
   architecture only supported by a newer vLLM or a vendor build); nvcr.io images need the
   NGC key.
-- Per-request caps default to 8 images and 1 video (16 server-sampled frames); AISee's frame
-  sampling respects them.
+- Per-request budgets default to 16 images and 1 video (64 server-sampled frames); AISee's
+  frame sampling respects them. There is no hard video-length limit - only temporal resolution
+  (64 frames spread over the clip); use `watch` for long videos.
 
-Several models can be installed at once; the running ones' `gpu_frac` slices have to fit in GPU
-memory together. Each model runs one inference at a time; tasks queue FIFO per model.
+Several models can be installed at once, but with the single-model defaults only one fits the
+GPU at a time - to co-locate models, lower `gpu_frac` and `max_model_len` per model so the
+slices sum under 1.0 (weights + KV must fit each slice; e.g. an 8B at 0.25/32k next to the MoE
+at 0.55/32k). Each model runs one inference at a time; tasks queue FIFO per model.
 
 A model idle longer than its `idle_timeout` (default 900 s, `0` disables) is stopped
 automatically to free the GPU. The next query targeting it starts it again; the task reports

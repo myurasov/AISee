@@ -5,6 +5,7 @@
 
 import random
 import socket
+import subprocess
 import tomllib
 
 from . import catalog, config, paths
@@ -24,6 +25,22 @@ def _dump_entry(e: dict) -> str:
             s = str(v).replace("\\", "\\\\").replace('"', '\\"')
             lines.append(f'{k} = "{s}"')
     return "\n".join(lines) + "\n"
+
+
+def default_gpu_frac() -> float:
+    """GPU-aware single-model default: ~1.0 on discrete GPUs, less on unified memory.
+
+    On unified-memory systems (DGX Spark GB10, Grace-class) the GPU pool IS system RAM,
+    so a slice is left for the OS and AISee itself. Known unified names are matched by
+    substring; anything else is treated as dedicated VRAM.
+    """
+    try:
+        name = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        name = ""
+    unified = any(k in name.upper() for k in ("GB10", "GH200", "GB200"))
+    return catalog.GPU_FRAC_UNIFIED if unified else catalog.GPU_FRAC_DISCRETE
 
 
 def _free_port() -> int:
@@ -78,11 +95,11 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         "hf_id": hf_id,
         "image": image or cat.get("image", catalog.DEFAULT_IMAGE),
         "port": port or existing.get("port") or _free_port(),
-        "gpu_frac": gpu_frac if gpu_frac is not None else cat.get("gpu_frac", 0.85),
+        "gpu_frac": gpu_frac if gpu_frac is not None else cat.get("gpu_frac", default_gpu_frac()),
         "extra_args": extra_args if extra_args is not None else cat.get("extra_args", []),
-        "max_images": cat.get("max_images", 8),
-        "video_frames": cat.get("video_frames", 16),
-        "max_model_len": cat.get("max_model_len", 32768),
+        "max_images": cat.get("max_images", catalog.DEFAULT_MAX_IMAGES),
+        "video_frames": cat.get("video_frames", catalog.DEFAULT_VIDEO_FRAMES),
+        "max_model_len": cat.get("max_model_len", catalog.DEFAULT_MAX_MODEL_LEN),
         "supports_native_video": cat.get("supports_native_video", True),
         "reasoning": cat.get("reasoning", False),
         "load_timeout": cat.get("load_timeout", 1800),

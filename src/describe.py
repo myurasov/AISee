@@ -53,6 +53,13 @@ def _model_lines(core) -> list[dict]:
             "slug": entry["slug"], "hf_id": entry["hf_id"], "state": v["state"],
             "default": v["default"],
             "supports_native_video": entry.get("supports_native_video", True),
+            "serving": {
+                "max_model_len": entry.get("max_model_len"),
+                "max_images": entry.get("max_images"),
+                "video_frames": entry.get("video_frames"),
+                "gpu_frac": entry.get("gpu_frac"),
+                "idle_timeout": entry.get("idle_timeout"),
+            },
             "strengths": cat.get("strengths", ""), "weaknesses": cat.get("weaknesses", ""),
             "pitfalls": cat.get("pitfalls", ""), "license": cat.get("license", ""),
         })
@@ -70,6 +77,9 @@ def _render_models(core) -> str:
             f"### `{m['slug']}`{flag} - {m['state']}",
             f"- HF id: `{m['hf_id']}`; native video: {'yes' if m['supports_native_video'] else 'no'}"
             + (f"; license: {m['license']}" if m["license"] else ""),
+            (lambda s: f"- Serving: context {s['max_model_len']} tokens; per request up to "
+                       f"{s['max_images']} images / 1 video sampled to {s['video_frames']} frames; "
+                       f"gpu_frac {s['gpu_frac']}; idle unload after {s['idle_timeout']} s")(m["serving"]),
         ]
         if m["strengths"]:
             lines.append(f"- **Strengths:** {m['strengths']}")
