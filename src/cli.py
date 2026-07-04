@@ -123,7 +123,8 @@ def cmd_api(args) -> int:
         h = c.health()
         _p(f"running at {c.base} (v{h['version']}); models: {json.dumps(h['models'])}")
         return 0
-    _p(f"not running (expected at {c.base})")
+    cfg = config.load()["api"]
+    _p(f"not running; `aisee api start` will listen on {cfg['host']}:{cfg['port']}")
     return 1
 
 
@@ -132,7 +133,12 @@ def cmd_api(args) -> int:
 def cmd_status(args) -> int:
     c = Client(server=getattr(args, "server", None), autostart=False)
     if not c.api_running():
-        _p(f"API: down (expected at {c.base})")
+        if is_local(c.base):
+            cfg = config.load()["api"]
+            _p(f"API: down - local daemon not running; `aisee api start` will listen on "
+               f"{cfg['host']}:{cfg['port']}")
+        else:
+            _p(f"API: down at {c.base}")
         return 1
     h = c.health()
     where = _listen_line() if is_local(c.base) else f"at {c.base}"
