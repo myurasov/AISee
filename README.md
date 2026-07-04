@@ -38,12 +38,14 @@ a task id back and poll it; progress like "model is loading" or "chunk 3/12" is 
 
 ### Prerequisites
 
-- Linux GPU host
-- docker + NVIDIA container toolkit
-- ffmpeg/ffprobe
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- HuggingFace token for gated models; NGC API key if serving images come from nvcr.io
+- Linux GPU host with an NVIDIA GPU
+- [docker](https://docs.docker.com/engine/install/) +
+  [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- [ffmpeg](https://ffmpeg.org/download.html) (includes ffprobe; `apt install ffmpeg`)
+- [Python](https://www.python.org/downloads/) 3.12+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- [HuggingFace token](https://huggingface.co/settings/tokens) for gated models;
+  [NGC API key](https://org.ngc.nvidia.com/setup/api-keys) if serving images come from nvcr.io
 
 ### Steps
 
