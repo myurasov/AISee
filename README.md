@@ -43,8 +43,8 @@ a task id back and poll it; progress like "model is loading" or "chunk 3/12" is 
   [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 - [ffmpeg](https://ffmpeg.org/download.html) (includes ffprobe; `apt install ffmpeg`)
 - [Python](https://www.python.org/downloads/) 3.12+, [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [HuggingFace token](https://huggingface.co/settings/tokens) for gated models;
-  [NGC API key](https://org.ngc.nvidia.com/setup/api-keys) if serving images come from nvcr.io
+- [HuggingFace token](https://huggingface.co/settings/tokens) for gated models
+- [NGC API key](https://org.ngc.nvidia.com/setup/api-keys) if serving images come from nvcr.io
 
 ### Steps
 
