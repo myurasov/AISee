@@ -58,7 +58,20 @@ curl -s http://HOST:PORT/v1/tasks/3f2a...
 
 ## Practical limits
 
-- Image inputs are capped per model (typically 8 per request) - sample videos accordingly.
+- Per-request media budgets are **serving configuration, not model limits** (defaults: 8 images,
+  1 video sampled to 16 frames server-side; set per model in its registry entry). They exist to
+  keep requests inside the 32k-token context window - each image/frame costs roughly 1-2.5k
+  vision tokens.
+- **There is no hard maximum video length**, only temporal resolution. A `native` video is
+  reduced to 16 evenly-spaced frames whatever its duration: a 30 s clip keeps ~2 s resolution, a
+  10 min clip drops to one frame per ~37 s. Frame mode (`frames`/`fps`) is capped by the 8-image
+  budget (e.g. 1 fps covers only 8 s per request).
+- **For anything longer than ~30 s, use `watch`** - it splits the video into chunks of
+  `server_frames/fps` seconds so every chunk gets the full frame budget, up to 64 chunks per
+  call (about 17 minutes at fps=1 with 16 s chunks; at fps=15 chunks shrink to ~1 s, so raise
+  `chunk_seconds` or lower `fps` for long clips).
+- Some models ignore temporal content entirely: stills-only models (see the model guide) read a
+  video clip as a single frame - check `native video` in the guide before sending video.
 - Prefer `assert` over `look` when you need a machine-checkable verdict.
 - Pass `context` for domain knowledge the model can't see ("the left panel is the scene tree").
 - One inference runs at a time per model; tasks queue FIFO. Idle models are auto-stopped after
