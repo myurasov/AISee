@@ -9,15 +9,17 @@ Entries carry serving requirements plus agent-facing strengths / weaknesses / pi
 
 DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 
-# Media/context defaults assume the main mode of operation: ONE model resident per GPU.
-# gpu_frac defaults are GPU-aware (see registry.default_gpu_frac): ~1.0 on discrete GPUs,
-# slightly less on unified-memory systems (GB10) where the OS shares the same pool.
-# KV-cache reservation scales with max_model_len, so co-locating several models means
-# lowering gpu_frac AND max_model_len per model. The dense 32B stays at 64k context so it
-# also fits a 96 GB discrete GPU (128k KV alone is ~34 GiB on top of ~63 GiB weights).
+# Serving defaults assume the main mode of operation: ONE model resident per GPU, and are
+# computed from the detected GPU at install time (registry.gpu_profile / fit_max_model_len):
+# gpu_frac is ~1.0 on discrete GPUs and 0.90 on unified-memory systems (GB10 class, where
+# the GPU pool is also system RAM); max_model_len is the largest standard context whose
+# KV cache fits next to the weights (catalog entries carry weights_gib / kv_gib_128k
+# estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
 DEFAULT_MAX_IMAGES = 16
 DEFAULT_VIDEO_FRAMES = 64
-DEFAULT_MAX_MODEL_LEN = 131072
+DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
+CONTEXT_CANDIDATES = (131072, 65536, 32768, 16384, 8192)
+ACTIVATION_HEADROOM_GIB = 4               # runtime overhead on top of weights + KV
 GPU_FRAC_UNIFIED = 0.90   # unified memory (GB10): leave headroom for system processes
 GPU_FRAC_DISCRETE = 1.0   # dedicated VRAM
 
@@ -25,7 +27,7 @@ CATALOG: dict[str, dict] = {
     "qwen3-vl-30b-a3b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
         "image": DEFAULT_IMAGE,
-        "max_model_len": 131072,
+        "weights_gib": 62, "kv_gib_128k": 13,
         "extra_args": ["--enforce-eager"],
         "supports_native_video": True,
         "reasoning": False,
@@ -42,7 +44,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "Qwen/Qwen3-VL-32B-Instruct",
         "image": DEFAULT_IMAGE,
         
-        "max_model_len": 65536,
+        "weights_gib": 63, "kv_gib_128k": 34,
         "extra_args": [],
         "supports_native_video": True,
         "reasoning": False,
@@ -56,7 +58,7 @@ CATALOG: dict[str, dict] = {
     "nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad": {
         "hf_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",
         "image": DEFAULT_IMAGE,
-        "max_model_len": 131072,
+        "weights_gib": 11, "kv_gib_128k": 5,
         "extra_args": ["--trust-remote-code", "--enforce-eager"],
         "supports_native_video": True,
         "reasoning": False,
@@ -72,7 +74,7 @@ CATALOG: dict[str, dict] = {
     "holo1-5-7b": {
         "hf_id": "Hcompany/Holo1.5-7B",
         "image": DEFAULT_IMAGE,
-        "max_model_len": 131072,
+        "weights_gib": 16, "kv_gib_128k": 7,
         "extra_args": ["--enforce-eager"],
         "supports_native_video": False,
         "reasoning": False,
@@ -86,7 +88,7 @@ CATALOG: dict[str, dict] = {
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
         "image": DEFAULT_IMAGE,
-        "max_model_len": 131072,
+        "weights_gib": 17, "kv_gib_128k": 18,
         "extra_args": ["--reasoning-parser", "qwen3"],
         "supports_native_video": True,
         "reasoning": True,
@@ -102,7 +104,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "nvidia/Cosmos3-Nano",
         "image": "vllm/vllm-omni:cosmos3-aarch64",
         
-        "max_model_len": 131072,
+        "weights_gib": 32, "kv_gib_128k": 26,
         "extra_args": ["--hf-overrides", '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code"],
         "supports_native_video": True,
@@ -118,7 +120,7 @@ CATALOG: dict[str, dict] = {
     "ui-tars-1-5-7b": {
         "hf_id": "ByteDance-Seed/UI-TARS-1.5-7B",
         "image": DEFAULT_IMAGE,
-        "max_model_len": 131072,
+        "weights_gib": 16, "kv_gib_128k": 7,
         "extra_args": ["--trust-remote-code", "--enforce-eager"],
         "supports_native_video": False,
         "reasoning": False,

@@ -160,11 +160,20 @@ def cmd_model(args) -> int:
     if args.model_cmd == "install":
         entry = registry.install(args.name, image=args.image, gpu_frac=args.gpu_frac,
                                  port=args.port, idle_timeout=args.idle_timeout,
-                                 extra_args=args.arg if args.arg else None)
+                                 extra_args=args.arg if args.arg else None,
+                                 max_model_len=args.max_model_len)
         if args.hf_token:
             creds.set_value("HF_TOKEN", args.hf_token)
-        _p(f"installed (registry): {entry['slug']} -> {entry['hf_id']} "
-           f"(image {entry['image']}, port {entry['port']}, gpu_frac {entry['gpu_frac']})")
+        prof = registry.gpu_profile()
+        _p(f"installed (registry): {entry['slug']} -> {entry['hf_id']}")
+        from . import catalog as _cat
+        w = _cat.CATALOG.get(entry["slug"], {}).get("weights_gib")
+        if w and w + _cat.ACTIVATION_HEADROOM_GIB > prof["mem_gib"] * entry["gpu_frac"]:
+            _p(f"  WARNING: ~{w} GiB of weights will not fit this GPU "
+               f"({prof['mem_gib']:.0f} GiB) - the model will fail to load")
+        _p(f"  gpu: {prof['name']} ({prof['mem_gib']:.0f} GiB{', unified' if prof['unified'] else ''}) "
+           f"-> gpu_frac {entry['gpu_frac']}, context {entry['max_model_len']} tokens")
+        _p(f"  image {entry['image']}, port {entry['port']}")
         _p("start it with: aisee model start " + entry["slug"])
         return 0
     if args.model_cmd == "remove":
@@ -345,6 +354,7 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("name", help="catalog slug or HF id (org/Model)")
     m.add_argument("--image")
     m.add_argument("--gpu-frac", type=float)
+    m.add_argument("--max-model-len", type=int, help="context length (default: auto-sized to the GPU)")
     m.add_argument("--port", type=int)
     m.add_argument("--idle-timeout", type=int)
     m.add_argument("--arg", action="append", help="extra vllm serve arg (repeatable)")

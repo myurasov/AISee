@@ -119,15 +119,18 @@ slug applies the serving flags each one needs:
 | `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; aarch64 omni image |
 | `ui-tars-1-5-7b` | 128k | GUI-agent model (action generation later); stills only |
 
-Catalog defaults assume the **main mode of operation: a single resident model per GPU**.
-`gpu_frac` is chosen automatically for the GPU: **1.0 on discrete GPUs** (dedicated VRAM, e.g. a
-96 GB RTX Pro 6000) and **0.90 on unified-memory systems** (GB10/Grace class, where the GPU pool
-is also system RAM and the OS needs headroom). Context is 128k with 16 images / 64 video frames
-per request; the dense 32B stays at 64k so it also fits a 96 GB discrete GPU (its 128k KV cache
-alone would be ~34 GiB on top of ~63 GiB weights). Context length is the expensive knob - vLLM
-reserves KV-cache memory for the full `max_model_len` inside the model's `gpu_frac` slice, so
-raising it costs GPU memory even for short requests, and each image/frame costs roughly 1-2.5k
-tokens.
+Serving defaults assume the **main mode of operation: a single resident model per GPU**, and
+are computed from the detected GPU at `model install` time: `gpu_frac` is **1.0 on discrete
+GPUs** and **0.90 on unified-memory systems** (GB10/Grace class, where the GPU pool is also
+system RAM), and the context window is the largest standard size (up to 128k) whose KV cache
+fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified) serves the
+whole catalog at 128k; a **96 GB** discrete card serves everything at 128k except the dense 32B
+(64k - its 128k KV cache alone is ~34 GiB); a **48 GB** card fits the 7-17 GiB models at 128k
+and Cosmos3-Nano at 32k, while the two big Qwens (~62 GiB weights) do not fit at all (install
+warns). Media budgets are 16 images / 64 video frames per request. Context length is the
+expensive knob - vLLM reserves KV-cache memory for the full `max_model_len` inside the model's
+`gpu_frac` slice, so raising it costs GPU memory even for short requests; override with
+`--max-model-len` / `--gpu-frac` at install.
 
 ### Other Models
 

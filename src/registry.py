@@ -27,20 +27,50 @@ def _dump_entry(e: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def default_gpu_frac() -> float:
-    """GPU-aware single-model default: ~1.0 on discrete GPUs, less on unified memory.
+def gpu_profile() -> dict:
+    """Detected GPU: name, memory, unified-ness, and the single-model gpu_frac default.
 
     On unified-memory systems (DGX Spark GB10, Grace-class) the GPU pool IS system RAM,
-    so a slice is left for the OS and AISee itself. Known unified names are matched by
-    substring; anything else is treated as dedicated VRAM.
+    so a slice is left for the OS and AISee itself; discrete VRAM is taken whole. When
+    no GPU is detectable (client machine), a 96 GB discrete card is assumed.
     """
+    name, mem_gib = "", 96.0
     try:
-        name = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                              capture_output=True, text=True, timeout=10).stdout.strip()
+        out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total",
+                              "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+        if out:
+            name, mem = out.split("\n")[0].rsplit(",", 1)
+            name = name.strip()
+            try:
+                mem_gib = float(mem) / 1024.0
+            except ValueError:
+                pass  # GB10 reports memory.total as [N/A]
     except (OSError, subprocess.TimeoutExpired):
-        name = ""
+        pass
     unified = any(k in name.upper() for k in ("GB10", "GH200", "GB200"))
-    return catalog.GPU_FRAC_UNIFIED if unified else catalog.GPU_FRAC_DISCRETE
+    if unified and mem_gib == 96.0:
+        mem_gib = 119.7  # GB10 hides memory.total; unified pool visible to CUDA
+    frac = catalog.GPU_FRAC_UNIFIED if unified else catalog.GPU_FRAC_DISCRETE
+    return {"name": name or "unknown", "mem_gib": mem_gib, "unified": unified,
+            "gpu_frac": frac}
+
+
+def default_gpu_frac() -> float:
+    return gpu_profile()["gpu_frac"]
+
+
+def fit_max_model_len(cat: dict, profile: dict, gpu_frac: float) -> int:
+    """Largest standard context whose KV cache fits next to the weights on this GPU."""
+    weights = cat.get("weights_gib")
+    kv_128k = cat.get("kv_gib_128k")
+    if not weights or not kv_128k:
+        return catalog.DEFAULT_MAX_MODEL_LEN
+    budget = profile["mem_gib"] * gpu_frac - weights - catalog.ACTIVATION_HEADROOM_GIB
+    for cand in catalog.CONTEXT_CANDIDATES:
+        if kv_128k * cand / 131072.0 <= budget:
+            return cand
+    return catalog.CONTEXT_CANDIDATES[-1]  # vLLM will complain at load if truly hopeless
 
 
 def _free_port() -> int:
@@ -78,7 +108,7 @@ def list_installed() -> list[dict]:
 
 def install(name: str, *, image: str | None = None, gpu_frac: float | None = None,
             port: int | None = None, idle_timeout: int | None = None,
-            extra_args: list[str] | None = None) -> dict:
+            extra_args: list[str] | None = None, max_model_len: int | None = None) -> dict:
     """Resolve name against the catalog (or accept a raw HF id) and write the registry entry.
 
     Does not start the model. The port is chosen randomly once and persisted.
@@ -90,16 +120,19 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         raise ValueError(f"'{name}' is not in the catalog; pass a full HF id like org/Model-Name")
     cfg = config.load()
     existing = get(slug) or {}
+    profile = gpu_profile()
+    frac = gpu_frac if gpu_frac is not None else cat.get("gpu_frac", profile["gpu_frac"])
     entry = {
         "slug": slug,
         "hf_id": hf_id,
         "image": image or cat.get("image", catalog.DEFAULT_IMAGE),
         "port": port or existing.get("port") or _free_port(),
-        "gpu_frac": gpu_frac if gpu_frac is not None else cat.get("gpu_frac", default_gpu_frac()),
+        "gpu_frac": frac,
         "extra_args": extra_args if extra_args is not None else cat.get("extra_args", []),
         "max_images": cat.get("max_images", catalog.DEFAULT_MAX_IMAGES),
         "video_frames": cat.get("video_frames", catalog.DEFAULT_VIDEO_FRAMES),
-        "max_model_len": cat.get("max_model_len", catalog.DEFAULT_MAX_MODEL_LEN),
+        "max_model_len": max_model_len or cat.get("max_model_len")
+                         or fit_max_model_len(cat, profile, frac),
         "supports_native_video": cat.get("supports_native_video", True),
         "reasoning": cat.get("reasoning", False),
         "load_timeout": cat.get("load_timeout", 1800),
