@@ -62,6 +62,18 @@ def cmd_install(args) -> int:
         r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
                            capture_output=True, text=True)
         _p(f"  gpu: {r.stdout.strip() or 'nvidia-smi present but no GPU listed'}")
+        # docker must be able to hand the GPU to containers (NVIDIA Container Toolkit):
+        # docker 25+ resolves --gpus via CDI or the nvidia runtime
+        info = subprocess.run(["docker", "info"], capture_output=True, text=True).stdout
+        import pathlib as _pl
+        cdi_ok = any(_pl.Path(d, "nvidia.yaml").exists() for d in ("/etc/cdi", "/var/run/cdi"))
+        if "nvidia" not in info and not cdi_ok:
+            _p("  MISSING: NVIDIA Container Toolkit (docker cannot pass the GPU to containers).")
+            _p("           Install: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html")
+            _p("           then: sudo nvidia-ctk runtime configure --runtime=docker &&")
+            _p("                 sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml &&")
+            _p("                 sudo systemctl restart docker")
+            ok = False
     else:
         _p("  warning: nvidia-smi not found — model containers will not get a GPU")
     paths.ensure_layout()

@@ -270,6 +270,10 @@ or `.venv` - remove those by hand (`docker rmi ...`, `rm -rf ~/aisee`) if you wa
 - `failed` with "Free memory ... is less than desired": something else holds the GPU. Stop it
   (`./aisee model stop <slug>`, or whatever non-AISee container is running) and retry.
 - HF 403 on a gated model: the token's account must accept the license on the model page first.
+- `failed to discover GPU vendor from CDI` (docker cannot see the GPU): the NVIDIA Container
+  Toolkit is missing or unconfigured - install it, then `sudo nvidia-ctk runtime configure
+  --runtime=docker && sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml && sudo
+  systemctl restart docker`. `./aisee install` checks for this.
 - Reasoning models (cosmos family) answering empty or unparseable: handled by a fallback, but
   give them room - `--max-tokens 2048`.
 - "Could not open video stream" server-side: shouldn't happen through AISee (video is re-encoded
