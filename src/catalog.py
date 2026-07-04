@@ -21,7 +21,8 @@ DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
 CONTEXT_CANDIDATES = (131072, 65536, 32768, 16384, 8192)
 ACTIVATION_HEADROOM_GIB = 4               # runtime overhead on top of weights + KV
 GPU_FRAC_UNIFIED = 0.90   # unified memory (GB10): leave headroom for system processes
-GPU_FRAC_DISCRETE = 1.0   # dedicated VRAM
+GPU_FRAC_DISCRETE = 0.97  # dedicated VRAM: literal 1.0 fails vLLM's free-memory check
+                          #   (driver/ECC overhead holds a few hundred MiB at startup)
 
 CATALOG: dict[str, dict] = {
     "qwen3-vl-30b-a3b-instruct": {

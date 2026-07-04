@@ -13,12 +13,11 @@ DEFAULTS: dict = {
     "api": {"host": "0.0.0.0", "port": 8484},
     "defaults": {
         "default_model": "",
-        "idle_timeout": 900,          # seconds; 0 = never unload
-        "fps": 1.0,
-        "frames": 16,                 # even-sampled frames per video (= the image budget)
-        "max_tokens": 2048,           # headroom for reasoning models and long syntheses
-        "request_timeout": 900,       # per-inference HTTP timeout (s); a full 64-frame
-                                      #   chunk on a dense model can take a few minutes
+        "idle_timeout": 3600, # seconds; 0 = never unload
+        "fps": 3.0,
+        "frames": 16, # even-sampled frames per video (= the image budget)
+        "max_tokens": 2048, # headroom for reasoning models and long syntheses
+        "request_timeout": 900, # per-inference HTTP timeout (s); a full 64-frame chunk on a dense model can take a few minutes
         "task_retention_days": 7,
     },
 }
