@@ -215,7 +215,25 @@ class Core:
                     dockerctl.wait_ready(entry, timeout=10)
                     return entry
                 except RuntimeError:
-                    pass  # container up but engine not ready yet -> full path below
+                    pass
+                # Container up but engine not serving yet: it may still be downloading
+                # weights or loading shards from a previous start. Wait it out with the
+                # full load timeout - recreating it here would throw that progress away.
+                self._model_loading[slug] = "loading weights (existing container)"
+                try:
+                    def _pw(note):
+                        self._model_loading[slug] = note
+                        if progress:
+                            progress(note)
+                    if progress:
+                        progress("model is loading (attaching to an in-progress start)")
+                    dockerctl.wait_ready(entry, progress=_pw)
+                    self.store.touch_model(slug)
+                    return entry
+                except RuntimeError:
+                    pass  # container died or timed out -> full recreate below
+                finally:
+                    self._model_loading.pop(slug, None)
             hf_token = creds.resolve("HF_TOKEN")
             with self._load_lock:  # admission control: one cold load at a time
                 self._model_loading[slug] = "starting container"
@@ -354,7 +372,11 @@ class Core:
             self.ensure_running(slug, progress=lambda note: self._progress(tid, "model_loading", note))
             self.store.update(tid, timing={"model_load_s": round(time.time() - t0, 1)})
         else:
-            self.ensure_running(slug)
+            # normally instant; if the container turns out to be mid-load, surface it
+            def _late(note):
+                self.store.update(tid, status="model_loading")
+                self._progress(tid, "model_loading", note)
+            self.ensure_running(slug, progress=_late)
         if self._canceled(tid):
             return
 

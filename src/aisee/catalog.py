@@ -47,7 +47,7 @@ CATALOG: dict[str, dict] = {
         "extra_args": ["--trust-remote-code", "--enforce-eager"],
         "supports_native_video": True,
         "reasoning": False,
-        "load_timeout": 1800,
+        "load_timeout": 7200,
         "license": "NVIDIA Open Model (commercial use permitted)",
         "strengths": "Fastest overall (NVFP4, ~11 GB resident): ~4-7 s stills, ~1 s OCR/grounding; "
                      "handles native video; smallest GPU footprint.",
@@ -63,7 +63,7 @@ CATALOG: dict[str, dict] = {
         "extra_args": ["--enforce-eager"],
         "supports_native_video": False,
         "reasoning": False,
-        "load_timeout": 1800,
+        "load_timeout": 7200,
         "license": "Apache-2.0",
         "strengths": "Pixel-precise UI element grounding (computer-use lineage); very fast stills "
                      "(~1.4 s OCR, ~2.4 s grounding); low memory (~16 GB).",
@@ -73,11 +73,11 @@ CATALOG: dict[str, dict] = {
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
         "image": DEFAULT_IMAGE,
-        "gpu_frac": 0.22,
+        "gpu_frac": 0.25,  # 0.22 leaves ~4.2 GiB KV, 0.28 GiB short for max_len 32768
         "extra_args": ["--reasoning-parser", "qwen3"],
         "supports_native_video": True,
         "reasoning": True,
-        "load_timeout": 1800,
+        "load_timeout": 7200,
         "license": "NVIDIA Open Model",
         "strengths": "Purpose-built temporal / physical video reasoning; fast (~5 s asserts); "
                      "handles native video well.",
@@ -108,7 +108,7 @@ CATALOG: dict[str, dict] = {
         "extra_args": ["--trust-remote-code", "--enforce-eager"],
         "supports_native_video": False,
         "reasoning": False,
-        "load_timeout": 1800,
+        "load_timeout": 7200,
         "license": "Apache-2.0",
         "strengths": "GUI-agent lineage: can emit click/type actions (future action generation); "
                      "correct OCR; solid still judgments.",
