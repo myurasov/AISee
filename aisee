@@ -11,7 +11,9 @@ VENV="$DIR/.venv"
 if [ ! -x "$VENV/bin/aisee" ]; then
   echo "aisee: bootstrapping $VENV ..." >&2
   if command -v uv >/dev/null 2>&1; then
-    (cd "$DIR" && uv sync -q)
+    # pin the target env: inherited VIRTUAL_ENV / UV_PROJECT_ENVIRONMENT (e.g. from a
+    # shell profile or direnv of another project) must not redirect the install
+    (cd "$DIR" && env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT="$VENV" uv sync -q)
   else
     echo "aisee: uv not found, falling back to python3 -m venv (install uv: https://astral.sh/uv)" >&2
     python3 -m venv "$VENV"
