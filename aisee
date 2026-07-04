@@ -1,0 +1,21 @@
+#!/bin/sh
+# Copyright (c) 2026 Mikhail Yurasov <me@yurasov.me>
+# SPDX-License-Identifier: Apache-2.0
+# AISee launcher — run `./aisee ...` from anywhere without caring where aisee is installed.
+# First run bootstraps .venv next to this script via `uv sync` (locked, editable install);
+# falls back to python3 -m venv + pip if uv is not installed. A re-sync of the source takes
+# effect on the next daemon restart (editable install).
+set -e
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+VENV="$DIR/.venv"
+if [ ! -x "$VENV/bin/aisee" ]; then
+  echo "aisee: bootstrapping $VENV ..." >&2
+  if command -v uv >/dev/null 2>&1; then
+    (cd "$DIR" && uv sync -q)
+  else
+    echo "aisee: uv not found, falling back to python3 -m venv (install uv: https://astral.sh/uv)" >&2
+    python3 -m venv "$VENV"
+    "$VENV/bin/pip" install -q -e "$DIR"
+  fi
+fi
+exec "$VENV/bin/aisee" "$@"
