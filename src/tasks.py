@@ -156,6 +156,26 @@ class TaskStore:
                                  (slug,)).fetchone()
         return r["last_used"] if r else None
 
+    def requeue_stale(self) -> int:
+        """Re-queue tasks that were in flight when a previous server died.
+
+        Their worker threads are gone; without this they would show model_loading/
+        running forever. Requeued tasks are picked up by the dispatcher again.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id FROM tasks WHERE status IN ('preparing_media','model_loading','running')"
+            ).fetchall()
+            ids = [r["id"] for r in rows]
+            if ids:
+                self._db.executemany(
+                    "UPDATE tasks SET status='queued', progress=?, updated=? WHERE id=?",
+                    [(json.dumps({"step": "queued",
+                                  "detail": "requeued after server restart"}),
+                      time.time(), i) for i in ids])
+                self._db.commit()
+        return len(ids)
+
     def gc(self, retention_days: float) -> int:
         cutoff = time.time() - retention_days * 86400
         with self._lock:
@@ -304,6 +324,9 @@ class Core:
     # ---------------- worker machinery ----------------
 
     def start_background(self) -> None:
+        n = self.store.requeue_stale()
+        if n:
+            print(f"aisee: requeued {n} task(s) interrupted by a previous shutdown", flush=True)
         threading.Thread(target=self._dispatcher, daemon=True).start()
         threading.Thread(target=self._reaper, daemon=True).start()
 
