@@ -26,6 +26,7 @@ _FALLBACK = (
 _ENDPOINTS = [
     ("GET", "/v1/describe", "this document (markdown; ?format=json for structured)"),
     ("GET", "/v1/health", "liveness + per-model state summary"),
+    ("GET", "/v1/gpu", "live GPU stats: utilization, memory, power, temperature"),
     ("GET", "/v1/models", "installed models: state, port, idle_timeout, default flag"),
     ("POST", "/v1/models/{slug}/start", "start a model (non-blocking; poll /v1/models)"),
     ("POST", "/v1/models/{slug}/stop", "stop a model (frees GPU memory; stays installed)"),

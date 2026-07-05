@@ -38,6 +38,9 @@
   .d-result { background: #fff; border: 1px solid #e4e4e4; padding: .5rem .7rem; white-space: pre-wrap;
               word-break: break-word; font-family: ui-monospace, monospace; font-size: .8rem; }
   .d-result.pass { border-left: 4px solid #4a4; } .d-result.fail { border-left: 4px solid #c33; }
+  .bar { background: #eee; border: 1px solid #ddd; height: .9rem; position: relative; min-width: 90px; }
+  .bar > div { background: #76b900; height: 100%; }
+  .bar span { position: absolute; inset: 0; font-size: .7rem; text-align: center; line-height: .9rem; color: #333; }
 </style>
 </head>
 <body>
@@ -47,6 +50,7 @@
   <button data-tab="query">Query</button>
   <button data-tab="tasks">Tasks</button>
   <button data-tab="stat">Status</button>
+  <button data-tab="gpu">GPU</button>
   <button data-tab="server">Server</button>
 </nav>
 <div id="frame">
@@ -90,6 +94,10 @@
   <p style="margin:.6rem 0 0"><button id="refresh">Refresh</button></p>
 </div>
 
+<div class="tab" id="tab-gpu">
+  <div id="gpuBox" class="muted">-</div>
+</div>
+
 <div class="tab" id="tab-server">
   <div class="row">
     <div><label for="server">API base URL</label><input type="text" id="server"></div>
@@ -121,9 +129,44 @@ function showTab(name) {
   localStorage.setItem("aisee.tab", name);
   if (name === "tasks") refreshTasks(true);
   if (name === "stat") connect();
+  if (gpuTimer) { clearInterval(gpuTimer); gpuTimer = null; }
+  if (name === "gpu") { refreshGpu(); gpuTimer = setInterval(refreshGpu, 2000); }
 }
 for (const b of document.querySelectorAll("nav button"))
   b.addEventListener("click", () => showTab(b.dataset.tab));
+
+// ---------------- gpu tab ----------------
+
+let gpuTimer = null;
+
+function bar(pct, label) {
+  if (pct === null || isNaN(pct)) return "-";
+  const p = Math.min(100, Math.round(pct));
+  return '<div class="bar"><div style="width:' + p + '%"></div><span>' + label + "</span></div>";
+}
+
+async function refreshGpu() {
+  try {
+    const g = await api("/v1/gpu");
+    const rows = g.gpus.map(x => {
+      const memPct = x.memory_total_mib ? 100 * x.memory_used_mib / x.memory_total_mib : null;
+      const powPct = x.power_limit_w ? 100 * x.power_draw_w / x.power_limit_w : null;
+      return "<tr><td>" + x.name + "</td>" +
+        "<td>" + bar(x.utilization_pct, (x.utilization_pct === null ? "-" : x.utilization_pct + "%")) + "</td>" +
+        "<td>" + (x.memory_total_mib
+            ? bar(memPct, Math.round(x.memory_used_mib / 1024) + " / " + Math.round(x.memory_total_mib / 1024) + " GiB")
+            : (x.memory_used_mib !== null ? Math.round(x.memory_used_mib / 1024) + " GiB used" : "-")) + "</td>" +
+        "<td>" + (x.power_draw_w !== null
+            ? bar(powPct, Math.round(x.power_draw_w) + (x.power_limit_w ? " / " + Math.round(x.power_limit_w) : "") + " W")
+            : "-") + "</td>" +
+        "<td>" + (x.temperature_c !== null ? x.temperature_c + " C" : "-") + "</td>" +
+        "<td>" + (x.clock_sm_mhz !== null ? x.clock_sm_mhz + (x.clock_sm_max_mhz ? " / " + x.clock_sm_max_mhz : "") + " MHz" : "-") + "</td></tr>";
+    }).join("");
+    $("gpuBox").innerHTML =
+      "<table><tr><th>gpu</th><th>utilization</th><th>memory</th><th>power</th><th>temp</th><th>sm clock</th></tr>" +
+      rows + "</table><div class='muted' style='margin-top:.3rem'>refreshes every 2 s while this tab is open</div>";
+  } catch (e) { $("gpuBox").textContent = "gpu stats: " + e.message; }
+}
 
 // ---------------- server / api ----------------
 

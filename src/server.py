@@ -56,6 +56,38 @@ def create_app() -> FastAPI:
             return describe.as_json(core)
         return Response(describe.as_markdown(core), media_type="text/markdown")
 
+    @app.get("/v1/gpu")
+    def gpu():
+        """Live GPU stats via nvidia-smi (fields that report [N/A] come back as null)."""
+        import subprocess
+        fields = ("index,name,utilization.gpu,memory.used,memory.total,"
+                  "power.draw,power.limit,temperature.gpu,clocks.sm,clocks.max.sm")
+        try:
+            out = subprocess.run(
+                ["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            raise HTTPException(503, "nvidia-smi not available on this host")
+        gpus = []
+        for line in out.splitlines():
+            parts = [s.strip() for s in line.split(",")]
+            if len(parts) < 10:
+                continue
+            def num(s):
+                try:
+                    return float(s)
+                except ValueError:
+                    return None  # "[N/A]" (e.g. memory.total on GB10)
+            gpus.append({
+                "index": int(parts[0]), "name": parts[1],
+                "utilization_pct": num(parts[2]),
+                "memory_used_mib": num(parts[3]), "memory_total_mib": num(parts[4]),
+                "power_draw_w": num(parts[5]), "power_limit_w": num(parts[6]),
+                "temperature_c": num(parts[7]),
+                "clock_sm_mhz": num(parts[8]), "clock_sm_max_mhz": num(parts[9]),
+            })
+        return {"gpus": gpus}
+
     @app.get("/v1/models")
     def models():
         return [core.model_view(e) for e in registry.list_installed()]
