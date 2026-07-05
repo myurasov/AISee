@@ -120,7 +120,13 @@ web console is served at `/`.
 ## Limitations
 
 - One GPU per host; models fit only if weights + KV cache fit the GPU (install warns when they
-  cannot). Only models the serving vLLM supports as multimodal chat models work.
+  cannot).
+- AISee does not run models itself - it serves them with vLLM inside a container. A model
+  therefore works only if vLLM (in the chosen serving image) implements its architecture AND
+  that implementation accepts images. This rules out text-only LLMs (they cannot see),
+  non-chat vision models (CLIP embedders, detectors, image generators), and formats vLLM
+  cannot load (e.g. GGUF). If `model logs` shows "model type ... is not recognized", the fix
+  is usually a newer or specialized serving image: `aisee model install <hf-id> --image <img>`.
 - File-based media only (images, video files) - no live streams, no URLs; upload the bytes.
 - No MCP server mode; integrate via CLI or REST.
 - Results depend on a VLM: it can be wrong, especially on tiny text, precise counts, and exact
