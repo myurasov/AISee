@@ -40,6 +40,7 @@
   .d-result.pass { border-left: 4px solid #4a4; } .d-result.fail { border-left: 4px solid #c33; }
   .bar { background: #eee; border: 1px solid #ddd; height: .9rem; position: relative; min-width: 90px; }
   .bar > div { background: #76b900; height: 100%; }
+  td button { padding: .1rem .5rem; font-size: .75rem; margin-right: .25rem; }
   .bar span { position: absolute; inset: 0; font-size: .7rem; text-align: center; line-height: .9rem; color: #333; white-space: nowrap; overflow: hidden; }
 </style>
 </head>
@@ -91,6 +92,13 @@
 <div class="tab" id="tab-stat">
   <div id="apiInfo" class="muted">-</div>
   <div id="modelsBox"></div>
+  <label for="installSel" style="margin-top:.7rem">install a model</label>
+  <div class="row">
+    <div><select id="installSel"><option value="">(loading catalog...)</option></select></div>
+    <div><input type="text" id="installCustom" placeholder="or an HF id: org/Model-Name"></div>
+    <div style="flex:0"><button id="installBtn">Install</button></div>
+  </div>
+  <div id="modelsMsg" class="muted" style="margin-top:.4rem"></div>
   <p style="margin:.6rem 0 0"><button id="refresh">Refresh</button></p>
 </div>
 
@@ -203,10 +211,16 @@ async function connect() {
       '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
       "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
       "<td>" + (m.idle_timeout || "-") + " s</td>" +
-      "<td>" + (m.last_used ? new Date(m.last_used * 1000).toLocaleString() : "never") + "</td></tr>").join("");
+      "<td>" + (m.last_used ? new Date(m.last_used * 1000).toLocaleString() : "never") + "</td>" +
+      '<td><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
+      '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
+      '<button data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
     $("modelsBox").innerHTML = models.length
-      ? "<table><tr><th>model</th><th>state</th><th>video</th><th>idle timeout</th><th>last used</th></tr>" + rows + "</table>"
+      ? "<table><tr><th>model</th><th>state</th><th>video</th><th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
       : '<div class="muted">no models installed</div>';
+    for (const b of document.querySelectorAll("#modelsBox button"))
+      b.addEventListener("click", () => modelAction(b.dataset.act, b.dataset.slug));
+    loadCatalog(models);
     const sel = $("model");
     const prev = sel.value;
     sel.innerHTML = '<option value="">(default)</option>';
@@ -228,6 +242,54 @@ async function connect() {
 $("server").addEventListener("change", connect);
 $("token").addEventListener("change", connect);
 $("refresh").addEventListener("click", connect);
+
+// ---------------- model management ----------------
+
+async function loadCatalog(models) {
+  try {
+    const cat = await api("/v1/catalog");
+    const sel = $("installSel");
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">(pick from catalog)</option>';
+    for (const c of cat) {
+      const o = document.createElement("option");
+      o.value = c.slug;
+      o.textContent = c.slug + (c.installed ? " (installed)" : "");
+      o.disabled = c.installed;
+      sel.appendChild(o);
+    }
+    sel.value = prev;
+  } catch (e) { /* catalog optional */ }
+}
+
+async function modelAction(act, slug) {
+  if (act === "remove" &&
+      !confirm("Uninstall " + slug + "? Weights stay in the shared cache.")) return;
+  $("modelsMsg").textContent = act + " " + slug + "...";
+  try {
+    if (act === "start") await api("/v1/models/" + slug + "/start", { method: "POST" });
+    else if (act === "stop") await api("/v1/models/" + slug + "/stop", { method: "POST" });
+    else if (act === "remove") await api("/v1/models/" + slug, { method: "DELETE" });
+    $("modelsMsg").textContent = act + " " + slug + ": ok" +
+      (act === "start" ? " (loading can take minutes; Refresh to see progress)" : "");
+    await connect();
+  } catch (e) { $("modelsMsg").textContent = act + " " + slug + ": " + e.message; }
+}
+
+$("installBtn").addEventListener("click", async () => {
+  const name = $("installCustom").value.trim() || $("installSel").value;
+  if (!name) { $("modelsMsg").textContent = "pick a catalog model or enter an HF id"; return; }
+  $("modelsMsg").textContent = "installing " + name + "...";
+  try {
+    const m = await api("/v1/models", { method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, headers()),
+      body: JSON.stringify({ name }) });
+    $("modelsMsg").textContent = "installed " + m.slug +
+      " (weights download on first start)";
+    $("installCustom").value = "";
+    await connect();
+  } catch (e) { $("modelsMsg").textContent = "install: " + e.message; }
+});
 
 // ---------------- tasks table with inline detail row ----------------
 

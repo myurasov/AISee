@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.datastructures import UploadFile
 
-from . import __version__, config, creds, describe, media, paths, registry
+from . import __version__, catalog, config, creds, describe, media, paths, registry
 from .tasks import Core
 
 OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
@@ -118,6 +118,45 @@ def create_app() -> FastAPI:
             raise HTTPException(404, f"model '{slug}' is not installed")
         core.stop_model(slug)
         return {"slug": slug, "state": core.model_state(slug)}
+
+    @app.get("/v1/catalog")
+    def catalog_list():
+        """Built-in model catalog with installed flags (for install UIs)."""
+        installed = {e["slug"] for e in registry.list_installed()}
+        return [{"slug": s, "hf_id": e["hf_id"], "installed": s in installed,
+                 "supports_native_video": e.get("supports_native_video", True),
+                 "strengths": e.get("strengths", "")}
+                for s, e in catalog.CATALOG.items()]
+
+    @app.post("/v1/models")
+    async def model_install(request: Request):
+        """Install a model into the registry (catalog slug or HF id). Does not start it."""
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            raise HTTPException(400, "JSON body required")
+        name = (body or {}).get("name", "").strip()
+        if not name:
+            raise HTTPException(400, "name required (catalog slug or org/Model HF id)")
+        try:
+            entry = registry.install(
+                name, image=body.get("image"), gpu_frac=body.get("gpu_frac"),
+                port=body.get("port"), idle_timeout=body.get("idle_timeout"),
+                max_model_len=body.get("max_model_len"), concurrency=body.get("concurrency"))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return core.model_view(entry)
+
+    @app.delete("/v1/models/{slug}")
+    def model_remove(slug: str):
+        """Stop and remove a model from the registry (weights stay in the shared cache)."""
+        if not registry.get(slug):
+            raise HTTPException(404, f"model '{slug}' is not installed")
+        if core.store.open_count(slug):
+            raise HTTPException(409, "model has queued or running tasks")
+        core.stop_model(slug)
+        registry.remove(slug)
+        return {"slug": slug, "removed": True}
 
     @app.post("/v1/tasks")
     async def submit(request: Request):

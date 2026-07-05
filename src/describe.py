@@ -28,6 +28,9 @@ _ENDPOINTS = [
     ("GET", "/v1/health", "liveness + per-model state summary"),
     ("GET", "/v1/gpu", "live GPU stats: utilization, memory, power, temperature"),
     ("GET", "/v1/models", "installed models: state, port, idle_timeout, default flag"),
+    ("GET", "/v1/catalog", "built-in model catalog with installed flags"),
+    ("POST", "/v1/models", "install a model: {name: <catalog slug or HF id>, ...overrides}"),
+    ("DELETE", "/v1/models/{slug}", "uninstall (weights stay cached)"),
     ("POST", "/v1/models/{slug}/start", "start a model (non-blocking; poll /v1/models)"),
     ("POST", "/v1/models/{slug}/stop", "stop a model (frees GPU memory; stays installed)"),
     ("POST", "/v1/tasks", "submit a query -> {id} (multipart: files + params JSON field; "
