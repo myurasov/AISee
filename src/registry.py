@@ -122,13 +122,18 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
     existing = get(slug) or {}
     profile = gpu_profile()
     frac = gpu_frac if gpu_frac is not None else cat.get("gpu_frac", profile["gpu_frac"])
+    args = list(extra_args if extra_args is not None else cat.get("extra_args", []))
+    # CUDA-graph capture is unstable/slow on unified-memory (GB10-class) systems, so they
+    # serve eager; discrete GPUs keep graphs (measured 3-4x faster decode on RTX PRO 6000)
+    if profile["unified"] and "--enforce-eager" not in args:
+        args.append("--enforce-eager")
     entry = {
         "slug": slug,
         "hf_id": hf_id,
         "image": image or cat.get("image", catalog.DEFAULT_IMAGE),
         "port": port or existing.get("port") or _free_port(),
         "gpu_frac": frac,
-        "extra_args": extra_args if extra_args is not None else cat.get("extra_args", []),
+        "extra_args": args,
         "max_images": cat.get("max_images", catalog.DEFAULT_MAX_IMAGES),
         "video_frames": cat.get("video_frames", catalog.DEFAULT_VIDEO_FRAMES),
         "max_model_len": max_model_len or cat.get("max_model_len")
