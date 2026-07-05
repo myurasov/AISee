@@ -22,6 +22,10 @@
   #result.pass { border-left: 4px solid #4a4; } #result.fail { border-left: 4px solid #c33; }
   .muted { color: #999; font-size: .8rem; }
   a { color: #369; }
+  table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
+  th, td { border: 1px solid #e0e0e0; padding: .25rem .5rem; text-align: left; }
+  th { background: #f5f5f5; color: #555; font-weight: 600; }
+  .st-running { color: #2a7; } .st-starting { color: #b80; } .st-failed { color: #c33; }
 </style>
 </head>
 <body>
@@ -34,6 +38,13 @@
     <div><label for="token">API token (if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
   </div>
   <div id="health" class="muted" style="margin-top:.5rem">not connected</div>
+</fieldset>
+
+<fieldset>
+  <legend>api status</legend>
+  <div id="apiInfo" class="muted">-</div>
+  <div id="modelsBox"></div>
+  <p style="margin:.5rem 0 0"><button id="refresh">Refresh</button></p>
 </fieldset>
 
 <fieldset>
@@ -97,9 +108,21 @@ async function connect() {
     const h = await api("/v1/health");
     const models = await api("/v1/models");
     $("ver").textContent = "v" + h.version;
-    $("health").textContent = "connected: AISee v" + h.version + " - " +
-      models.map(m => m.slug + " (" + m.state + ")").join(", ");
+    $("health").textContent = "connected";
+    $("apiInfo").textContent = "AISee v" + h.version + " at " + base() + " - " +
+      (h.ok ? "healthy" : "unhealthy") + ", " + models.length + " model(s) installed, " +
+      models.filter(m => m.state === "running").length + " running";
+    const rows = models.map(m =>
+      "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
+      '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
+      "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
+      "<td>" + (m.idle_timeout || "-") + " s</td>" +
+      "<td>" + (m.last_used ? new Date(m.last_used * 1000).toLocaleString() : "never") + "</td></tr>").join("");
+    $("modelsBox").innerHTML = models.length
+      ? "<table><tr><th>model</th><th>state</th><th>video</th><th>idle timeout</th><th>last used</th></tr>" + rows + "</table>"
+      : '<div class="muted">no models installed</div>';
     const sel = $("model");
+    const prev = sel.value;
     sel.innerHTML = '<option value="">(default)</option>';
     for (const m of models) {
       const o = document.createElement("option");
@@ -107,10 +130,16 @@ async function connect() {
       o.textContent = m.slug + (m.default ? " *" : "") + " - " + m.state;
       sel.appendChild(o);
     }
-  } catch (e) { $("health").textContent = "cannot connect: " + e.message; }
+    sel.value = prev;
+  } catch (e) {
+    $("health").textContent = "cannot connect: " + e.message;
+    $("apiInfo").textContent = "unreachable";
+    $("modelsBox").innerHTML = "";
+  }
 }
 $("server").addEventListener("change", connect);
 $("token").addEventListener("change", connect);
+$("refresh").addEventListener("click", connect);
 
 $("kind").addEventListener("change", () => {
   $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
