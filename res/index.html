@@ -19,9 +19,9 @@
   a { color: #369; }
   /* tabs + frame */
   nav { display: flex; gap: 0; margin-bottom: -1px; }
-  nav button { border: 1px solid #ccc; border-bottom: none; background: #f0f0f0; color: #666;
+  nav button { border: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #f0f0f0; color: #666;
                padding: .4rem 1rem; margin-right: .25rem; position: relative; }
-  nav button.on { background: #fff; color: #111; z-index: 2; }
+  nav button.on { background: #fff; color: #111; border-bottom: 1px solid #fff; z-index: 2; }
   #frame { border: 1px solid #ccc; background: #fff; padding: 1rem 1.2rem; min-height: 14rem; }
   .tab { display: none; } .tab.on { display: block; }
   #status { color: #666; margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
