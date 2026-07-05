@@ -25,7 +25,7 @@
 </style>
 </head>
 <body>
-<h1>AISee <small>gives AI agents eyes</small></h1>
+<h1>AISee <span id="ver" class="muted" style="font-size:.85rem"></span> <small>gives AI agents eyes</small></h1>
 
 <fieldset>
   <legend>server</legend>
@@ -96,6 +96,7 @@ async function connect() {
   try {
     const h = await api("/v1/health");
     const models = await api("/v1/models");
+    $("ver").textContent = "v" + h.version;
     $("health").textContent = "connected: AISee v" + h.version + " - " +
       models.map(m => m.slug + " (" + m.state + ")").join(", ");
     const sel = $("model");
