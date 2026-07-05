@@ -7,55 +7,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AISee</title>
 <style>
-  body { font: 14px/1.45 system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  body { font: 14px/1.45 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.3rem; } h1 small { color: #888; font-weight: normal; font-size: .8rem; }
-  fieldset { border: 1px solid #ddd; margin: 0 0 1rem; padding: .7rem 1rem; }
-  legend { color: #666; font-size: .8rem; padding: 0 .4rem; }
   label { display: block; margin: .45rem 0 .1rem; color: #444; font-size: .85rem; }
   input[type=text], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid #ccc; font: inherit; }
   textarea { min-height: 3.2em; resize: vertical; }
   .row { display: flex; gap: .8rem; } .row > div { flex: 1; }
   button { padding: .45rem 1.1rem; font: inherit; cursor: pointer; border: 1px solid #888; background: #f5f5f5; }
   button:hover { background: #eee; } button:disabled { opacity: .5; cursor: default; }
-  #status { color: #666; margin: .6rem 0; min-height: 1.3em; white-space: pre-wrap; }
-  #result { background: #f7f7f7; border: 1px solid #e0e0e0; padding: .8rem; white-space: pre-wrap; word-break: break-word; display: none; }
-  #result.pass { border-left: 4px solid #4a4; } #result.fail { border-left: 4px solid #c33; }
   .muted { color: #999; font-size: .8rem; }
   a { color: #369; }
+  /* tabs + frame */
+  nav { display: flex; gap: 0; margin-bottom: -1px; }
+  nav button { border: 1px solid #ccc; border-bottom: none; background: #f0f0f0; color: #666;
+               padding: .4rem 1rem; margin-right: .25rem; position: relative; }
+  nav button.on { background: #fff; color: #111; z-index: 2; }
+  #frame { border: 1px solid #ccc; background: #fff; padding: 1rem 1.2rem; min-height: 14rem; }
+  .tab { display: none; } .tab.on { display: block; }
+  #status { color: #666; margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
   th, td { border: 1px solid #e0e0e0; padding: .25rem .5rem; text-align: left; }
   th { background: #f5f5f5; color: #555; font-weight: 600; }
+  .st-running, .st-done { color: #2a7; }
+  .st-starting, .st-queued, .st-preparing_media, .st-model_loading { color: #b80; }
+  .st-failed, .st-canceled { color: #c33; }
+  #tasksBox tr[data-id] { cursor: pointer; }
   #tasksBox tr.sel td { background: #eef4ff; }
-  #tasksBox tr { cursor: pointer; }
-  .st-running { color: #2a7; } .st-starting { color: #b80; } .st-failed { color: #c33; }
+  tr.detail > td { background: #fafafa; padding: .6rem .8rem; cursor: default; }
+  .d-status { color: #666; white-space: pre-wrap; margin-bottom: .4rem; }
+  .d-result { background: #fff; border: 1px solid #e4e4e4; padding: .5rem .7rem; white-space: pre-wrap;
+              word-break: break-word; font-family: ui-monospace, monospace; font-size: .8rem; }
+  .d-result.pass { border-left: 4px solid #4a4; } .d-result.fail { border-left: 4px solid #c33; }
 </style>
 </head>
 <body>
 <h1>AISee <span id="ver" class="muted" style="font-size:.85rem"></span> <small>gives AI agents eyes</small></h1>
 
-<fieldset>
-  <legend>server</legend>
-  <div class="row">
-    <div><label for="server">API base URL</label><input type="text" id="server"></div>
-    <div><label for="token">API token (if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
-  </div>
-  <div id="health" class="muted" style="margin-top:.5rem">not connected</div>
-</fieldset>
+<nav>
+  <button data-tab="query">Query</button>
+  <button data-tab="tasks">Tasks</button>
+  <button data-tab="stat">Status</button>
+  <button data-tab="server">Server</button>
+</nav>
+<div id="frame">
 
-<fieldset>
-  <legend>api status</legend>
-  <div id="apiInfo" class="muted">-</div>
-  <div id="modelsBox"></div>
-  <p style="margin:.5rem 0 0"><button id="refresh">Refresh</button></p>
-</fieldset>
-
-<fieldset>
-  <legend>tasks</legend>
-  <div id="tasksBox" class="muted">-</div>
-</fieldset>
-
-<fieldset>
-  <legend>query</legend>
+<div class="tab" id="tab-query">
   <div class="row">
     <div>
       <label for="kind">kind</label>
@@ -79,11 +75,31 @@
     <div><label for="chunk">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
     <div><label for="native" style="margin-bottom:.35rem">native video</label><input type="checkbox" id="native"></div>
   </div>
-  <p><button id="go">Run</button> <button id="cancel" disabled>Cancel</button></p>
-</fieldset>
+  <p style="margin-bottom:0"><button id="go">Run</button></p>
+  <div id="status"></div>
+</div>
 
-<div id="status"></div>
-<pre id="result"></pre>
+<div class="tab" id="tab-tasks">
+  <div class="muted" style="margin-bottom:.3rem">click a task to expand its progress / result below it; state survives reloads</div>
+  <div id="tasksBox" class="muted">-</div>
+</div>
+
+<div class="tab" id="tab-stat">
+  <div id="apiInfo" class="muted">-</div>
+  <div id="modelsBox"></div>
+  <p style="margin:.6rem 0 0"><button id="refresh">Refresh</button></p>
+</div>
+
+<div class="tab" id="tab-server">
+  <div class="row">
+    <div><label for="server">API base URL</label><input type="text" id="server"></div>
+    <div><label for="token">API token (if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
+  </div>
+  <div id="health" class="muted" style="margin-top:.5rem">not connected</div>
+</div>
+
+</div>
+
 <p class="muted">Single-file console for the <a href="https://github.com/myurasov/AISee">AISee</a> REST API.
 When opened from disk, point the base URL at your server (CORS is enabled).
 Agent-oriented API docs: <span id="descLink">/v1/describe</span>.</p>
@@ -91,9 +107,26 @@ Agent-oriented API docs: <span id="descLink">/v1/describe</span>.</p>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-let pollTimer = null, currentTask = null;
+const TERMINAL = ["done", "failed", "canceled"];
+const pollers = {};           // task id -> interval handle
+let expandedId = localStorage.getItem("aisee.expanded") || null;
 
-// default server: our origin when served over http(s), localhost when opened as a file
+// ---------------- tabs ----------------
+
+function showTab(name) {
+  for (const b of document.querySelectorAll("nav button"))
+    b.className = b.dataset.tab === name ? "on" : "";
+  for (const s of document.querySelectorAll(".tab"))
+    s.className = s.id === "tab-" + name ? "tab on" : "tab";
+  localStorage.setItem("aisee.tab", name);
+  if (name === "tasks") refreshTasks(true);
+  if (name === "stat") connect();
+}
+for (const b of document.querySelectorAll("nav button"))
+  b.addEventListener("click", () => showTab(b.dataset.tab));
+
+// ---------------- server / api ----------------
+
 $("server").value = localStorage.getItem("aisee.server") ||
   (location.protocol.startsWith("http") ? location.origin : "http://localhost:8484");
 $("token").value = localStorage.getItem("aisee.token") || "";
@@ -138,99 +171,120 @@ async function connect() {
       sel.appendChild(o);
     }
     sel.value = prev;
-    refreshTasks(true);
+    await refreshTasks(true);
   } catch (e) {
     $("health").textContent = "cannot connect: " + e.message;
     $("apiInfo").textContent = "unreachable";
     $("modelsBox").innerHTML = "";
+    $("tasksBox").textContent = "-";
   }
 }
 $("server").addEventListener("change", connect);
 $("token").addEventListener("change", connect);
 $("refresh").addEventListener("click", connect);
 
-$("kind").addEventListener("change", () => {
-  $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
-});
+// ---------------- tasks table with inline detail row ----------------
 
-const TERMINAL = ["done", "failed", "canceled"];
-
-function attach(id, kind) {
-  if (pollTimer) clearInterval(pollTimer);
-  currentTask = id;
-  $("cancel").disabled = false;
-  $("result").style.display = "none";
-  setStatus("task " + id + "\n[attaching]");
-  poll(id, kind);
-  pollTimer = setInterval(() => poll(id, kind), 2000);
-  for (const tr of document.querySelectorAll("#tasksBox tr[data-id]"))
-    tr.className = tr.dataset.id === id ? "sel" : "";
+function fillDetail(td, t) {
+  const p = t.progress || {};
+  let line = "[" + t.status + "] " + (p.detail || p.step || "");
+  if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
+  const tm = t.timings || {};
+  if (t.status === "done")
+    line = "done" + (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
+           (tm.model_load_s ? ", model load " + tm.model_load_s + "s" : "");
+  let body = null, cls = "";
+  if (t.status === "failed") { body = ((t.error || {}).message || "unknown error").slice(0, 1000); cls = " fail"; }
+  else if (t.status === "done") {
+    const r = t.result || {};
+    if (t.kind === "look" && typeof r.answer === "string") body = r.answer;
+    else { body = JSON.stringify(r, null, 2); if (typeof r.pass === "boolean") cls = r.pass ? " pass" : " fail"; }
+  }
+  td.innerHTML = '<div class="d-status"></div>' + (body !== null ? '<div class="d-result' + cls + '"></div>' : "");
+  td.querySelector(".d-status").textContent = line;
+  if (body !== null) td.querySelector(".d-result").textContent = body;
 }
 
-async function refreshTasks(autoAttach = false) {
+function stopPoller(id) {
+  if (pollers[id]) { clearInterval(pollers[id]); delete pollers[id]; }
+}
+
+async function pollInto(id) {
+  const td = document.getElementById("detail-" + id);
+  if (!td) { stopPoller(id); return; }
   try {
-    const tasks = (await api("/v1/tasks?limit=10"));
+    const t = await api("/v1/tasks/" + id);
+    fillDetail(td, t);
+    const st = document.querySelector('#tasksBox tr[data-id="' + id + '"] td.st');
+    if (st) { st.textContent = t.status; st.className = "st st-" + t.status; }
+    if (TERMINAL.includes(t.status)) stopPoller(id);
+  } catch (e) {
+    td.innerHTML = '<div class="d-status">error: ' + e.message + "</div>";
+    stopPoller(id);
+  }
+}
+
+function collapse() {
+  for (const id of Object.keys(pollers)) stopPoller(id);
+  const d = document.querySelector("#tasksBox tr.detail");
+  if (d) d.remove();
+  const s = document.querySelector("#tasksBox tr.sel");
+  if (s) s.className = "";
+  expandedId = null;
+  localStorage.removeItem("aisee.expanded");
+}
+
+function expand(id) {
+  collapse();
+  const row = document.querySelector('#tasksBox tr[data-id="' + id + '"]');
+  if (!row) return;
+  row.className = "sel";
+  expandedId = id;
+  localStorage.setItem("aisee.expanded", id);
+  const d = row.insertAdjacentElement("afterend", document.createElement("tr"));
+  d.className = "detail";
+  const td = document.createElement("td");
+  td.colSpan = 5;
+  td.id = "detail-" + id;
+  td.innerHTML = '<div class="d-status">loading...</div>';
+  d.appendChild(td);
+  pollInto(id);
+  pollers[id] = setInterval(() => pollInto(id), 2000);
+}
+
+async function refreshTasks(reattach = false) {
+  try {
+    const tasks = await api("/v1/tasks?limit=12");
     if (!tasks.length) { $("tasksBox").textContent = "no tasks yet"; return; }
     const rows = tasks.map(t =>
-      '<tr data-id="' + t.id + '" data-kind="' + t.kind + '"' +
-      (t.id === currentTask ? ' class="sel"' : "") + ">" +
+      '<tr data-id="' + t.id + '">' +
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
-      '<td class="st-' + t.status + '">' + t.status + "</td>" +
+      '<td class="st st-' + t.status + '">' + t.status + "</td>" +
       "<td>" + new Date(t.created * 1000).toLocaleTimeString() + "</td></tr>").join("");
     $("tasksBox").innerHTML =
       "<table><tr><th>id</th><th>kind</th><th>model</th><th>status</th><th>created</th></tr>" +
-      rows + "</table><div class='muted' style='margin-top:.3rem'>click a task to view its progress / result</div>";
+      rows + "</table>";
     for (const tr of document.querySelectorAll("#tasksBox tr[data-id]"))
-      tr.addEventListener("click", () => attach(tr.dataset.id, tr.dataset.kind));
-    // after a reload, re-attach to the newest task still in flight
-    if (autoAttach && !currentTask) {
-      const open = tasks.find(t => !TERMINAL.includes(t.status));
-      if (open) attach(open.id, open.kind);
+      tr.addEventListener("click", () => tr.dataset.id === expandedId ? collapse() : expand(tr.dataset.id));
+    if (reattach) {
+      const wanted = expandedId && tasks.find(t => t.id === expandedId) ? expandedId
+        : (tasks.find(t => !TERMINAL.includes(t.status)) || {}).id;
+      if (wanted) { const keep = wanted; expandedId = null; expand(keep); }
     }
   } catch (e) { $("tasksBox").textContent = "tasks: " + e.message; }
 }
 
-function setStatus(t) { $("status").textContent = t; }
+// ---------------- submitting queries ----------------
 
-function showResult(res, kind) {
-  const el = $("result");
-  el.style.display = "block";
-  el.className = "";
-  if (kind === "look" && res && typeof res.answer === "string") el.textContent = res.answer;
-  else {
-    el.textContent = JSON.stringify(res, null, 2);
-    if (res && typeof res.pass === "boolean") el.className = res.pass ? "pass" : "fail";
-  }
-}
-
-async function poll(id, kind) {
-  try {
-    const t = await api("/v1/tasks/" + id);
-    const p = t.progress || {};
-    let line = "[" + t.status + "] " + (p.detail || p.step || "");
-    if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
-    setStatus("task " + id + "\n" + line);
-    if (TERMINAL.includes(t.status)) {
-      clearInterval(pollTimer); pollTimer = null; currentTask = null;
-      refreshTasks();
-      $("go").disabled = false; $("cancel").disabled = true;
-      const tm = t.timings || {};
-      if (t.status === "done") {
-        showResult(t.result, kind);
-        setStatus("done" + (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
-                  (tm.model_load_s ? ", model load " + tm.model_load_s + "s" : ""));
-      } else if (t.status === "failed") {
-        setStatus("FAILED: " + ((t.error || {}).message || "unknown").slice(0, 500));
-      } else setStatus("canceled");
-    }
-  } catch (e) { setStatus("poll error: " + e.message); }
-}
+$("kind").addEventListener("change", () => {
+  $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
+});
 
 $("go").addEventListener("click", async () => {
   const kind = $("kind").value;
   const files = $("files").files;
-  if (!files.length) return setStatus("pick at least one media file");
-  if (!$("prompt").value.trim()) return setStatus("enter a " + ($("promptLabel").textContent));
+  if (!files.length) { $("status").textContent = "pick at least one media file"; return; }
+  if (!$("prompt").value.trim()) { $("status").textContent = "enter a " + $("promptLabel").textContent; return; }
   const params = { kind };
   // watch accepts question or expectation; this console submits the prompt as a question
   params[kind === "assert" ? "expectation" : "question"] = $("prompt").value.trim();
@@ -245,25 +299,21 @@ $("go").addEventListener("click", async () => {
   for (const f of files) fd.append("files", f);
   fd.append("params", JSON.stringify(params));
 
-  $("go").disabled = true; $("result").style.display = "none";
-  setStatus("uploading...");
+  $("go").disabled = true;
+  $("status").textContent = "uploading...";
   try {
     const r = await fetch(base() + "/v1/tasks", { method: "POST", headers: headers(), body: fd });
     if (!r.ok) throw new Error("HTTP " + r.status + ": " + (await r.text()).slice(0, 300));
     const { id } = await r.json();
-    currentTask = id;
-    $("cancel").disabled = false;
-    setStatus("task " + id + "\n[queued]");
-    pollTimer = setInterval(() => poll(id, kind), 2000);
-    refreshTasks();
-  } catch (e) { setStatus("submit error: " + e.message); $("go").disabled = false; }
+    $("status").textContent = "submitted task " + id;
+    localStorage.setItem("aisee.expanded", id);
+    expandedId = id;
+    showTab("tasks");                  // jump to the tasks tab with the new task expanded
+  } catch (e) { $("status").textContent = "submit error: " + e.message; }
+  $("go").disabled = false;
 });
 
-$("cancel").addEventListener("click", async () => {
-  if (!currentTask) return;
-  try { await api("/v1/tasks/" + currentTask, { method: "DELETE" }); } catch (e) { /* ignore */ }
-});
-
+showTab(localStorage.getItem("aisee.tab") || "query");
 connect();
 </script>
 </body>
