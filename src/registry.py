@@ -108,7 +108,8 @@ def list_installed() -> list[dict]:
 
 def install(name: str, *, image: str | None = None, gpu_frac: float | None = None,
             port: int | None = None, idle_timeout: int | None = None,
-            extra_args: list[str] | None = None, max_model_len: int | None = None) -> dict:
+            extra_args: list[str] | None = None, max_model_len: int | None = None,
+            concurrency: int | None = None) -> dict:
     """Resolve name against the catalog (or accept a raw HF id) and write the registry entry.
 
     Does not start the model. The port is chosen randomly once and persisted.
@@ -141,6 +142,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         "supports_native_video": cat.get("supports_native_video", True),
         "reasoning": cat.get("reasoning", False),
         "load_timeout": cat.get("load_timeout", 1800),
+        "concurrency": concurrency or cat.get("concurrency", catalog.DEFAULT_CONCURRENCY),
         "idle_timeout": idle_timeout if idle_timeout is not None
                         else existing.get("idle_timeout", cfg["defaults"]["idle_timeout"]),
     }

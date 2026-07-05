@@ -15,6 +15,7 @@ DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 # the GPU pool is also system RAM); max_model_len is the largest standard context whose
 # KV cache fits next to the weights (catalog entries carry weights_gib / kv_gib_128k
 # estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
+DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
 DEFAULT_MAX_IMAGES = 16
 DEFAULT_VIDEO_FRAMES = 64
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing

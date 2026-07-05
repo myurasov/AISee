@@ -173,7 +173,8 @@ def cmd_model(args) -> int:
         entry = registry.install(args.name, image=args.image, gpu_frac=args.gpu_frac,
                                  port=args.port, idle_timeout=args.idle_timeout,
                                  extra_args=args.arg if args.arg else None,
-                                 max_model_len=args.max_model_len)
+                                 max_model_len=args.max_model_len,
+                                 concurrency=args.concurrency)
         if args.hf_token:
             creds.set_value("HF_TOKEN", args.hf_token)
         prof = registry.gpu_profile()
@@ -367,6 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--image")
     m.add_argument("--gpu-frac", type=float)
     m.add_argument("--max-model-len", type=int, help="context length (default: auto-sized to the GPU)")
+    m.add_argument("--concurrency", type=int, help="parallel inferences for this model (default 3)")
     m.add_argument("--port", type=int)
     m.add_argument("--idle-timeout", type=int)
     m.add_argument("--arg", action="append", help="extra vllm serve arg (repeatable)")

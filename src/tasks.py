@@ -8,6 +8,7 @@ All of this lives in the API server process (spec §3): the CLI reaches it over 
 
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 import sqlite3
 import threading
@@ -179,7 +180,7 @@ class Core:
         self.store = TaskStore(paths.tasks_db())
         self._load_lock = threading.Lock()      # one model may cold-load at a time
         self._model_locks: dict[str, threading.Lock] = {}
-        self._workers: dict[str, threading.Thread] = {}
+        self._workers: dict[str, list[threading.Thread]] = {}
         self._cancel: set[str] = set()
         self._model_loading: dict[str, str] = {}  # slug -> phase note
         self._stop = threading.Event()
@@ -307,13 +308,21 @@ class Core:
         threading.Thread(target=self._reaper, daemon=True).start()
 
     def _dispatcher(self) -> None:
+        """Keep up to `concurrency` workers per model while it has queued tasks.
+
+        vLLM batches the concurrent requests server-side (continuous batching), so
+        N workers -> N in-flight inferences on one engine.
+        """
         while not self._stop.wait(0.5):
             for slug in self.store.models_with_queued():
-                w = self._workers.get(slug)
-                if w is None or not w.is_alive():
-                    t = threading.Thread(target=self._worker, args=(slug,), daemon=True)
-                    self._workers[slug] = t
-                    t.start()
+                entry = registry.get(slug) or {}
+                want = max(1, int(entry.get("concurrency", 1)))
+                pool = [w for w in self._workers.get(slug, []) if w.is_alive()]
+                while len(pool) < min(want, self.store.open_count(slug)):
+                    w = threading.Thread(target=self._worker, args=(slug,), daemon=True)
+                    pool.append(w)
+                    w.start()
+                self._workers[slug] = pool
 
     def _worker(self, slug: str) -> None:
         """FIFO, one inference at a time per model. Exits when its queue drains."""
@@ -455,51 +464,62 @@ class Core:
             raise RuntimeError(f"watch: {n} chunks > 64 - raise chunk_seconds or lower fps")
 
         port, hf_id = entry["port"], entry["hf_id"]
-        chunks = []
-        for i in range(n):
-            if self._canceled(tid):
-                return
+        concurrency = max(1, int(entry.get("concurrency", 1)))
+
+        def _do_chunk(i: int) -> dict | None:
             start = i * chunk_seconds
             d_s = min(chunk_seconds, dur - start)
             if d_s <= 0.05:
-                break
+                return None
             rng = f"{start:.1f}s-{min(start + d_s, dur):.1f}s"
-            self.store.update(tid, status="running")
-            self._progress(tid, "running", f"watching chunk {i + 1}/{n} ({rng})",
-                           chunk={"i": i + 1, "n": n, "t_start": round(start, 1),
-                                  "t_end": round(start + d_s, 1)})
-            seg = media.reencode_segment(path, start, d_s, fps, scale, work_dir)
+            seg = media.reencode_segment(path, start, d_s, fps, scale, work_dir,
+                                         tag=f"seg{i}")
             try:
-                if native:
-                    parts_media = [str(seg)]
-                    nat = True
-                else:
-                    parts_media = [str(seg)]
-                    nat = False
                 if expectation is not None:
                     text = vlm.with_context(
                         f"Expectation to verify: {expectation} "
                         f"(This clip covers {rng} of a longer video; judge only this span.)", context)
-                    content = media.build_content(parts_media, text, frames=server_frames,
-                                                  fps=None, native=nat,
+                    content = media.build_content([str(seg)], text, frames=server_frames,
+                                                  fps=None, native=native,
                                                   max_images=entry["max_images"],
                                                   work_dir=work_dir / f"c{i}")
                     r = vlm.run_assert(port, hf_id, content, max_tokens=max_tokens, timeout=timeout)
-                    chunks.append({"range": rng, **r})
-                else:
-                    text = vlm.with_context(
-                        f"This clip covers {rng} of a longer video (the clip's 0:00 is "
-                        f"{start:.1f}s absolute). {question} Report every time as an ABSOLUTE "
-                        f"position in the full video by adding {start:.1f}s to clip-local times.",
-                        context)
-                    content = media.build_content(parts_media, text, frames=server_frames,
-                                                  fps=None, native=nat,
-                                                  max_images=entry["max_images"],
-                                                  work_dir=work_dir / f"c{i}")
-                    a = vlm.run_look(port, hf_id, content, max_tokens=max_tokens, timeout=timeout)
-                    chunks.append({"range": rng, "answer": a})
+                    return {"range": rng, **r}
+                text = vlm.with_context(
+                    f"This clip covers {rng} of a longer video (the clip's 0:00 is "
+                    f"{start:.1f}s absolute). {question} Report every time as an ABSOLUTE "
+                    f"position in the full video by adding {start:.1f}s to clip-local times.",
+                    context)
+                content = media.build_content([str(seg)], text, frames=server_frames,
+                                              fps=None, native=native,
+                                              max_images=entry["max_images"],
+                                              work_dir=work_dir / f"c{i}")
+                a = vlm.run_look(port, hf_id, content, max_tokens=max_tokens, timeout=timeout)
+                return {"range": rng, "answer": a}
             finally:
                 seg.unlink(missing_ok=True)
+
+        # map: chunks run concurrently up to the model's concurrency (vLLM batches them);
+        # results keep chunk order
+        self.store.update(tid, status="running")
+        self._progress(tid, "running", f"watching {n} chunks (concurrency {concurrency})",
+                       chunk={"i": 0, "n": n, "t_start": 0.0, "t_end": 0.0})
+        chunks: list = []
+        done_count = 0
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_do_chunk, i): i for i in range(n)}
+            results: dict[int, dict | None] = {}
+            for fut in as_completed(futures):
+                if self._canceled(tid):
+                    for f in futures:
+                        f.cancel()
+                    return
+                results[futures[fut]] = fut.result()
+                done_count += 1
+                self._progress(tid, "running",
+                               f"watched chunk {done_count}/{n}",
+                               chunk={"i": done_count, "n": n, "t_start": 0.0, "t_end": 0.0})
+        chunks = [results[i] for i in sorted(results) if results[i] is not None]
 
         out = {"mode": "assert" if expectation is not None else "question", "fps": fps,
                "chunk_seconds": round(chunk_seconds, 2), "native": native,

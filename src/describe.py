@@ -58,6 +58,7 @@ def _model_lines(core) -> list[dict]:
                 "max_images": entry.get("max_images"),
                 "video_frames": entry.get("video_frames"),
                 "gpu_frac": entry.get("gpu_frac"),
+                "concurrency": entry.get("concurrency", 1),
                 "idle_timeout": entry.get("idle_timeout"),
             },
             "strengths": cat.get("strengths", ""), "weaknesses": cat.get("weaknesses", ""),
@@ -79,7 +80,8 @@ def _render_models(core) -> str:
             + (f"; license: {m['license']}" if m["license"] else ""),
             (lambda s: f"- Serving: context {s['max_model_len']} tokens; per request up to "
                        f"{s['max_images']} images / 1 video sampled to {s['video_frames']} frames; "
-                       f"gpu_frac {s['gpu_frac']}; idle unload after {s['idle_timeout']} s")(m["serving"]),
+                       f"{s['concurrency']} concurrent inferences; gpu_frac {s['gpu_frac']}; "
+                       f"idle unload after {s['idle_timeout']} s")(m["serving"]),
         ]
         if m["strengths"]:
             lines.append(f"- **Strengths:** {m['strengths']}")
