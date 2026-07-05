@@ -81,5 +81,7 @@ There is **no hard maximum video length** - only temporal resolution:
 
 - Prefer `assert` over `look` when you need a machine-checkable verdict.
 - Pass `context` for domain knowledge the model can't see ("the left panel is the scene tree").
-- One inference runs at a time per model; tasks queue FIFO. Idle models are auto-stopped after
-  their idle timeout and transparently restarted on the next task (expect `model_loading`).
+- Up to a model's `concurrent inferences` setting (see its Serving line) run in parallel;
+  further tasks queue FIFO. `watch` chunks use the same parallelism internally. Idle models are
+  auto-stopped after their idle timeout and transparently restarted on the next task (expect
+  `model_loading`).

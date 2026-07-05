@@ -127,7 +127,11 @@ fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified
 whole catalog at 128k; a **96 GB** discrete card serves everything at 128k except the dense 32B
 (64k - its 128k KV cache alone is ~34 GiB); a **48 GB** card fits the 7-17 GiB models at 128k
 and Cosmos3-Nano at 32k, while the two big Qwens (~62 GiB weights) do not fit at all (install
-warns). Media budgets are 16 images / 64 video frames per request. Context length is the
+warns). Media budgets are 16 images / 64 video frames per request. Execution mode is also per-GPU:
+unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
+discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
+in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`
+chunks are processed in parallel. Context length is the
 expensive knob - vLLM reserves KV-cache memory for the full `max_model_len` inside the model's
 `gpu_frac` slice, so raising it costs GPU memory even for short requests; override with
 `--max-model-len` / `--gpu-frac` at install.
@@ -167,7 +171,7 @@ Things to know when going off-catalog:
 Several models can be installed at once, but with the single-model defaults only one fits the
 GPU at a time - to co-locate models, lower `gpu_frac` and `max_model_len` per model so the
 slices sum under 1.0 (weights + KV must fit each slice; e.g. an 8B at 0.25/32k next to the MoE
-at 0.55/32k). Each model runs one inference at a time; tasks queue FIFO per model.
+at 0.55/32k). Tasks queue FIFO per model, with up to `concurrency` running at once.
 
 A model idle longer than its `idle_timeout` (default 900 s, `0` disables) is stopped
 automatically to free the GPU. The next query targeting it starts it again; the task reports
