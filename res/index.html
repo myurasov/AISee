@@ -47,11 +47,11 @@
 <h1>AISee <span id="ver" class="muted" style="font-size:.85rem"></span> <small>gives AI agents eyes</small></h1>
 
 <nav>
+  <button data-tab="server">Server</button>
   <button data-tab="query">Query</button>
   <button data-tab="tasks">Tasks</button>
   <button data-tab="stat">Status</button>
   <button data-tab="gpu">GPU</button>
-  <button data-tab="server">Server</button>
 </nav>
 <div id="frame">
 
@@ -154,10 +154,12 @@ async function refreshGpu() {
       return "<tr><td>" + x.name + "</td>" +
         "<td>" + bar(x.utilization_pct, (x.utilization_pct === null ? "-" : x.utilization_pct + "%")) + "</td>" +
         "<td>" + (x.memory_total_mib
-            ? bar(memPct, Math.round(x.memory_used_mib / 1024) + " / " + Math.round(x.memory_total_mib / 1024) + " GiB")
+            ? bar(memPct, Math.round(x.memory_used_mib / 1024) + " / " + Math.round(x.memory_total_mib / 1024) + " GiB" +
+                  (x.memory_source === "system-unified" ? " (unified)" : ""))
             : (x.memory_used_mib !== null ? Math.round(x.memory_used_mib / 1024) + " GiB used" : "-")) + "</td>" +
         "<td>" + (x.power_draw_w !== null
-            ? bar(powPct, Math.round(x.power_draw_w) + (x.power_limit_w ? " / " + Math.round(x.power_limit_w) : "") + " W")
+            ? (x.power_limit_w ? bar(powPct, Math.round(x.power_draw_w) + " / " + Math.round(x.power_limit_w) + " W")
+                               : Math.round(x.power_draw_w) + " W")
             : "-") + "</td>" +
         "<td>" + (x.temperature_c !== null ? x.temperature_c + " C" : "-") + "</td>" +
         "<td>" + (x.clock_sm_mhz !== null ? x.clock_sm_mhz + (x.clock_sm_max_mhz ? " / " + x.clock_sm_max_mhz : "") + " MHz" : "-") + "</td></tr>";
@@ -356,7 +358,7 @@ $("go").addEventListener("click", async () => {
   $("go").disabled = false;
 });
 
-showTab(localStorage.getItem("aisee.tab") || "query");
+showTab(localStorage.getItem("aisee.tab") || "server");
 connect();
 </script>
 </body>

@@ -78,14 +78,27 @@ def create_app() -> FastAPI:
                     return float(s)
                 except ValueError:
                     return None  # "[N/A]" (e.g. memory.total on GB10)
-            gpus.append({
+            g = {
                 "index": int(parts[0]), "name": parts[1],
                 "utilization_pct": num(parts[2]),
                 "memory_used_mib": num(parts[3]), "memory_total_mib": num(parts[4]),
                 "power_draw_w": num(parts[5]), "power_limit_w": num(parts[6]),
                 "temperature_c": num(parts[7]),
                 "clock_sm_mhz": num(parts[8]), "clock_sm_max_mhz": num(parts[9]),
-            })
+                "memory_source": "gpu",
+            }
+            if g["memory_total_mib"] is None:
+                # unified memory (GB10 class): nvidia-smi reports [N/A]; the GPU pool IS
+                # system RAM, so report it from /proc/meminfo instead
+                try:
+                    mi = {line.split(":")[0]: float(line.split()[1])
+                          for line in open("/proc/meminfo") if ":" in line}
+                    g["memory_total_mib"] = round(mi["MemTotal"] / 1024, 1)
+                    g["memory_used_mib"] = round((mi["MemTotal"] - mi["MemAvailable"]) / 1024, 1)
+                    g["memory_source"] = "system-unified"
+                except (OSError, KeyError, ValueError, IndexError):
+                    pass
+            gpus.append(g)
         return {"gpus": gpus}
 
     @app.get("/v1/models")
