@@ -213,9 +213,9 @@ async function connect() {
       "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
       "<td>" + (m.idle_timeout || "-") + " s</td>" +
       "<td>" + (m.last_used ? new Date(m.last_used * 1000).toLocaleString() : "never") + "</td>" +
-      '<td><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
+      '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
       '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
-      '<button data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
+      '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
     $("modelsBox").innerHTML = models.length
       ? "<table><tr><th>model</th><th>state</th><th>video</th><th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
       : '<div class="muted">no models installed</div>';
@@ -265,7 +265,7 @@ async function loadCatalog(models) {
 
 async function modelAction(act, slug) {
   if (act === "remove" &&
-      !confirm("Uninstall " + slug + "? Weights stay in the shared cache.")) return;
+      !confirm("Uninstall model " + slug + "?\n\nThis stops it and removes it from this server. Downloaded weights stay in the shared cache, so reinstalling is fast.")) return;
   $("modelsMsg").textContent = act + " " + slug + "...";
   try {
     if (act === "start") await api("/v1/models/" + slug + "/start", { method: "POST" });
