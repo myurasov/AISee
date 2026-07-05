@@ -1,0 +1,193 @@
+<!doctype html>
+<!-- Copyright (c) 2026 Mikhail Yurasov <me@yurasov.me> | SPDX-License-Identifier: Apache-2.0 -->
+<!-- AISee mini console: single file, no frameworks, works served at / or opened from disk. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AISee</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.3rem; } h1 small { color: #888; font-weight: normal; font-size: .8rem; }
+  fieldset { border: 1px solid #ddd; margin: 0 0 1rem; padding: .7rem 1rem; }
+  legend { color: #666; font-size: .8rem; padding: 0 .4rem; }
+  label { display: block; margin: .45rem 0 .1rem; color: #444; font-size: .85rem; }
+  input[type=text], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid #ccc; font: inherit; }
+  textarea { min-height: 3.2em; resize: vertical; }
+  .row { display: flex; gap: .8rem; } .row > div { flex: 1; }
+  button { padding: .45rem 1.1rem; font: inherit; cursor: pointer; border: 1px solid #888; background: #f5f5f5; }
+  button:hover { background: #eee; } button:disabled { opacity: .5; cursor: default; }
+  #status { color: #666; margin: .6rem 0; min-height: 1.3em; white-space: pre-wrap; }
+  #result { background: #f7f7f7; border: 1px solid #e0e0e0; padding: .8rem; white-space: pre-wrap; word-break: break-word; display: none; }
+  #result.pass { border-left: 4px solid #4a4; } #result.fail { border-left: 4px solid #c33; }
+  .muted { color: #999; font-size: .8rem; }
+  a { color: #369; }
+</style>
+</head>
+<body>
+<h1>AISee <small>gives AI agents eyes</small></h1>
+
+<fieldset>
+  <legend>server</legend>
+  <div class="row">
+    <div><label for="server">API base URL</label><input type="text" id="server"></div>
+    <div><label for="token">API token (if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
+  </div>
+  <div id="health" class="muted" style="margin-top:.5rem">not connected</div>
+</fieldset>
+
+<fieldset>
+  <legend>query</legend>
+  <div class="row">
+    <div>
+      <label for="kind">kind</label>
+      <select id="kind">
+        <option value="look">look - free-form question</option>
+        <option value="assert">assert - pass/fail expectation</option>
+        <option value="watch">watch - whole video, chunked</option>
+      </select>
+    </div>
+    <div><label for="model">model</label><select id="model"><option value="">(default)</option></select></div>
+  </div>
+  <label for="files">media (images, or a video)</label>
+  <input type="file" id="files" multiple accept="image/*,video/*">
+  <label for="prompt" id="promptLabel">question</label>
+  <textarea id="prompt" placeholder="What is shown on the screen?"></textarea>
+  <label for="context">context <span class="muted">(optional background the model should assume)</span></label>
+  <textarea id="context" style="min-height:2.2em"></textarea>
+  <div class="row">
+    <div><label for="fps">fps</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
+    <div><label for="frames">frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
+    <div><label for="chunk">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
+    <div><label for="native" style="margin-bottom:.35rem">native video</label><input type="checkbox" id="native"></div>
+  </div>
+  <p><button id="go">Run</button> <button id="cancel" disabled>Cancel</button></p>
+</fieldset>
+
+<div id="status"></div>
+<pre id="result"></pre>
+<p class="muted">Single-file console for the <a href="https://github.com/myurasov/AISee">AISee</a> REST API.
+When opened from disk, point the base URL at your server (CORS is enabled).
+Agent-oriented API docs: <span id="descLink">/v1/describe</span>.</p>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let pollTimer = null, currentTask = null;
+
+// default server: our origin when served over http(s), localhost when opened as a file
+$("server").value = localStorage.getItem("aisee.server") ||
+  (location.protocol.startsWith("http") ? location.origin : "http://localhost:8484");
+$("token").value = localStorage.getItem("aisee.token") || "";
+
+const base = () => $("server").value.trim().replace(/\/+$/, "");
+const headers = () => $("token").value.trim() ? { "Authorization": "Bearer " + $("token").value.trim() } : {};
+
+async function api(path, opts = {}) {
+  const r = await fetch(base() + path, Object.assign({ headers: headers() }, opts));
+  if (!r.ok) throw new Error("HTTP " + r.status + ": " + (await r.text()).slice(0, 300));
+  return r.json();
+}
+
+async function connect() {
+  localStorage.setItem("aisee.server", $("server").value.trim());
+  localStorage.setItem("aisee.token", $("token").value.trim());
+  $("descLink").innerHTML = '<a href="' + base() + '/v1/describe">' + base() + "/v1/describe</a>";
+  try {
+    const h = await api("/v1/health");
+    const models = await api("/v1/models");
+    $("health").textContent = "connected: AISee v" + h.version + " - " +
+      models.map(m => m.slug + " (" + m.state + ")").join(", ");
+    const sel = $("model");
+    sel.innerHTML = '<option value="">(default)</option>';
+    for (const m of models) {
+      const o = document.createElement("option");
+      o.value = m.slug;
+      o.textContent = m.slug + (m.default ? " *" : "") + " - " + m.state;
+      sel.appendChild(o);
+    }
+  } catch (e) { $("health").textContent = "cannot connect: " + e.message; }
+}
+$("server").addEventListener("change", connect);
+$("token").addEventListener("change", connect);
+
+$("kind").addEventListener("change", () => {
+  $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
+});
+
+function setStatus(t) { $("status").textContent = t; }
+
+function showResult(res, kind) {
+  const el = $("result");
+  el.style.display = "block";
+  el.className = "";
+  if (kind === "look" && res && typeof res.answer === "string") el.textContent = res.answer;
+  else {
+    el.textContent = JSON.stringify(res, null, 2);
+    if (res && typeof res.pass === "boolean") el.className = res.pass ? "pass" : "fail";
+  }
+}
+
+async function poll(id, kind) {
+  try {
+    const t = await api("/v1/tasks/" + id);
+    const p = t.progress || {};
+    let line = "[" + t.status + "] " + (p.detail || p.step || "");
+    if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
+    setStatus("task " + id + "\n" + line);
+    if (["done", "failed", "canceled"].includes(t.status)) {
+      clearInterval(pollTimer); pollTimer = null; currentTask = null;
+      $("go").disabled = false; $("cancel").disabled = true;
+      const tm = t.timings || {};
+      if (t.status === "done") {
+        showResult(t.result, kind);
+        setStatus("done" + (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
+                  (tm.model_load_s ? ", model load " + tm.model_load_s + "s" : ""));
+      } else if (t.status === "failed") {
+        setStatus("FAILED: " + ((t.error || {}).message || "unknown").slice(0, 500));
+      } else setStatus("canceled");
+    }
+  } catch (e) { setStatus("poll error: " + e.message); }
+}
+
+$("go").addEventListener("click", async () => {
+  const kind = $("kind").value;
+  const files = $("files").files;
+  if (!files.length) return setStatus("pick at least one media file");
+  if (!$("prompt").value.trim()) return setStatus("enter a " + ($("promptLabel").textContent));
+  const params = { kind };
+  // watch accepts question or expectation; this console submits the prompt as a question
+  params[kind === "assert" ? "expectation" : "question"] = $("prompt").value.trim();
+  if ($("model").value) params.model = $("model").value;
+  if ($("context").value.trim()) params.context = $("context").value.trim();
+  if ($("fps").value) params.fps = parseFloat($("fps").value);
+  if ($("frames").value) params.frames = parseInt($("frames").value, 10);
+  if ($("chunk").value) params.chunk_seconds = parseFloat($("chunk").value);
+  if ($("native").checked) params.native = true;
+
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  fd.append("params", JSON.stringify(params));
+
+  $("go").disabled = true; $("result").style.display = "none";
+  setStatus("uploading...");
+  try {
+    const r = await fetch(base() + "/v1/tasks", { method: "POST", headers: headers(), body: fd });
+    if (!r.ok) throw new Error("HTTP " + r.status + ": " + (await r.text()).slice(0, 300));
+    const { id } = await r.json();
+    currentTask = id;
+    $("cancel").disabled = false;
+    setStatus("task " + id + "\n[queued]");
+    pollTimer = setInterval(() => poll(id, kind), 2000);
+  } catch (e) { setStatus("submit error: " + e.message); $("go").disabled = false; }
+});
+
+$("cancel").addEventListener("click", async () => {
+  if (!currentTask) return;
+  try { await api("/v1/tasks/" + currentTask, { method: "DELETE" }); } catch (e) { /* ignore */ }
+});
+
+connect();
+</script>
+</body>
+</html>

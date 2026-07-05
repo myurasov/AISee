@@ -5,15 +5,17 @@
 
 import json
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.datastructures import UploadFile
 
 from . import __version__, config, creds, describe, media, paths, registry
 from .tasks import Core
 
-OPEN_PATHS = {"/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
+OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
 
 
 def create_app() -> FastAPI:
@@ -22,6 +24,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="AISee", version=__version__,
                   description="AISee is a tool that gives AI agents eyes.")
     app.state.core = core
+    # the mini console is a static file that also works opened from disk; CORS lets it
+    # (and any browser client) call the API cross-origin - auth still applies
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+                       allow_headers=["*"])
 
     @app.middleware("http")
     async def auth(request: Request, call_next):
@@ -31,6 +37,13 @@ def create_app() -> FastAPI:
             if got != f"Bearer {token}":
                 return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)
+
+    @app.get("/", include_in_schema=False)
+    def console():
+        page = Path(__file__).resolve().parent.parent / "res" / "index.html"
+        if page.exists():
+            return HTMLResponse(page.read_text())
+        return HTMLResponse("<h1>AISee</h1><p>console file missing; see /v1/describe</p>")
 
     @app.get("/v1/health")
     def health():
