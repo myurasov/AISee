@@ -40,7 +40,7 @@
   .d-result.pass { border-left: 4px solid #4a4; } .d-result.fail { border-left: 4px solid #c33; }
   .bar { background: #eee; border: 1px solid #ddd; height: .9rem; position: relative; min-width: 90px; }
   .bar > div { background: #76b900; height: 100%; }
-  .bar span { position: absolute; inset: 0; font-size: .7rem; text-align: center; line-height: .9rem; color: #333; }
+  .bar span { position: absolute; inset: 0; font-size: .7rem; text-align: center; line-height: .9rem; color: #333; white-space: nowrap; overflow: hidden; }
 </style>
 </head>
 <body>
@@ -153,9 +153,10 @@ async function refreshGpu() {
       const powPct = x.power_limit_w ? 100 * x.power_draw_w / x.power_limit_w : null;
       return "<tr><td>" + x.name + "</td>" +
         "<td>" + bar(x.utilization_pct, (x.utilization_pct === null ? "-" : x.utilization_pct + "%")) + "</td>" +
-        "<td>" + (x.memory_total_mib
+        "<td" + (x.memory_source === "system-unified" ? ' title="system unified memory (from /proc/meminfo)"' : "") + ">" +
+        (x.memory_total_mib
             ? bar(memPct, Math.round(x.memory_used_mib / 1024) + " / " + Math.round(x.memory_total_mib / 1024) + " GiB" +
-                  (x.memory_source === "system-unified" ? " (unified)" : ""))
+                  (x.memory_source === "system-unified" ? "*" : ""))
             : (x.memory_used_mib !== null ? Math.round(x.memory_used_mib / 1024) + " GiB used" : "-")) + "</td>" +
         "<td>" + (x.power_draw_w !== null
             ? (x.power_limit_w ? bar(powPct, Math.round(x.power_draw_w) + " / " + Math.round(x.power_limit_w) + " W")
@@ -166,7 +167,7 @@ async function refreshGpu() {
     }).join("");
     $("gpuBox").innerHTML =
       "<table><tr><th>gpu</th><th>utilization</th><th>memory</th><th>power</th><th>temp</th><th>sm clock</th></tr>" +
-      rows + "</table><div class='muted' style='margin-top:.3rem'>refreshes every 2 s while this tab is open</div>";
+      rows + "</table><div class='muted' style='margin-top:.3rem'>refreshes every 2 s while this tab is open" + (g.gpus.some(x => x.memory_source === 'system-unified') ? "; * unified memory (system RAM)" : "") + "</div>";
   } catch (e) { $("gpuBox").textContent = "gpu stats: " + e.message; }
 }
 
