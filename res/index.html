@@ -67,19 +67,25 @@
         <option value="watch">watch - whole video, chunked</option>
       </select>
     </div>
-    <div><label for="model">model</label><select id="model"><option value="">(default)</option></select></div>
+    <div><label for="model" title="which installed model answers; the default is the safe all-rounder">model</label><select id="model"><option value="">(default)</option></select></div>
   </div>
-  <label for="files">media (images, or a video)</label>
+  <div id="kindHint" class="muted" style="margin-top:.25rem"></div>
+  <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images, or a video)</label>
   <input type="file" id="files" multiple accept="image/*,video/*">
   <label for="prompt" id="promptLabel">question</label>
   <textarea id="prompt" placeholder="What is shown on the screen?"></textarea>
-  <label for="context">context <span class="muted">(optional background the model should assume)</span></label>
+  <label for="context" title="passed to the model alongside the media, e.g. 'the left panel is the scene tree'">context <span class="muted">(optional background the model cannot see in the pixels)</span></label>
   <textarea id="context" style="min-height:2.2em"></textarea>
   <div class="row">
-    <div><label for="fps">fps</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
-    <div><label for="frames">frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
-    <div><label for="chunk">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
-    <div><label for="native" style="margin-bottom:.35rem">native video</label><input type="checkbox" id="native"></div>
+    <div><label for="fps" title="video sampling rate in frames per second: 1 is enough for 'what happens', 8-15 hunts flicker/glitches">fps</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
+    <div><label for="frames" title="alternative to fps: this many frames spread evenly over the whole clip">frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
+    <div><label for="chunk" title="watch only: seconds of video per chunk (default sized so each chunk gets the full frame budget)">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
+    <div><label for="native" style="margin-bottom:.35rem" title="send the video itself instead of sampled frames: the model sees motion/timing (better temporal reasoning, more frames for the same cost); video-capable models only - stills-only models read it as one frame">native video</label><input type="checkbox" id="native"></div>
+  </div>
+  <div class="muted" style="margin-top:.35rem">
+    <b>fps</b>/<b>frames</b>: how densely a video is sampled into images (leave empty for auto).
+    <b>native video</b>: send the video itself - the model sees motion and timing (video-capable models only).
+    <b>chunk s</b>: watch chunk length. Hover any label for details.
   </div>
   <p style="margin-bottom:0"><button id="go">Run</button></p>
   <div id="status"></div>
@@ -416,9 +422,21 @@ async function refreshTasks(reattach = false) {
 
 // ---------------- submitting queries ----------------
 
-$("kind").addEventListener("change", () => {
+const KIND_HINTS = {
+  look: "free-form question about the media; returns text. OCR, descriptions, \"where is X\".",
+  assert: "verifies an expectation; returns pass/fail with the model's reason and evidence. " +
+          "Use when you will act on the verdict.",
+  watch: "analyzes a whole video chunk by chunk (use for clips longer than ~1 min). A question " +
+         "returns per-chunk findings + a synthesized answer; an expectation returns pass/fail " +
+         "plus the time ranges where it broke."
+};
+
+function kindChanged() {
   $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
-});
+  $("kindHint").textContent = KIND_HINTS[$("kind").value];
+}
+$("kind").addEventListener("change", kindChanged);
+kindChanged();
 
 // SHA-256 for upload dedup. crypto.subtle needs a secure context (https/localhost), so a
 // plain-http LAN console falls back to a small pure-JS implementation (capped by size).
