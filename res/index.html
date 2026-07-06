@@ -386,7 +386,7 @@ async function refreshTasks(reattach = false) {
       '<tr data-id="' + t.id + '">' +
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
       '<td class="st st-' + t.status + '">' + t.status + "</td>" +
-      "<td>" + new Date(t.created * 1000).toLocaleTimeString() + "</td></tr>").join("");
+      "<td>" + new Date(t.created * 1000).toLocaleString() + "</td></tr>").join("");
     $("tasksBox").innerHTML =
       "<table><tr><th>id</th><th>kind</th><th>model</th><th>status</th><th>created</th></tr>" +
       rows + "</table>";
