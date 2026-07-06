@@ -120,7 +120,7 @@ slug applies the serving flags each one needs:
 | `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
 | `holo1-5-7b` | 128k | UI element grounding; stills only |
 | `cosmos-reason2-8b` | 128k | temporal / physical video reasoning |
-| `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; aarch64 omni image |
+| `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
 | `ui-tars-1-5-7b` | 128k | GUI-agent model (action generation later); stills only |
 
 Serving defaults assume the **main mode of operation: a single resident model per GPU**, and

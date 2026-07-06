@@ -104,8 +104,10 @@ CATALOG: dict[str, dict] = {
     },
     "cosmos3-nano": {
         "hf_id": "nvidia/Cosmos3-Nano",
-        "image": "vllm/vllm-omni:cosmos3-aarch64",
-        
+        # multi-arch manifest (arm64 + amd64); the -aarch64 tag broke x86 hosts with
+        # "exec format error"
+        "image": "vllm/vllm-omni:cosmos3",
+
         "weights_gib": 32, "kv_gib_128k": 26,
         "extra_args": ["--hf-overrides", '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code"],
@@ -115,7 +117,7 @@ CATALOG: dict[str, dict] = {
         "license": "NVIDIA Open Model",
         "strengths": "Strong temporal/physical video reasoning; correct OCR; handles native video.",
         "weaknesses": "Slow to come up; one-time ~59 s first-call warmup after load.",
-        "pitfalls": "Serves only on the vllm-omni image (aarch64) with architecture override "
+        "pitfalls": "Serves only on the vllm-omni image (multi-arch) with architecture override "
                     "Cosmos3ForConditionalGeneration; ~9-minute quiet init before weight shards "
                     "load - it is not hung.",
     },
