@@ -131,8 +131,8 @@ class Client:
     def health(self) -> dict:
         return self._req("GET", "/v1/health").json()
 
-    def describe(self, fmt: str = "markdown") -> str:
-        r = self._req("GET", f"/v1/describe?format={fmt}")
+    def describe(self, fmt: str = "markdown", flavor: str = "api") -> str:
+        r = self._req("GET", f"/v1/describe?format={fmt}&flavor={flavor}")
         return r.text
 
     def models(self) -> list[dict]:

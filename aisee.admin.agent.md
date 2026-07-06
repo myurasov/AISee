@@ -73,7 +73,8 @@ Tokens set with `creds set` apply immediately (the store is read per request); t
 env vars of the daemon need a restart.
 
 The CLI picks tokens up automatically (admin preferred when present; `--token` overrides).
-The MCP server (`aisee mcp`) uses only the consumer token by design and cannot manage models.
+The MCP endpoint (`/mcp` on the API server, streamable HTTP) is guarded by the consumer
+token and carries consumer capabilities only - it cannot manage models by design.
 
 ## Running the API server
 
@@ -125,6 +126,7 @@ strengths/weaknesses/pitfalls and the current serving configuration.
 
 ## What to hand a consumer
 
-1. Server URL: `http://HOST:PORT` (check with `./aisee status`).
+1. Server URL: `http://HOST:PORT` (check with `./aisee status`); MCP clients use
+   `http://HOST:PORT/mcp`.
 2. The consumer token, if auth is on - never the admin token.
 3. Pointer to `aisee.consumer.agent.md` (this repo) and `GET /v1/describe` for usage.

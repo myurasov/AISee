@@ -331,12 +331,6 @@ def cmd_describe(args) -> int:
     return 0
 
 
-def cmd_mcp(args) -> int:
-    from . import mcp_server
-    mcp_server.main(server=args.server)
-    return 0
-
-
 # ---------------- parser ----------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -471,10 +465,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     add_server(p)
     p.set_defaults(fn=cmd_describe)
-
-    p = sub.add_parser("mcp", help="run the MCP server on stdio (consumer capabilities only)")
-    p.add_argument("--server", help="API base URL (default: local; or AISEE_SERVER env)")
-    p.set_defaults(fn=cmd_mcp)
 
     return ap
 

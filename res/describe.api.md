@@ -35,9 +35,11 @@ Auth is optional and off unless the host sets tokens. Send `Authorization: Beare
 If you were given one token, it is almost certainly the consumer token: you can query and
 inspect, but not install/start/stop models - ask the host operator for those.
 
-This API is also exposed as an MCP server (`aisee mcp`, stdio) with consumer capabilities
-only: tools `look`, `assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`,
-`cancel_task`, `describe`, `health`.
+This API is also exposed as an MCP server (streamable HTTP) at `/mcp` on the same
+host/port, guarded by the consumer token, with consumer capabilities only: tools `look`,
+`assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
+`describe`, `health`. MCP tool media paths are resolved on this host (no upload);
+`GET /v1/describe?flavor=mcp` returns the MCP-specific guide.
 
 ## Task lifecycle (how to use this API)
 

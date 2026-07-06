@@ -3,7 +3,8 @@
 
 """GET /v1/describe - the API explains itself to an AI agent that has never seen it.
 
-The markdown body is authored in res/describe.md (repo root); this module fills in the
+The markdown bodies are authored in res/describe.api.md (REST consumers) and
+res/describe.mcp.md (MCP clients; tools only, no REST surface); this module fills in the
 dynamic parts: {{version}} and {{models}} (installed models merged with catalog
 strengths/weaknesses/pitfalls and live state).
 """
@@ -12,11 +13,10 @@ from pathlib import Path
 
 from . import __version__, catalog, registry
 
-# res/describe.md lives next to the package dir (repo layout: src/ + res/); AISee is
-# deployed from a source checkout, so this resolves both in dev and on hosts
-_TEMPLATE_PATHS = [
-    Path(__file__).resolve().parent.parent / "res" / "describe.md",
-]
+# res/ lives next to the package dir (repo layout: src/ + res/); AISee is deployed from a
+# source checkout, so this resolves both in dev and on hosts
+_RES = Path(__file__).resolve().parent.parent / "res"
+_TEMPLATES = {"api": _RES / "describe.api.md", "mcp": _RES / "describe.mcp.md"}
 
 _FALLBACK = (
     "# AISee v{{version}}\n\nAISee is a tool that gives AI agents eyes. "
@@ -43,10 +43,10 @@ _ENDPOINTS = [
 ]
 
 
-def _template() -> str:
-    for p in _TEMPLATE_PATHS:
-        if p.exists():
-            return p.read_text()
+def _template(flavor: str) -> str:
+    p = _TEMPLATES.get(flavor, _TEMPLATES["api"])
+    if p.exists():
+        return p.read_text()
     return _FALLBACK
 
 
@@ -99,8 +99,8 @@ def _render_models(core) -> str:
     return "\n".join(lines).rstrip()
 
 
-def as_markdown(core) -> str:
-    return (_template()
+def as_markdown(core, flavor: str = "api") -> str:
+    return (_template(flavor)
             .replace("{{version}}", __version__)
             .replace("{{models}}", _render_models(core)))
 

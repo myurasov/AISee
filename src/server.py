@@ -1,10 +1,12 @@
 # Copyright (c) 2026 Mikhail Yurasov <me@yurasov.me>
 # SPDX-License-Identifier: Apache-2.0
 
-"""The AISee REST API server (FastAPI). Owns the core; the CLI is just one of its clients."""
+"""The AISee REST API server (FastAPI). Owns the core; the CLI is just one of its clients.
+Also serves the MCP server at /mcp (streamable HTTP) as a thin adapter over the same API."""
 
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -12,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.datastructures import UploadFile
 
-from . import __version__, catalog, config, creds, describe, media, paths, registry
+from . import __version__, catalog, config, creds, describe, media, mcp_server, paths, registry
 from .tasks import Core
 
 OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
@@ -58,8 +60,16 @@ def check_auth(method: str, path: str, bearer: str) -> tuple[int, str] | None:
 def create_app() -> FastAPI:
     core = Core()
     core.start_background()
+
+    @asynccontextmanager
+    async def lifespan(app):
+        # the mounted MCP transport needs its session manager running
+        async with mcp_server.mcp.session_manager.run():
+            yield
+
     app = FastAPI(title="AISee", version=__version__,
-                  description="AISee is a tool that gives AI agents eyes.")
+                  description="AISee is a tool that gives AI agents eyes.",
+                  lifespan=lifespan)
     app.state.core = core
     # the mini console is a static file that also works opened from disk; CORS lets it
     # (and any browser client) call the API cross-origin - auth still applies
@@ -88,10 +98,11 @@ def create_app() -> FastAPI:
         return {"ok": True, "version": __version__, "models": models}
 
     @app.get("/v1/describe")
-    def describe_api(format: str = "markdown"):
+    def describe_api(format: str = "markdown", flavor: str = "api"):
+        """flavor=api (REST guide, default) or flavor=mcp (MCP tool guide)."""
         if format == "json":
             return describe.as_json(core)
-        return Response(describe.as_markdown(core), media_type="text/markdown")
+        return Response(describe.as_markdown(core, flavor), media_type="text/markdown")
 
     @app.get("/v1/gpu")
     def gpu():
@@ -264,6 +275,11 @@ def create_app() -> FastAPI:
         if not core.cancel(tid):
             raise HTTPException(409, "task not found or already finished")
         return {"id": tid, "canceled": True}
+
+    # MCP over streamable HTTP at /mcp (the sub-app serves that path itself; a root mount
+    # avoids a 307 on /mcp). Mounted last so it never shadows the routes above; the
+    # consumer-token auth middleware applies to it like any other endpoint.
+    app.mount("/", mcp_server.http_app())
 
     return app
 

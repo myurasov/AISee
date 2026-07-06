@@ -47,18 +47,20 @@ Three equivalent ways in, all backed by the same REST API:
 1. **CLI** - `aisee <cmd>` from the source checkout (or `./aisee` at its root); works from any
    machine, media files are uploaded automatically.
 2. **REST** - plain HTTP; send `Authorization: Bearer <consumer token>` when auth is on.
-3. **MCP** - `aisee mcp` runs an MCP server on stdio that exposes exactly these consumer
-   capabilities as tools (`look`, `assert_visual`, `watch`, `list_models`, `list_tasks`,
-   `get_task`, `cancel_task`, `describe`, `health`). Register it in your harness, e.g.:
+3. **MCP** - the API server speaks MCP (streamable HTTP) at `http://HOST:PORT/mcp`; nothing
+   to install. It exposes exactly these consumer capabilities as tools (`look`,
+   `assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
+   `describe`, `health`). Register it in your harness, e.g.:
 
    ```json
-   {"mcpServers": {"aisee": {"command": "/path/to/aisee", "args": ["mcp", "--server", "http://HOST:PORT"],
-                             "env": {"AISEE_API_TOKEN": "<consumer token>"}}}}
+   {"mcpServers": {"aisee": {"type": "http", "url": "http://HOST:PORT/mcp",
+                             "headers": {"Authorization": "Bearer <consumer token>"}}}}
    ```
 
-   The MCP server never uses the admin token, so it cannot manage models by design. Query
-   tools block until the answer is ready; for long `watch` jobs pass `wait=false` and poll
-   `get_task`.
+   The MCP endpoint carries consumer capabilities only, so it cannot manage models by
+   design. Query tools block until the answer is ready; for long `watch` jobs pass
+   `wait=false` and poll `get_task`. **MCP media paths are resolved on the AISee host** -
+   files must already exist there (transfer them first, or use CLI/REST, which upload).
 
 ## Using the CLI
 

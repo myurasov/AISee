@@ -202,7 +202,7 @@ Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 
 | Method + path | Auth | Purpose |
 |---|---|---|
-| `GET /v1/describe` | open | self-description written for LLM consumers: endpoints with examples, task lifecycle, installed models with strengths/weaknesses/pitfalls. Markdown, `?format=json` for structured |
+| `GET /v1/describe` | open | self-description written for LLM consumers: endpoints with examples, task lifecycle, installed models with strengths/weaknesses/pitfalls. Markdown, `?format=json` for structured, `?flavor=mcp` for the MCP tool guide |
 | `GET /v1/health` | open | liveness + model states |
 | `GET /v1/gpu` | consumer | live GPU utilization/memory/power/temperature |
 | `GET /v1/models` | consumer | registry with state, port, idle_timeout, last_used, default |
@@ -252,12 +252,12 @@ credentials to go open again.
 
 ## MCP Server
 
-`./aisee mcp [--server http://HOST:PORT]` runs an MCP (Model Context Protocol) server on
-stdio, exposing AISee to agent harnesses (Claude Code, Cursor, etc.) as native tools:
-`look`, `assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
-`describe`, `health`. It is a thin adapter over the same REST API and intentionally carries
-**consumer capabilities only** - it authenticates with `AISEE_API_TOKEN` and never uses the
-admin token, so an agent connected over MCP cannot manage models.
+The API server also speaks MCP (Model Context Protocol, streamable HTTP) at
+`http://HOST:PORT/mcp` - nothing to install on the client, point an agent harness (Claude
+Code, Cursor, etc.) at the URL. It exposes AISee as native tools: `look`, `assert_visual`,
+`watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`, `describe`, `health`. It is
+a thin adapter over the same REST API and intentionally carries **consumer capabilities
+only** - model management is not reachable over MCP.
 
 Register it in an MCP client config:
 
@@ -265,17 +265,19 @@ Register it in an MCP client config:
 {
   "mcpServers": {
     "aisee": {
-      "command": "/path/to/aisee/aisee",
-      "args": ["mcp", "--server", "http://HOST:PORT"],
-      "env": { "AISEE_API_TOKEN": "<consumer token>" }
+      "type": "http",
+      "url": "http://HOST:PORT/mcp",
+      "headers": { "Authorization": "Bearer <consumer token>" }
     }
   }
 }
 ```
 
-Query tools block until the result is ready (a cold model can take minutes); `watch` accepts
-`wait=false` to return a task id for polling with `get_task`. Media paths are local to the
-machine running the MCP server and are uploaded to the API.
+The `headers` entry is only needed when auth is enabled; `/mcp` is guarded like any consumer
+endpoint. Query tools block until the result is ready (a cold model can take minutes);
+`watch` accepts `wait=false` to return a task id for polling with `get_task`. Media paths
+are resolved **on the AISee host** - the files must already exist there (transfer them
+first, or use the REST API, which uploads).
 
 ## Agent Files
 
