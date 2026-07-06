@@ -18,6 +18,43 @@ from .tasks import Core
 OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
 
 
+def is_admin_route(method: str, path: str) -> bool:
+    """Management/lifecycle actions: model install/uninstall/start/stop."""
+    if path == "/v1/models" and method == "POST":
+        return True
+    if path.startswith("/v1/models/") and method in ("POST", "DELETE"):
+        return True
+    return False
+
+
+def check_auth(method: str, path: str, bearer: str) -> tuple[int, str] | None:
+    """Two-tier auth. Returns None if allowed, else (status, detail).
+
+    - AISEE_API_TOKEN (consumer): guards query/read endpoints when set.
+    - AISEE_ADMIN_TOKEN (admin): guards management endpoints when set; also
+      accepted everywhere the consumer token is. With only the consumer token
+      set, it guards everything (single-token mode).
+    """
+    if path in OPEN_PATHS or method == "OPTIONS":
+        return None
+    store = creds.load_store()
+    consumer = os.environ.get("AISEE_API_TOKEN") or store.get("AISEE_API_TOKEN")
+    admin = os.environ.get("AISEE_ADMIN_TOKEN") or store.get("AISEE_ADMIN_TOKEN")
+    if is_admin_route(method, path):
+        if admin:
+            if bearer == admin:
+                return None
+            if consumer and bearer == consumer:
+                return (403, "forbidden: this action requires the admin token")
+            return (401, "unauthorized")
+        required = consumer  # single-token mode
+    else:
+        required = consumer or None
+    if required and bearer not in {t for t in (consumer, admin) if t}:
+        return (401, "unauthorized")
+    return None
+
+
 def create_app() -> FastAPI:
     core = Core()
     core.start_background()
@@ -31,11 +68,11 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def auth(request: Request, call_next):
-        token = os.environ.get("AISEE_API_TOKEN") or creds.load_store().get("AISEE_API_TOKEN")
-        if token and request.url.path not in OPEN_PATHS:
-            got = request.headers.get("authorization", "")
-            if got != f"Bearer {token}":
-                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        got = request.headers.get("authorization", "")
+        bearer = got[7:].strip() if got.startswith("Bearer ") else ""
+        denied = check_auth(request.method, request.url.path, bearer)
+        if denied:
+            return JSONResponse({"detail": denied[1]}, status_code=denied[0])
         return await call_next(request)
 
     @app.get("/", include_in_schema=False)

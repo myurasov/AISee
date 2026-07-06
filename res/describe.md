@@ -4,17 +4,40 @@
 
 ## Endpoints
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/v1/describe` | this document (markdown; ?format=json for structured) |
-| GET | `/v1/health` | liveness + per-model state summary |
-| GET | `/v1/models` | installed models: state, port, idle_timeout, default flag |
-| POST | `/v1/models/{slug}/start` | start a model (non-blocking; poll /v1/models) |
-| POST | `/v1/models/{slug}/stop` | stop a model (frees GPU memory; stays installed) |
-| POST | `/v1/tasks` | submit a query -> {id} (multipart: files + params JSON field; or JSON with media_paths on the server host) |
-| GET | `/v1/tasks` | list tasks (?status=&model=) |
-| GET | `/v1/tasks/{id}` | full task: status, progress, timings, result |
-| DELETE | `/v1/tasks/{id}` | cancel a task |
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/v1/describe` | open | this document (markdown; ?format=json for structured) |
+| GET | `/v1/health` | open | liveness + per-model state summary |
+| GET | `/v1/gpu` | consumer | live GPU stats: utilization, memory, power, temperature |
+| GET | `/v1/models` | consumer | installed models: state, port, idle_timeout, default flag |
+| GET | `/v1/catalog` | consumer | built-in model catalog with installed flags |
+| POST | `/v1/tasks` | consumer | submit a query -> {id} (multipart: files + params JSON field; or JSON with media_paths on the server host) |
+| GET | `/v1/tasks` | consumer | list tasks (?status=&model=) |
+| GET | `/v1/tasks/{id}` | consumer | full task: status, progress, timings, result |
+| DELETE | `/v1/tasks/{id}` | consumer | cancel a task |
+| POST | `/v1/models` | admin | install a model: {"name": catalog slug or HF id} |
+| DELETE | `/v1/models/{slug}` | admin | uninstall (weights stay cached) |
+| POST | `/v1/models/{slug}/start` | admin | start a model (non-blocking; poll /v1/models) |
+| POST | `/v1/models/{slug}/stop` | admin | stop a model (frees GPU memory; stays installed) |
+
+## Authentication
+
+Auth is optional and off unless the host sets tokens. Send `Authorization: Bearer <token>`.
+
+- **consumer** endpoints require the consumer token (`AISEE_API_TOKEN`) when it is set on the
+  host; the admin token is accepted there too. Without a consumer token on the host they are
+  open.
+- **admin** endpoints (model management) require the admin token (`AISEE_ADMIN_TOKEN`) when
+  set; a valid consumer token gets **403** there, a missing/wrong token gets **401**. If only
+  the consumer token is set on the host, it guards everything (single-token mode).
+- `open` endpoints never need a token.
+
+If you were given one token, it is almost certainly the consumer token: you can query and
+inspect, but not install/start/stop models - ask the host operator for those.
+
+This API is also exposed as an MCP server (`aisee mcp`, stdio) with consumer capabilities
+only: tools `look`, `assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`,
+`cancel_task`, `describe`, `health`.
 
 ## Task lifecycle (how to use this API)
 

@@ -11,6 +11,9 @@
 - [REST API](#rest-api)
   - [Server](#server)
   - [Reference](#reference)
+  - [Authentication](#authentication)
+- [MCP Server](#mcp-server)
+- [Agent Files](#agent-files)
 - [Credentials](#credentials)
 - [Local Data](#local-data)
 - [Troubleshooting](#troubleshooting)
@@ -19,7 +22,8 @@
 ## What Is AISee?
 
 AISee is a tool that gives AI agents eyes. It serves vision-language models in docker containers
-on a GPU host and answers questions about images and video files, over a CLI or a REST API.
+on a GPU host and answers questions about images and video files, over a CLI, a REST API, or an
+MCP server.
 
 There are three kinds of queries:
 
@@ -196,16 +200,20 @@ The CLI also works from other machines - `--server http://HOST:PORT` or
 
 Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 
-| Method + path | Purpose |
-|---|---|
-| `GET /v1/describe` | self-description written for LLM consumers: endpoints with examples, task lifecycle, installed models with strengths/weaknesses/pitfalls. Markdown, `?format=json` for structured |
-| `GET /v1/health` | liveness + model states |
-| `GET /v1/models` | registry with state, port, idle_timeout, last_used, default |
-| `POST /v1/models/{slug}/start`, `/stop` | lifecycle (non-blocking) |
-| `POST /v1/tasks` | submit, returns `{id}`. Multipart: `files` + `params` (JSON string); or plain JSON with `media_paths` for files already on the host |
-| `GET /v1/tasks` | list, filters `?status=` `?model=` |
-| `GET /v1/tasks/{id}` | status, progress, timings, result |
-| `DELETE /v1/tasks/{id}` | cancel |
+| Method + path | Auth | Purpose |
+|---|---|---|
+| `GET /v1/describe` | open | self-description written for LLM consumers: endpoints with examples, task lifecycle, installed models with strengths/weaknesses/pitfalls. Markdown, `?format=json` for structured |
+| `GET /v1/health` | open | liveness + model states |
+| `GET /v1/gpu` | consumer | live GPU utilization/memory/power/temperature |
+| `GET /v1/models` | consumer | registry with state, port, idle_timeout, last_used, default |
+| `GET /v1/catalog` | consumer | built-in catalog with installed flags |
+| `POST /v1/tasks` | consumer | submit, returns `{id}`. Multipart: `files` + `params` (JSON string); or plain JSON with `media_paths` for files already on the host |
+| `GET /v1/tasks` | consumer | list, filters `?status=` `?model=` |
+| `GET /v1/tasks/{id}` | consumer | status, progress, timings, result |
+| `DELETE /v1/tasks/{id}` | consumer | cancel |
+| `POST /v1/models` | admin | install (`{"name": <catalog slug or HF id>, ...overrides}`) |
+| `DELETE /v1/models/{slug}` | admin | uninstall (weights stay cached) |
+| `POST /v1/models/{slug}/start`, `/stop` | admin | lifecycle (non-blocking) |
 
 ```bash
 curl -s -X POST http://HOST:PORT/v1/tasks \
@@ -219,10 +227,65 @@ A task moves through `queued`, `preparing_media`, `model_loading` (only when col
 and ends `done`, `failed`, or `canceled`. `timings` breaks out `model_load_s`, `media_prep_s`,
 `inference_s`.
 
-Auth is off by default. To require a bearer token: `./aisee creds set AISEE_API_TOKEN`, restart
-the daemon, and every endpoint except `/v1/describe` and `/v1/health` wants
-`Authorization: Bearer <token>`. The CLI picks the token up from the creds store on its own.
-Unset the credential and restart to go open again.
+### Authentication
+
+Auth is off by default. Two optional bearer tokens split access into roles:
+
+- `AISEE_API_TOKEN` (**consumer**): guards the query/read endpoints - submitting and reading
+  tasks, listing models/catalog/GPU stats. Hand this one to agents and users of the service.
+- `AISEE_ADMIN_TOKEN` (**admin**): guards model management (install/uninstall/start/stop).
+  Accepted on consumer endpoints too, so an admin needs only one token.
+
+With only the consumer token set, it guards everything (single-token mode). With both set, a
+consumer token on an admin endpoint gets `403`; a missing or wrong token gets `401`. The
+console (`/`), `/v1/describe`, and `/v1/health` are always open.
+
+```bash
+./aisee creds set AISEE_API_TOKEN     # consumer token
+./aisee creds set AISEE_ADMIN_TOKEN   # admin token
+```
+
+Tokens set through `creds set` apply immediately (the store is read per request); tokens set
+as environment variables of the daemon require a restart. The CLI picks tokens up from env or
+the creds store on its own (admin preferred when present; `--token` overrides). Unset the
+credentials to go open again.
+
+## MCP Server
+
+`./aisee mcp [--server http://HOST:PORT]` runs an MCP (Model Context Protocol) server on
+stdio, exposing AISee to agent harnesses (Claude Code, Cursor, etc.) as native tools:
+`look`, `assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
+`describe`, `health`. It is a thin adapter over the same REST API and intentionally carries
+**consumer capabilities only** - it authenticates with `AISEE_API_TOKEN` and never uses the
+admin token, so an agent connected over MCP cannot manage models.
+
+Register it in an MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "aisee": {
+      "command": "/path/to/aisee/aisee",
+      "args": ["mcp", "--server", "http://HOST:PORT"],
+      "env": { "AISEE_API_TOKEN": "<consumer token>" }
+    }
+  }
+}
+```
+
+Query tools block until the result is ready (a cold model can take minutes); `watch` accepts
+`wait=false` to return a task id for polling with `get_task`. Media paths are local to the
+machine running the MCP server and are uploaded to the API.
+
+## Agent Files
+
+Two ready-made role instructions for AI agents live at the repo root:
+
+- [`aisee.consumer.agent.md`](aisee.consumer.agent.md) - for agents that *use* AISee to see:
+  query kinds, CLI/REST/MCP access, behavior to plan around, limitations.
+- [`aisee.admin.agent.md`](aisee.admin.agent.md) - for agents that *operate* an AISee host:
+  installing AISee locally or on a remote machine, tokens, model and server management,
+  troubleshooting.
 
 ## Credentials
 
@@ -238,7 +301,7 @@ Everything AISee puts on the host, by who creates it:
 
 **`uv sync` (or the launcher's first run)** creates `.venv/` inside the source checkout - the
 Python environment with aisee and its dependencies (fastapi, uvicorn, httpx, pydantic,
-python-multipart). Nothing outside the checkout.
+python-multipart, mcp). Nothing outside the checkout.
 
 **`./aisee install`** creates the state directory `~/.aisee/` (override with `AISEE_HOME`):
 

@@ -39,7 +39,8 @@ def _listen_line() -> str:
 
 def _client(args) -> Client:
     c = Client(server=getattr(args, "server", None),
-               autostart=not getattr(args, "no_autostart", False))
+               autostart=not getattr(args, "no_autostart", False),
+               token=getattr(args, "token", None))
     c.ensure()
     return c
 
@@ -143,7 +144,8 @@ def cmd_api(args) -> int:
 # ---------------- API-backed commands ----------------
 
 def cmd_status(args) -> int:
-    c = Client(server=getattr(args, "server", None), autostart=False)
+    c = Client(server=getattr(args, "server", None), autostart=False,
+               token=getattr(args, "token", None))
     if not c.api_running():
         if is_local(c.base):
             cfg = config.load()["api"]
@@ -195,7 +197,8 @@ def cmd_model(args) -> int:
         _p(f"removed {args.slug}" if ok else f"{args.slug} was not installed")
         return 0 if ok else 1
     if args.model_cmd == "list":
-        c = Client(server=getattr(args, "server", None), autostart=False)
+        c = Client(server=getattr(args, "server", None), autostart=False,
+                   token=getattr(args, "token", None))
         if c.api_running():
             for m in c.models():
                 d = " [default]" if m["default"] else ""
@@ -328,6 +331,12 @@ def cmd_describe(args) -> int:
     return 0
 
 
+def cmd_mcp(args) -> int:
+    from . import mcp_server
+    mcp_server.main(server=args.server)
+    return 0
+
+
 # ---------------- parser ----------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -338,6 +347,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     def add_server(p):
         p.add_argument("--server", help="API base URL (default: local; or AISEE_SERVER env)")
+        p.add_argument("--token", help="bearer token (default: AISEE_ADMIN_TOKEN then "
+                                       "AISEE_API_TOKEN, from env or the creds store)")
         p.add_argument("--no-autostart", action="store_true",
                        help="do not auto-start a local API daemon")
 
@@ -461,6 +472,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_server(p)
     p.set_defaults(fn=cmd_describe)
 
+    p = sub.add_parser("mcp", help="run the MCP server on stdio (consumer capabilities only)")
+    p.add_argument("--server", help="API base URL (default: local; or AISEE_SERVER env)")
+    p.set_defaults(fn=cmd_mcp)
+
     return ap
 
 
@@ -468,8 +483,15 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.fn(args)
+    except BrokenPipeError:  # stdout consumer (e.g. `| head`) went away
+        import os
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
     except (RuntimeError, OSError, ValueError) as e:
-        _p(f"error: {e}")
+        try:
+            _p(f"error: {e}")
+        except BrokenPipeError:
+            pass
         return 2
     except KeyboardInterrupt:
         _p("interrupted")

@@ -13,7 +13,7 @@ import os
 
 from . import paths
 
-KNOWN_KEYS = ("HF_TOKEN", "NGC_API_KEY", "AISEE_API_TOKEN")
+KNOWN_KEYS = ("HF_TOKEN", "NGC_API_KEY", "AISEE_API_TOKEN", "AISEE_ADMIN_TOKEN")
 
 
 def load_store() -> dict:

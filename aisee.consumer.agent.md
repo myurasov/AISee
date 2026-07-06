@@ -1,20 +1,23 @@
 ---
-name: aisee
+name: aisee-consumer
 description: >
   Use AISee to see: verify screenshots and videos, read text off screens, and judge whether a
   UI looks right. AISee serves vision-language models on a GPU host and exposes them through a
-  CLI and a REST API. Use this skill whenever a task requires looking at an image or a video
-  file: visual verification in e2e tests, OCR, UI checks, or describing what happens in a
-  recording.
+  CLI, a REST API, and an MCP server. Adopt this agent whenever a task requires looking at an
+  image or a video file: visual verification in e2e tests, OCR, UI checks, or describing what
+  happens in a recording. This is the CONSUMER role: querying only; for installing AISee or
+  managing models, see aisee.admin.agent.md.
 triggers: ["look at this screenshot", "verify visually", "check the UI", "watch this video",
            "what does the screen show", "visual QA", "aisee"]
 ---
 
-# Using AISee (a skill for AI agents)
+# AISee consumer agent (for AI agents that query AISee)
 
 AISee is a tool that gives AI agents eyes. You send it image or video files plus a question or
 an expectation; a vision-language model (VLM) running on a GPU host answers. Everything is
-asynchronous: you submit a task, poll it, and read the result.
+asynchronous: you submit a task, poll it, and read the result. As a consumer you query and
+inspect - you do not manage models or the server (those are admin actions and, if the host is
+configured with an admin token, will answer 403 to you).
 
 ## The three query kinds - pick the right one
 
@@ -28,31 +31,36 @@ Prefer `assert` over `look` whenever you will branch on the outcome: it returns 
 boolean plus the model's reasoning and concrete evidence, and the CLI exit code follows the
 verdict (0 pass, 1 fail).
 
-## Setup (once per GPU host)
+## Access
 
-Prerequisites: Linux, NVIDIA GPU, docker + NVIDIA Container Toolkit, ffmpeg, Python 3.12+, uv.
+You need the server URL (`http://HOST:PORT`, default port 8484) and, if the host requires
+auth, the **consumer token** (`AISEE_API_TOKEN`). Get both from whoever operates the host
+(or from the admin agent). Set them once:
 
 ```bash
-git clone https://github.com/myurasov/AISee ~/aisee && cd ~/aisee
-uv sync                          # or skip: ./aisee bootstraps its own .venv
-./aisee install                  # verifies docker/GPU/ffmpeg, creates ~/.aisee
-./aisee creds set HF_TOKEN       # needed for gated models (account must accept model licenses)
-./aisee model install qwen3-vl-30b-a3b-instruct   # recommended default model
-./aisee api start                # REST API on 0.0.0.0:8484 (configurable)
+export AISEE_SERVER=http://HOST:PORT
+export AISEE_API_TOKEN=<consumer token>       # only if the host requires it
 ```
 
-`model install` only registers the model; weights (tens of GB) download on the first start or
-first query - that task will report `model_loading` for many minutes. This is normal.
-Serving settings (GPU memory fraction, context length, media budgets) are computed
-automatically for the detected GPU; override per model with flags if needed.
+Three equivalent ways in, all backed by the same REST API:
 
-Optional auth: `./aisee creds set AISEE_API_TOKEN` + restart; then send
-`Authorization: Bearer <token>` on every call (only `/`, `/v1/describe`, `/v1/health` stay open).
+1. **CLI** - `aisee <cmd>` from the source checkout (or `./aisee` at its root); works from any
+   machine, media files are uploaded automatically.
+2. **REST** - plain HTTP; send `Authorization: Bearer <consumer token>` when auth is on.
+3. **MCP** - `aisee mcp` runs an MCP server on stdio that exposes exactly these consumer
+   capabilities as tools (`look`, `assert_visual`, `watch`, `list_models`, `list_tasks`,
+   `get_task`, `cancel_task`, `describe`, `health`). Register it in your harness, e.g.:
+
+   ```json
+   {"mcpServers": {"aisee": {"command": "/path/to/aisee", "args": ["mcp", "--server", "http://HOST:PORT"],
+                             "env": {"AISEE_API_TOKEN": "<consumer token>"}}}}
+   ```
+
+   The MCP server never uses the admin token, so it cannot manage models by design. Query
+   tools block until the answer is ready; for long `watch` jobs pass `wait=false` and poll
+   `get_task`.
 
 ## Using the CLI
-
-The `aisee` command is a thin client of the REST API and also works from any remote machine
-with `--server http://HOST:PORT` or `AISEE_SERVER` set; media files are uploaded automatically.
 
 ```bash
 aisee look shot.png -q "What error message is shown?"
@@ -65,13 +73,15 @@ aisee status | model list | task list | task show <id>
 
 Useful flags: `--model <slug>` (else the default model), `--context "<background the model
 cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--native` (send the
-video itself, video-capable models only), `--no-wait` (print task id, poll later).
+video itself, video-capable models only), `--no-wait` (print task id, poll later),
+`--server URL`, `--token T`.
 
 ## Using the REST API
 
-Base `http://HOST:PORT/v1`. Discover everything at runtime: `GET /v1/describe` returns an
-agent-oriented guide including the installed models with strengths/weaknesses/pitfalls and
-live serving configuration - read it before choosing models or parameters.
+Base `http://HOST:PORT/v1`. Discover everything at runtime: `GET /v1/describe` (no auth
+needed) returns an agent-oriented guide including the installed models with
+strengths/weaknesses/pitfalls and live serving configuration - read it before choosing models
+or parameters.
 
 Submit and poll:
 
@@ -88,10 +98,10 @@ Task statuses walk `queued -> preparing_media -> model_loading (cold model only)
 done`. `progress` carries a human-readable step, and for `watch` a chunk counter. `timings`
 splits `model_load_s` / `media_prep_s` / `inference_s`. On `failed`, read `error.message`.
 
-Other endpoints: `GET /v1/models`, `POST /v1/models/{slug}/start|stop`, `POST /v1/models`
-(install, `{"name": "<catalog slug or HF id>"}`), `DELETE /v1/models/{slug}`, `GET /v1/catalog`,
-`GET /v1/gpu` (live utilization/memory/power), `GET /v1/health`. A human-friendly single-file
-web console is served at `/`.
+Consumer endpoints: `GET /v1/models`, `GET /v1/catalog`, `GET /v1/gpu`, `GET /v1/health`,
+`GET/POST /v1/tasks`, `GET/DELETE /v1/tasks/{id}`. A human-friendly web console is served
+at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
+`POST /v1/models/{slug}/start|stop`) requires the admin token - not your role.
 
 ## Behavior you must plan around
 
@@ -119,24 +129,16 @@ web console is served at `/`.
 
 ## Limitations
 
-- One GPU per host; models fit only if weights + KV cache fit the GPU (install warns when they
-  cannot).
-- AISee does not run models itself - it serves them with vLLM inside a container. A model
-  therefore works only if vLLM (in the chosen serving image) implements its architecture AND
-  that implementation accepts images. This rules out text-only LLMs (they cannot see),
-  non-chat vision models (CLIP embedders, detectors, image generators), and formats vLLM
-  cannot load (e.g. GGUF). If `model logs` shows "model type ... is not recognized", the fix
-  is usually a newer or specialized serving image: `aisee model install <hf-id> --image <img>`.
 - File-based media only (images, video files) - no live streams, no URLs; upload the bytes.
-- No MCP server mode; integrate via CLI or REST.
 - Results depend on a VLM: it can be wrong, especially on tiny text, precise counts, and exact
   numbers. Design checks so a false verdict is caught (negative controls, evidence review).
-- The API server must run on the GPU host itself; clients can be anywhere.
+- A model that is not installed cannot be queried; `GET /v1/catalog` shows what could be
+  installed, but installing is an admin action - ask the operator / admin agent.
+- 401 means your token is missing or wrong; 403 means the action needs the admin token.
 
 ## Quick diagnostic recipes
 
-- API down? `aisee status` on the host; `aisee api start`.
-- Task stuck in `model_loading`? Check `aisee model logs <slug>` - usually a weight download.
-- `failed` with a memory error: another model or process holds the GPU; stop it and retry.
-- HF 403: the token's HF account has not accepted that model's license on its page.
-- After updating AISee source: `uv sync` and restart the API (a running daemon keeps old code).
+- Connection refused? The API daemon is down on the host - an admin must start it.
+- Task stuck in `model_loading`? Almost always a weight download - keep polling `progress`.
+- `failed` with a memory error: the GPU is busy; retry later or tell the operator.
+- Verdict looks wrong? Read `evidence`, retry with `--context` or a different model.

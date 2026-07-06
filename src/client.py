@@ -29,12 +29,27 @@ def is_local(url: str) -> bool:
     return "://127.0.0.1" in url or "://localhost" in url
 
 
+def resolve_token(explicit: str | None = None, admin: bool = True) -> str | None:
+    """Pick the bearer token: explicit > AISEE_ADMIN_TOKEN (unless admin=False) >
+    AISEE_API_TOKEN, each from env then the creds store."""
+    if explicit:
+        return explicit
+    store = creds.load_store()
+    keys = ("AISEE_ADMIN_TOKEN", "AISEE_API_TOKEN") if admin else ("AISEE_API_TOKEN",)
+    for k in keys:
+        v = os.environ.get(k) or store.get(k)
+        if v:
+            return v
+    return None
+
+
 class Client:
-    def __init__(self, server: str | None = None, autostart: bool = True):
+    def __init__(self, server: str | None = None, autostart: bool = True,
+                 token: str | None = None, admin: bool = True):
         self.base = server_url(server)
         self.autostart = autostart and is_local(self.base)
-        token = os.environ.get("AISEE_API_TOKEN") or creds.load_store().get("AISEE_API_TOKEN")
-        self.headers = {"Authorization": f"Bearer {token}"} if token else {}
+        tok = resolve_token(token, admin=admin)
+        self.headers = {"Authorization": f"Bearer {tok}"} if tok else {}
 
     # ---------------- daemon management (bootstrap; local only) ----------------
 
@@ -102,6 +117,9 @@ class Client:
                           timeout=kw.pop("timeout", 30), **kw)
         if r.status_code == 401:
             raise RuntimeError("unauthorized: set AISEE_API_TOKEN (env or `aisee creds set`)")
+        if r.status_code == 403:
+            raise RuntimeError("forbidden: this action requires the admin token "
+                               "(AISEE_ADMIN_TOKEN, env or `aisee creds set`)")
         if r.status_code >= 400:
             try:
                 detail = r.json().get("detail", r.text)

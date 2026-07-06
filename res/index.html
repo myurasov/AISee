@@ -108,9 +108,10 @@
 </div>
 
 <div class="tab" id="tab-server">
+  <label for="server">API base URL</label><input type="text" id="server">
   <div class="row">
-    <div><label for="server">API base URL</label><input type="text" id="server"></div>
-    <div><label for="token">API token (if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
+    <div><label for="token">consumer token (queries; if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
+    <div><label for="adminToken">admin token (model management)</label><input type="text" id="adminToken" placeholder="optional"></div>
   </div>
   <div id="health" class="muted" style="margin-top:.5rem">not connected</div>
 </div>
@@ -185,19 +186,34 @@ async function refreshGpu() {
 $("server").value = localStorage.getItem("aisee.server") ||
   (location.protocol.startsWith("http") ? location.origin : "http://localhost:8484");
 $("token").value = localStorage.getItem("aisee.token") || "";
+$("adminToken").value = localStorage.getItem("aisee.adminToken") || "";
 
 const base = () => $("server").value.trim().replace(/\/+$/, "");
-const headers = () => $("token").value.trim() ? { "Authorization": "Bearer " + $("token").value.trim() } : {};
+// consumer token for queries/reads; admin token for model management (falls back to the other)
+const tokenFor = admin => {
+  const c = $("token").value.trim(), a = $("adminToken").value.trim();
+  return admin ? (a || c) : (c || a);
+};
+const headers = (admin = false) => {
+  const t = tokenFor(admin);
+  return t ? { "Authorization": "Bearer " + t } : {};
+};
 
-async function api(path, opts = {}) {
-  const r = await fetch(base() + path, Object.assign({ headers: headers() }, opts));
-  if (!r.ok) throw new Error("HTTP " + r.status + ": " + (await r.text()).slice(0, 300));
+async function api(path, opts = {}, admin = false) {
+  const r = await fetch(base() + path, Object.assign({ headers: headers(admin) }, opts));
+  if (!r.ok) {
+    let msg = "HTTP " + r.status + ": " + (await r.text()).slice(0, 300);
+    if (r.status === 401) msg += " - set a token on the Server tab";
+    if (r.status === 403) msg += " - this needs the admin token (Server tab)";
+    throw new Error(msg);
+  }
   return r.json();
 }
 
 async function connect() {
   localStorage.setItem("aisee.server", $("server").value.trim());
   localStorage.setItem("aisee.token", $("token").value.trim());
+  localStorage.setItem("aisee.adminToken", $("adminToken").value.trim());
   $("descLink").innerHTML = '<a href="' + base() + '/v1/describe">' + base() + "/v1/describe</a>";
   try {
     const h = await api("/v1/health");
@@ -242,6 +258,7 @@ async function connect() {
 }
 $("server").addEventListener("change", connect);
 $("token").addEventListener("change", connect);
+$("adminToken").addEventListener("change", connect);
 $("refresh").addEventListener("click", connect);
 
 // ---------------- model management ----------------
@@ -268,9 +285,9 @@ async function modelAction(act, slug) {
       !confirm("Uninstall model " + slug + "?\n\nThis stops it and removes it from this server. Downloaded weights stay in the shared cache, so reinstalling is fast.")) return;
   $("modelsMsg").textContent = act + " " + slug + "...";
   try {
-    if (act === "start") await api("/v1/models/" + slug + "/start", { method: "POST" });
-    else if (act === "stop") await api("/v1/models/" + slug + "/stop", { method: "POST" });
-    else if (act === "remove") await api("/v1/models/" + slug, { method: "DELETE" });
+    if (act === "start") await api("/v1/models/" + slug + "/start", { method: "POST" }, true);
+    else if (act === "stop") await api("/v1/models/" + slug + "/stop", { method: "POST" }, true);
+    else if (act === "remove") await api("/v1/models/" + slug, { method: "DELETE" }, true);
     $("modelsMsg").textContent = act + " " + slug + ": ok" +
       (act === "start" ? " (loading can take minutes; Refresh to see progress)" : "");
     await connect();
@@ -283,8 +300,8 @@ $("installBtn").addEventListener("click", async () => {
   $("modelsMsg").textContent = "installing " + name + "...";
   try {
     const m = await api("/v1/models", { method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, headers()),
-      body: JSON.stringify({ name }) });
+      headers: Object.assign({ "Content-Type": "application/json" }, headers(true)),
+      body: JSON.stringify({ name }) }, true);
     $("modelsMsg").textContent = "installed " + m.slug +
       " (weights download on first start)";
     $("installCustom").value = "";
@@ -394,7 +411,7 @@ function uploadTask(fd) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", base() + "/v1/tasks");
-    const tok = $("token").value.trim();
+    const tok = tokenFor(false);
     if (tok) xhr.setRequestHeader("Authorization", "Bearer " + tok);
     xhr.upload.onprogress = e => {
       if (!e.lengthComputable) return;
