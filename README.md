@@ -211,6 +211,8 @@ Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 | `GET /v1/tasks` | consumer | list, filters `?status=` `?model=` |
 | `GET /v1/tasks/{id}` | consumer | status, progress, timings, result |
 | `DELETE /v1/tasks/{id}` | consumer | cancel |
+| `GET /v1/blobs/{sha256}` | consumer | upload-dedup probe: `{exists, size}` |
+| `POST /v1/blobs` | consumer | upload media into the content store without a task |
 | `POST /v1/models` | admin | install (`{"name": <catalog slug or HF id>, ...overrides}`) |
 | `DELETE /v1/models/{slug}` | admin | uninstall (weights stay cached) |
 | `POST /v1/models/{slug}/start`, `/stop` | admin | lifecycle (non-blocking) |
@@ -225,7 +227,16 @@ curl -s http://HOST:PORT/v1/tasks/3f2a...
 
 A task moves through `queued`, `preparing_media`, `model_loading` (only when cold), `running`,
 and ends `done`, `failed`, or `canceled`. `timings` breaks out `model_load_s`, `media_prep_s`,
-`inference_s`.
+`inference_s`, and (once finished) `total_s` - wall-clock from submission to the terminal
+state, also shown in the console's tasks table.
+
+Uploads are deduplicated: media is stored content-addressed by the SHA-256 of the file bytes
+(kept for `blob_ttl_hours`, default 24 h; reuse refreshes it), and a media entry can be
+`"sha256:<hash>"` instead of a file - probe with `GET /v1/blobs/{sha256}` first (hash via
+`sha256sum` / `shasum -a 256` / python `hashlib`). The CLI and the web console negotiate this
+automatically, so re-submitting the same video skips the upload; `POST /v1/blobs` uploads
+media without creating a task (this is also how remote MCP clients get local files to the
+server).
 
 ### Authentication
 
@@ -309,14 +320,16 @@ python-multipart, mcp). Nothing outside the checkout.
 
 ```
 ~/.aisee/
-  config.toml          # api host/port, defaults (fps, idle_timeout, task retention)
+  config.toml          # api host/port, defaults (fps, idle_timeout, task retention, blob TTL)
   credentials.json     # HF/NGC/API tokens, 0600; written by `creds set` or prompts
   models/<slug>.toml   # per-model serving config: image, port, gpu_frac, vllm args
   hf-cache/            # shared model-weights cache, mounted into every container;
                        #   by far the biggest item (tens of GB per model)
   tasks/tasks.db       # sqlite task store (statuses, progress, timings, results)
-  tasks/media/<id>/    # uploaded media + derived frames/chunks per task; GC'd with
-                       #   the task after the retention period (default 7 days)
+  tasks/blobs/         # content-addressed uploads (sha256-named; upload dedup); GC'd
+                       #   after blob_ttl_hours (default 24), refreshed on reuse
+  tasks/media/<id>/    # per-task media (hardlinks into blobs/) + derived frames/chunks;
+                       #   GC'd with the task after task_ttl_hours (default 24)
   logs/api.log         # API daemon log
   run/api.pid          # daemon pidfile
 ```

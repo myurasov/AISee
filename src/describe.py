@@ -38,8 +38,12 @@ _ENDPOINTS = [
     ("POST", "/v1/tasks", "consumer", "submit a query -> {id} (multipart: files + params JSON "
                                       "field; or JSON with media_paths on the server host)"),
     ("GET", "/v1/tasks", "consumer", "list tasks (?status=&model=)"),
-    ("GET", "/v1/tasks/{id}", "consumer", "full task: status, progress, timings, result"),
+    ("GET", "/v1/tasks/{id}", "consumer", "full task: status, progress, timings "
+                                          "(incl. total_s once finished), result"),
     ("DELETE", "/v1/tasks/{id}", "consumer", "cancel a task"),
+    ("GET", "/v1/blobs/{sha256}", "consumer", "upload-dedup probe: {exists, size}"),
+    ("POST", "/v1/blobs", "consumer", "upload media into the content-addressed store "
+                                      "-> [{sha256, size}]; reference as sha256:<hash>"),
 ]
 
 

@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import config, creds, dockerctl, media, paths, registry, vlm
+from . import blobs, config, creds, dockerctl, media, paths, registry, vlm
 
 TERMINAL = ("done", "failed", "canceled")
 
@@ -54,11 +54,15 @@ class TaskStore:
         return tid
 
     def _row_to_task(self, r) -> dict:
+        timings = json.loads(r["timings"]) if r["timings"] else {}
+        if timings.get("finished_at") and timings.get("queued_at"):
+            # wall-clock from submission to a terminal state (includes queue + model load)
+            timings["total_s"] = round(timings["finished_at"] - timings["queued_at"], 1)
         return {
             "id": r["id"], "kind": r["kind"], "model": r["model"],
             "params": json.loads(r["params"]), "status": r["status"],
             "progress": json.loads(r["progress"]) if r["progress"] else {},
-            "timings": json.loads(r["timings"]) if r["timings"] else {},
+            "timings": timings,
             "result": json.loads(r["result"]) if r["result"] else None,
             "error": json.loads(r["error"]) if r["error"] else None,
             "created": r["created"], "updated": r["updated"],
@@ -379,7 +383,13 @@ class Core:
                     continue
                 if time.time() - last > timeout:
                     dockerctl.stop_model(slug)
-            self.store.gc(float(self.cfg["defaults"]["task_retention_days"]))
+            d = self.cfg["defaults"]
+            # task_retention_days is the pre-0.6 name; honor it if a host still sets it
+            task_ttl_h = (float(d["task_retention_days"]) * 24 if "task_retention_days" in d
+                          else float(d.get("task_ttl_hours", 24)))
+            self.store.gc(task_ttl_h / 24)
+            # tasks keep hardlinked copies of their media, so blob GC is always safe
+            blobs.gc(float(d.get("blob_ttl_hours", 24)))
 
     # ---------------- task processing ----------------
 

@@ -121,6 +121,12 @@ strengths/weaknesses/pitfalls and the current serving configuration.
   model/container and retry.
 - Tasks orphaned in `model_loading` after a daemon crash are requeued automatically at the
   next `api start`.
+- Uploaded media is content-addressed (SHA-256 of the bytes) under `~/.aisee/tasks/blobs/`
+  so repeat uploads are skipped; blobs age out after `blob_ttl_hours` (config.toml
+  `[defaults]`, default 24, 0 disables GC; reuse refreshes the clock), and tasks keep
+  hardlinked copies, so blob GC never breaks a task.
+  Consumers can hash locally (`sha256sum` / `shasum -a 256`), probe `GET /v1/blobs/{sha}`,
+  and pass `sha256:<hash>` media refs - see `aisee.consumer.agent.md`.
 - `./aisee uninstall` removes all AISee containers and `~/.aisee` (`--keep-cache` spares the
   downloaded weights); the source checkout and docker images stay.
 

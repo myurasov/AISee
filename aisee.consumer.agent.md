@@ -59,8 +59,16 @@ Three equivalent ways in, all backed by the same REST API:
 
    The MCP endpoint carries consumer capabilities only, so it cannot manage models by
    design. Query tools block until the answer is ready; for long `watch` jobs pass
-   `wait=false` and poll `get_task`. **MCP media paths are resolved on the AISee host** -
-   files must already exist there (transfer them first, or use CLI/REST, which upload).
+   `wait=false` and poll `get_task`. **MCP media entries resolve on the AISee host**: pass
+   a host path, or upload your local file once over HTTP and pass a `sha256:` reference:
+
+   ```bash
+   sha=$(shasum -a 256 shot.png | cut -d' ' -f1)          # sha256sum on Linux
+   curl -s http://HOST:PORT/v1/blobs/$sha                  # {"exists": ...} - probe first
+   curl -s -X POST http://HOST:PORT/v1/blobs \
+        -H "Authorization: Bearer <consumer token>" -F files=@shot.png
+   # then call e.g. assert_visual(media=["sha256:<sha>"], expectation=...)
+   ```
 
 ## Using the CLI
 
@@ -98,7 +106,16 @@ GET  /v1/tasks/{id}   poll every 2-5 s until status is done | failed | canceled
 
 Task statuses walk `queued -> preparing_media -> model_loading (cold model only) -> running ->
 done`. `progress` carries a human-readable step, and for `watch` a chunk counter. `timings`
-splits `model_load_s` / `media_prep_s` / `inference_s`. On `failed`, read `error.message`.
+splits `model_load_s` / `media_prep_s` / `inference_s` and, once terminal, includes `total_s`
+(wall-clock seconds from submission to finish). On `failed`, read `error.message`.
+
+**Upload dedup:** uploads are content-addressed by the SHA-256 of the file bytes and kept
+for a TTL (default 24 h, refreshed on reuse). Probe `GET /v1/blobs/{sha256}` (hash via `sha256sum` /
+`shasum -a 256` / python `hashlib.sha256(data).hexdigest()`); if it exists, pass
+`"sha256:<hash>"` as the media entry (`media_paths` in JSON, or an ordered `media` list in
+the multipart `params`) instead of re-uploading. `POST /v1/blobs` uploads without creating a
+task. The CLI and web console negotiate this automatically - repeat submissions of the same
+file skip the upload.
 
 Consumer endpoints: `GET /v1/models`, `GET /v1/catalog`, `GET /v1/gpu`, `GET /v1/health`,
 `GET/POST /v1/tasks`, `GET/DELETE /v1/tasks/{id}`. A human-friendly web console is served

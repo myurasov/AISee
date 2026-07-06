@@ -23,9 +23,10 @@ _INSTRUCTIONS = (
     "vision-language model on this GPU host answers. Prefer `assert_visual` when you will "
     "branch on the outcome; `look` for open questions/OCR; `watch` for whole-video analysis. "
     "Query tools block until the answer is ready - a cold model can take minutes to load, so "
-    "be patient or pass wait=false to `watch` and poll `get_task`. Media paths are resolved "
-    "on the AISee host itself - the files must exist there. Model management is not "
-    "available over MCP."
+    "be patient or pass wait=false to `watch` and poll `get_task`. Media entries are either "
+    "file paths on the AISee host, or 'sha256:<hex>' references to media uploaded from your "
+    "machine via POST /v1/blobs on the same server (see the describe tool for the exact "
+    "recipe). Model management is not available over MCP."
 )
 
 # stateless: every request is self-contained, so any number of agents can connect and the
@@ -69,9 +70,10 @@ async def look(media: list[str], question: str, model: str | None = None,
                context: str | None = None, max_tokens: int | None = None) -> dict:
     """Ask a free-form question about image/video files (OCR, descriptions, "where is X").
 
-    media: file paths on the AISee host. Video is frame-sampled (frames/fps) unless
-    native=true (video-capable models only). context: background the model cannot see in
-    the pixels. Blocks until the answer is ready (a cold model may take minutes to load)."""
+    media: file paths on the AISee host, or 'sha256:<hex>' refs to media uploaded via
+    POST /v1/blobs. Video is frame-sampled (frames/fps) unless native=true (video-capable
+    models only). context: background the model cannot see in the pixels. Blocks until the
+    answer is ready (a cold model may take minutes to load)."""
     return await _run(_query, "look", media,
                       {"question": question, "model": model, "frames": frames,
                        "fps": fps, "native": native, "context": context,
@@ -85,8 +87,9 @@ async def assert_visual(media: list[str], expectation: str, model: str | None = 
                         max_tokens: int | None = None) -> dict:
     """Verify an expectation about image/video files; returns {pass, reason, evidence}.
 
-    Prefer this over `look` whenever you will branch on the outcome (tests, gates).
-    Blocks until the verdict is ready."""
+    media: host paths or 'sha256:<hex>' blob refs (see look). Prefer this over `look`
+    whenever you will branch on the outcome (tests, gates). Blocks until the verdict is
+    ready."""
     return await _run(_query, "assert", media,
                       {"expectation": expectation, "model": model,
                        "frames": frames, "fps": fps, "native": native,
@@ -102,8 +105,9 @@ async def watch(video: str, question: str | None = None, expectation: str | None
 
     Give exactly one of question (returns per-chunk findings + a synthesized answer) or
     expectation (returns {pass, failing_ranges} with the time spans where it broke).
-    fps sets temporal resolution (1 for overviews, 8-15 to hunt flicker). Long videos take
-    minutes: pass wait=false to get a task_id immediately and poll get_task."""
+    video: a host path or a 'sha256:<hex>' blob ref (see look). fps sets temporal
+    resolution (1 for overviews, 8-15 to hunt flicker). Long videos take minutes: pass
+    wait=false to get a task_id immediately and poll get_task."""
     if bool(question) == bool(expectation):
         return {"error": "give exactly one of question / expectation"}
     return await _run(_query, "watch", [video],

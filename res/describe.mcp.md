@@ -14,7 +14,7 @@ and host administration are out of scope for an MCP client.
 | `watch(video, question OR expectation, ...)` | whole-video analysis; videos longer than ~1 min | per-chunk results + synthesized `answer`, or `{pass, failing_ranges}` |
 | `list_models()` | what is installed and its live state | model list |
 | `list_tasks(status?, model?)` | recent/queued tasks | task list |
-| `get_task(task_id)` | poll one task: status, progress, timings, result | task |
+| `get_task(task_id)` | poll one task: status, progress, timings (incl. `total_s` wall-clock once finished), result | task |
 | `cancel_task(task_id)` | cancel a queued/running task | confirmation |
 | `health()` | liveness + per-model state summary | status |
 | `describe()` | this guide | markdown |
@@ -27,11 +27,25 @@ default), `frames` / `fps` (video frame sampling), `native` (send the video itse
 sampled frames; video-capable models only), `context` (background the model cannot see in the
 pixels), `max_tokens`; `watch` adds `chunk_seconds` and `wait`.
 
+## Uploading media from your machine
+
+MCP tool calls carry no file bytes, so a media entry is either a **path on the AISee host**
+or a **`sha256:<hex>` reference** to content you upload first over HTTP to the same server
+(one-time per unique file; the store keeps it for a TTL, default 24 hours, refreshed on
+each reuse):
+
+1. Compute the SHA-256 of the file bytes (lowercase hex): `sha256sum f.png` (Linux),
+   `shasum -a 256 f.png` (macOS), or `hashlib.sha256(open("f","rb").read()).hexdigest()`.
+2. Probe `GET <server>/v1/blobs/<sha256>` -> `{"exists": ...}`. If it exists, skip the upload.
+3. Upload if missing: `curl -s -X POST <server>/v1/blobs -H "Authorization: Bearer <consumer
+   token>" -F files=@f.png` -> `[{"sha256": "...", "size": ...}]`.
+4. Pass `"sha256:<hex>"` as the media entry to `look` / `assert_visual` / `watch`.
+
 ## Behavior to plan around
 
-- **Media paths are resolved on the AISee host itself** (the machine serving this MCP
-  endpoint). Pass paths of files that already exist there; to analyze a file from another
-  machine, transfer it to the host first (scp/rsync) or use the REST API, which uploads.
+- **Media entries resolve on the AISee host.** Host paths must already exist there;
+  for files on your machine use the `sha256:` upload recipe above (or scp/rsync the file
+  to the host).
 - **Query tools block until the answer is ready.** A model that was idle-unloaded reloads in
   ~2-3 minutes; a first-ever use downloads weights and can take tens of minutes. A slow return
   is normal - do not resubmit, that only queues more work.

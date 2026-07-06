@@ -15,6 +15,8 @@
 | GET | `/v1/tasks` | consumer | list tasks (?status=&model=) |
 | GET | `/v1/tasks/{id}` | consumer | full task: status, progress, timings, result |
 | DELETE | `/v1/tasks/{id}` | consumer | cancel a task |
+| GET | `/v1/blobs/{sha256}` | consumer | dedup probe: {exists, size} for already-uploaded content |
+| POST | `/v1/blobs` | consumer | upload media into the content store -> [{sha256, size}] |
 | POST | `/v1/models` | admin | install a model: {"name": catalog slug or HF id} |
 | DELETE | `/v1/models/{slug}` | admin | uninstall (weights stay cached) |
 | POST | `/v1/models/{slug}/start` | admin | start a model (non-blocking; poll /v1/models) |
@@ -51,6 +53,8 @@ host/port, guarded by the consumer token, with consumer capabilities only: tools
 3. **`model_loading` can take minutes** (cold model start; the largest models take ~9 minutes on
    first load). This is normal - keep polling; `progress.detail` explains what is happening.
 4. Read `result` when `status == "done"`; on `failed`, `error.message` says why.
+   `timings` breaks the run down (`model_load_s`, `media_prep_s`, `inference_s`) and, once
+   terminal, includes `total_s` - the wall-clock seconds from submission to finish.
 
 Task kinds and their `result` shapes:
 - `look` - free-form question about the media. Result: `{"answer": "<text>"}`.
@@ -76,6 +80,34 @@ curl -s -X POST http://HOST:PORT/v1/tasks \
 # -> {"id":"3f2a..."}; then poll:
 curl -s http://HOST:PORT/v1/tasks/3f2a...
 ```
+
+## Upload dedup (skip re-sending media the server already has)
+
+The server keeps uploaded media in a content-addressed store keyed by the SHA-256 of the
+file bytes. Blobs live for a configurable TTL (default 24 hours; each reuse refreshes it),
+so recently sent content never needs re-uploading:
+
+1. Compute the hash of the file bytes (lowercase hex, 64 chars):
+   - shell: `sha256sum file.mp4` (Linux) or `shasum -a 256 file.mp4` (macOS)
+   - python: `hashlib.sha256(open("f","rb").read()).hexdigest()`
+   - node: `crypto.createHash("sha256").update(buf).digest("hex")`
+2. Probe: `GET /v1/blobs/{sha256}` -> `{"exists": true|false, "size": ...}`.
+3. If it exists, reference it instead of uploading: use `"sha256:<hash>"` as a media entry -
+   in the JSON submission's `media_paths` list, or in an optional ordered `media` list
+   inside the multipart `params` (entries are either `sha256:` refs or the filenames of the
+   files you do upload). Order is preserved.
+4. If it does not exist, upload as usual - every uploaded file enters the store
+   automatically, so the same bytes are skippable next time. `POST /v1/blobs`
+   (multipart `files`) uploads without creating a task.
+
+```
+sha=$(sha256sum run.mp4 | cut -d' ' -f1)
+curl -s http://HOST:PORT/v1/blobs/$sha                     # {"exists": true, ...}
+curl -s -X POST http://HOST:PORT/v1/tasks -H 'Content-Type: application/json' \
+  -d "{\"kind\":\"watch\",\"question\":\"what happens?\",\"media_paths\":[\"sha256:$sha\"]}"
+```
+
+The `aisee` CLI and the web console do this negotiation automatically.
 
 ## Models installed on this host
 

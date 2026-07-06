@@ -11,7 +11,7 @@
   body { font: 14px/1.45 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.3rem; } h1 small { color: #888; font-weight: normal; font-size: .8rem; }
   label { display: block; margin: .45rem 0 .1rem; color: #444; font-size: .85rem; }
-  input[type=text], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid #ccc; font: inherit; }
+  input[type=text], input[type=password], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid #ccc; font: inherit; }
   textarea { min-height: 3.2em; resize: vertical; }
   .row { display: flex; gap: .8rem; } .row > div { flex: 1; }
   button { padding: .45rem 1.1rem; font: inherit; cursor: pointer; border: 1px solid #888; background: #f5f5f5; }
@@ -110,8 +110,8 @@
 <div class="tab" id="tab-server">
   <label for="server">API base URL</label><input type="text" id="server">
   <div class="row">
-    <div><label for="token">consumer token (queries; if auth is enabled)</label><input type="text" id="token" placeholder="optional"></div>
-    <div><label for="adminToken">admin token (model management)</label><input type="text" id="adminToken" placeholder="optional"></div>
+    <div><label for="token">consumer token (queries; if auth is enabled)</label><input type="password" id="token" placeholder="optional" autocomplete="off"></div>
+    <div><label for="adminToken">admin token (model management)</label><input type="password" id="adminToken" placeholder="optional" autocomplete="off"></div>
   </div>
   <div id="health" class="muted" style="margin-top:.5rem">not connected</div>
 </div>
@@ -267,6 +267,11 @@ $("server").addEventListener("change", connect);
 $("token").addEventListener("change", connect);
 $("adminToken").addEventListener("change", connect);
 $("refresh").addEventListener("click", connect);
+// token fields read as password dots unless being edited
+for (const id of ["token", "adminToken"]) {
+  $(id).addEventListener("focus", () => { $(id).type = "text"; });
+  $(id).addEventListener("blur", () => { $(id).type = "password"; });
+}
 
 // ---------------- model management ----------------
 
@@ -324,7 +329,8 @@ function fillDetail(td, t) {
   if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
   const tm = t.timings || {};
   if (t.status === "done")
-    line = "done" + (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
+    line = "done" + (tm.total_s ? " in " + tm.total_s + "s" : "") +
+           (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
            (tm.model_load_s ? ", model load " + tm.model_load_s + "s" : "");
   let body = null, cls = "";
   if (t.status === "failed") { body = ((t.error || {}).message || "unknown error").slice(0, 1000); cls = " fail"; }
@@ -377,7 +383,7 @@ function expand(id) {
   const d = row.insertAdjacentElement("afterend", document.createElement("tr"));
   d.className = "detail";
   const td = document.createElement("td");
-  td.colSpan = 5;
+  td.colSpan = 6;
   td.id = "detail-" + id;
   td.innerHTML = '<div class="d-status">loading...</div>';
   d.appendChild(td);
@@ -393,9 +399,10 @@ async function refreshTasks(reattach = false) {
       '<tr data-id="' + t.id + '">' +
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
       '<td class="st st-' + t.status + '">' + t.status + "</td>" +
-      "<td>" + fmtDate(t.created) + "</td></tr>").join("");
+      "<td>" + fmtDate(t.created) + "</td>" +
+      "<td>" + ((t.timings || {}).total_s != null ? t.timings.total_s + " s" : "-") + "</td></tr>").join("");
     $("tasksBox").innerHTML =
-      "<table><tr><th>id</th><th>kind</th><th>model</th><th>status</th><th>created</th></tr>" +
+      "<table><tr><th>id</th><th>kind</th><th>model</th><th>status</th><th>created</th><th>took</th></tr>" +
       rows + "</table>";
     for (const tr of document.querySelectorAll("#tasksBox tr[data-id]"))
       tr.addEventListener("click", () => tr.dataset.id === expandedId ? collapse() : expand(tr.dataset.id));
@@ -412,6 +419,59 @@ async function refreshTasks(reattach = false) {
 $("kind").addEventListener("change", () => {
   $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
 });
+
+// SHA-256 for upload dedup. crypto.subtle needs a secure context (https/localhost), so a
+// plain-http LAN console falls back to a small pure-JS implementation (capped by size).
+const JS_HASH_MAX = 64 * 1048576;
+
+function sha256Js(bytes) {
+  const K = [], H = [];
+  for (let p = 2, n = 0; n < 64; p++) {
+    let prime = true;
+    for (let f = 2; f * f <= p; f++) if (p % f === 0) { prime = false; break; }
+    if (!prime) continue;
+    if (n < 8) H[n] = ((Math.sqrt(p) % 1) * 2 ** 32) | 0;
+    K[n++] = ((Math.cbrt(p) % 1) * 2 ** 32) | 0;
+  }
+  const rr = (x, n) => (x >>> n) | (x << (32 - n));
+  const len = bytes.length, bitLen = len * 8;
+  const padded = new Uint8Array(((len + 8) >> 6 << 6) + 64);
+  padded.set(bytes);
+  padded[len] = 0x80;
+  new DataView(padded.buffer).setUint32(padded.length - 4, bitLen >>> 0);
+  new DataView(padded.buffer).setUint32(padded.length - 8, Math.floor(bitLen / 2 ** 32));
+  const w = new Int32Array(64), h = H.slice();
+  for (let off = 0; off < padded.length; off += 64) {
+    const dv = new DataView(padded.buffer, off, 64);
+    for (let i = 0; i < 16; i++) w[i] = dv.getInt32(i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rr(w[i - 15], 7) ^ rr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rr(w[i - 2], 17) ^ rr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rr(e, 6) ^ rr(e, 11) ^ rr(e, 25);
+      const t1 = (hh + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const S0 = rr(a, 2) ^ rr(a, 13) ^ rr(a, 22);
+      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+    h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+  }
+  return h.map(x => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+async function sha256File(f) {
+  const buf = await f.arrayBuffer();
+  if (crypto.subtle) {
+    const d = await crypto.subtle.digest("SHA-256", buf);
+    return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  if (buf.byteLength > JS_HASH_MAX) return null;  // JS hashing too slow: just upload
+  return sha256Js(new Uint8Array(buf));
+}
 
 // fetch() cannot report upload progress, so submissions go through XHR
 function uploadTask(fd) {
@@ -453,15 +513,39 @@ $("go").addEventListener("click", async () => {
   if ($("chunk").value) params.chunk_seconds = parseFloat($("chunk").value);
   if ($("native").checked) params.native = true;
 
-  const fd = new FormData();
-  for (const f of files) fd.append("files", f);
-  fd.append("params", JSON.stringify(params));
-
   $("go").disabled = true;
-  $("status").textContent = "uploading...";
+  $("status").textContent = "checking which files are already on the server...";
   try {
-    const { id } = await uploadTask(fd);
-    $("status").textContent = "submitted task " + id;
+    // upload dedup: reference server-known content by hash, upload only the rest
+    const refs = [], missing = [];
+    for (const f of files) {
+      let known = false;
+      try {
+        const sha = await sha256File(f);
+        if (sha) known = (await api("/v1/blobs/" + sha)).exists;
+        if (known) refs.push("sha256:" + sha);
+      } catch (e) { known = false; }
+      if (!known) { refs.push(f.name); missing.push(f); }
+    }
+    params.media = refs;
+    const skipped = files.length - missing.length;
+    const note = skipped ? skipped + " file(s) already on the server - skipped upload" : "";
+    let id;
+    if (missing.length) {
+      const fd = new FormData();
+      for (const f of missing) fd.append("files", f);
+      fd.append("params", JSON.stringify(params));
+      $("status").textContent = "uploading..." + (note ? " (" + note + ")" : "");
+      ({ id } = await uploadTask(fd));
+    } else {
+      $("status").textContent = note;
+      params.media_paths = params.media;
+      delete params.media;
+      ({ id } = await api("/v1/tasks", { method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, headers()),
+        body: JSON.stringify(params) }));
+    }
+    $("status").textContent = "submitted task " + id + (note ? " (" + note + ")" : "");
     localStorage.setItem("aisee.expanded", id);
     expandedId = id;
     showTab("tasks");                  // jump to the tasks tab with the new task expanded

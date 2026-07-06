@@ -18,7 +18,8 @@ DEFAULTS: dict = {
         "frames": 16, # even-sampled frames per video (= the image budget)
         "max_tokens": 2048, # headroom for reasoning models and long syntheses
         "request_timeout": 900, # per-inference HTTP timeout (s); a full 64-frame chunk on a dense model can take a few minutes
-        "task_retention_days": 7,
+        "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
+        "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it
     },
 }
 

@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.datastructures import UploadFile
 
-from . import __version__, catalog, config, creds, describe, media, mcp_server, paths, registry
+from . import (__version__, blobs, catalog, config, creds, describe, mcp_server, paths,
+               registry)
 from .tasks import Core
 
 OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
@@ -206,10 +207,45 @@ def create_app() -> FastAPI:
         registry.remove(slug)
         return {"slug": slug, "removed": True}
 
+    @app.get("/v1/blobs/{sha}")
+    def blob_probe(sha: str):
+        """Dedup probe: is this content (sha256 of the file bytes) already on the server?"""
+        p = blobs.find(sha)
+        return {"sha256": sha.lower(), "exists": bool(p),
+                "size": p.stat().st_size if p else None}
+
+    @app.post("/v1/blobs")
+    async def blob_upload(request: Request):
+        """Upload media into the content-addressed store (multipart field 'files').
+        Returns the sha256 per file; reference it in tasks as 'sha256:<hash>'."""
+        if not request.headers.get("content-type", "").startswith("multipart/"):
+            raise HTTPException(400, "multipart/form-data required (field 'files')")
+        form = await request.form()
+        files = [v for v in form.getlist("files") if isinstance(v, UploadFile)]
+        if not files:
+            raise HTTPException(400, "no files uploaded (multipart field 'files')")
+        out = []
+        for f in files:
+            data = await f.read()
+            sha, _ = blobs.put_bytes(data, f.filename or "upload.bin")
+            out.append({"sha256": sha, "size": len(data), "filename": f.filename})
+        return out
+
     @app.post("/v1/tasks")
     async def submit(request: Request):
-        """Multipart (files[] + params JSON field) or JSON with media_paths on this host."""
+        """Multipart (files[] + params JSON field) or JSON with media_paths on this host.
+        Media entries may be 'sha256:<hash>' references to already-uploaded blobs."""
+        import uuid
         ctype = request.headers.get("content-type", "")
+        tid_dir = paths.media_dir() / uuid.uuid4().hex[:12]
+
+        def resolve_blob(ref: str) -> str:
+            b = blobs.find(ref[7:])
+            if not b:
+                raise HTTPException(400, f"unknown blob {ref} - upload it first "
+                                         "(POST /v1/blobs) or send the file")
+            return str(blobs.link_into(b, tid_dir / "in"))
+
         if ctype.startswith("multipart/"):
             form = await request.form()
             try:
@@ -217,19 +253,32 @@ def create_app() -> FastAPI:
             except json.JSONDecodeError as e:
                 raise HTTPException(400, f"params is not valid JSON: {e}")
             files = [v for v in form.getlist("files") if isinstance(v, UploadFile)]
-            if not files:
+            refs = params.pop("media", None)  # optional ordered refs (sha256:/filenames)
+            if not files and not refs:
                 raise HTTPException(400, "no files uploaded (multipart field 'files')")
-            staged: list[str] = []
-            tid_dir = None
-            # stage first so the task starts with its media in place
-            import uuid
-            stage_id = uuid.uuid4().hex[:12]
-            tid_dir = paths.media_dir() / stage_id
+            staged_by_name: dict[str, str] = {}
+            staged_order: list[str] = []
             for f in files:
                 data = await f.read()
-                staged.append(str(media.stage_bytes(data, f.filename or "upload.bin",
-                                                    tid_dir / "in")))
-            params["media"] = staged
+                name = os.path.basename(f.filename or "upload.bin")
+                # uploads flow through the blob store so identical bytes dedup next time
+                _, blob = blobs.put_bytes(data, name)
+                p = str(blobs.link_into(blob, tid_dir / "in", name))
+                staged_by_name[name] = p
+                staged_order.append(p)
+            if refs is None:
+                params["media"] = staged_order
+            else:
+                resolved = []
+                for r in refs:
+                    r = str(r)
+                    if r.startswith("sha256:"):
+                        resolved.append(resolve_blob(r))
+                    elif os.path.basename(r) in staged_by_name:
+                        resolved.append(staged_by_name[os.path.basename(r)])
+                    else:
+                        raise HTTPException(400, f"media entry '{r}' matches no uploaded file")
+                params["media"] = resolved
         else:
             try:
                 params = await request.json()
@@ -238,10 +287,16 @@ def create_app() -> FastAPI:
             paths_in = params.pop("media_paths", None) or params.get("media")
             if not paths_in:
                 raise HTTPException(400, "media_paths required for JSON submission")
-            missing = [p for p in paths_in if not os.path.exists(p)]
-            if missing:
-                raise HTTPException(400, f"media not found on server host: {missing}")
-            params["media"] = list(paths_in)
+            resolved = []
+            for p_in in paths_in:
+                p_in = str(p_in)
+                if p_in.startswith("sha256:"):
+                    resolved.append(resolve_blob(p_in))
+                elif os.path.exists(p_in):
+                    resolved.append(p_in)
+                else:
+                    raise HTTPException(400, f"media not found on server host: {p_in}")
+            params["media"] = resolved
 
         kind = params.pop("kind", None)
         if kind not in ("look", "assert", "watch"):

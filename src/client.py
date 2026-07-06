@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-from . import config, creds, paths
+from . import blobs, config, creds, paths
 
 
 def server_url(explicit: str | None = None) -> str:
@@ -144,15 +144,47 @@ class Client:
     def model_stop(self, slug: str) -> dict:
         return self._req("POST", f"/v1/models/{slug}/stop").json()
 
+    def blob_exists(self, sha: str) -> bool:
+        return bool(self._req("GET", f"/v1/blobs/{sha}").json().get("exists"))
+
     def submit(self, kind: str, media_files: list[str], params: dict) -> str:
+        """Submit a task; content the server already has (by sha256) is not re-uploaded.
+        Media entries may also be 'sha256:<hash>' references to server-side blobs."""
         params = {"kind": kind, **params}
-        files = [("files", (Path(m).name, open(m, "rb"))) for m in media_files]
-        try:
-            r = self._req("POST", "/v1/tasks", files=files,
-                          data={"params": json.dumps(params)}, timeout=300)
-        finally:
-            for _, (_, fh) in files:
-                fh.close()
+        refs: list[str] = []
+        uploads: list[tuple[str, str]] = []  # (send-as name, local path)
+        used_names: set[str] = set()
+        for m in media_files:
+            m = str(m)
+            if m.startswith("sha256:"):
+                refs.append(m)
+                continue
+            try:
+                sha = blobs.sha256_file(m)
+                if self.blob_exists(sha):
+                    refs.append("sha256:" + sha)
+                    continue
+            except (OSError, RuntimeError):
+                pass  # unreadable or probe failed: fall back to a plain upload
+            name = Path(m).name
+            while name in used_names:  # two distinct files sharing a basename
+                name = "_" + name
+            used_names.add(name)
+            refs.append(name)
+            uploads.append((name, m))
+        if uploads:
+            params["media"] = refs
+            files = [("files", (name, open(path, "rb"))) for name, path in uploads]
+            try:
+                r = self._req("POST", "/v1/tasks", files=files,
+                              data={"params": json.dumps(params)}, timeout=300)
+            finally:
+                for _, (_, fh) in files:
+                    fh.close()
+        else:
+            # everything is already on the server: no multipart needed at all
+            params["media_paths"] = refs
+            r = self._req("POST", "/v1/tasks", json=params, timeout=60)
         return r.json()["id"]
 
     def task(self, tid: str) -> dict:
