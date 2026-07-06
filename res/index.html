@@ -125,6 +125,13 @@ Agent-oriented API docs: <span id="descLink">/v1/describe</span>.</p>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// 05-Jul-26 20:16:44
+function fmtDate(epoch) {
+  const d = new Date(epoch * 1000), p = n => String(n).padStart(2, "0");
+  return p(d.getDate()) + "-" + MONTHS[d.getMonth()] + "-" + p(d.getFullYear() % 100) + " " +
+         p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
 const TERMINAL = ["done", "failed", "canceled"];
 const pollers = {};           // task id -> interval handle
 let expandedId = localStorage.getItem("aisee.expanded") || null;
@@ -228,7 +235,7 @@ async function connect() {
       '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
       "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
       "<td>" + (m.idle_timeout || "-") + " s</td>" +
-      "<td>" + (m.last_used ? new Date(m.last_used * 1000).toLocaleString() : "never") + "</td>" +
+      "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
       '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
       '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
       '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
@@ -386,7 +393,7 @@ async function refreshTasks(reattach = false) {
       '<tr data-id="' + t.id + '">' +
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
       '<td class="st st-' + t.status + '">' + t.status + "</td>" +
-      "<td>" + new Date(t.created * 1000).toLocaleString() + "</td></tr>").join("");
+      "<td>" + fmtDate(t.created) + "</td></tr>").join("");
     $("tasksBox").innerHTML =
       "<table><tr><th>id</th><th>kind</th><th>model</th><th>status</th><th>created</th></tr>" +
       rows + "</table>";
