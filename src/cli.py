@@ -472,7 +472,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return args.fn(args)
+        ret = args.fn(args)
+        sys.stdout.flush()  # surface EPIPE here, not at interpreter shutdown
+        return ret
     except BrokenPipeError:  # stdout consumer (e.g. `| head`) went away
         import os
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
