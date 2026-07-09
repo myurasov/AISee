@@ -8,6 +8,7 @@
 <title>AISee</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="%2376b900"/><circle cx="8" cy="8" r="3" fill="%23222"/></svg>'>
 <style>
+  *, *::before, *::after { box-sizing: border-box; }
   body { font: 14px/1.45 system-ui, sans-serif; margin: 1.5rem 2rem; color: #222; }
   h1 { font-size: 1.3rem; } h1 small { color: #888; font-weight: normal; font-size: .8rem; }
   label { display: block; margin: .45rem 0 .1rem; color: #444; font-size: .85rem; }
@@ -23,11 +24,12 @@
   nav button { border: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #f0f0f0; color: #666;
                padding: .4rem 1rem; margin-right: .25rem; position: relative; }
   nav button.on { background: #fff; color: #111; border-bottom: 1px solid #fff; z-index: 2; }
-  #frame { border: 1px solid #ccc; background: #fff; padding: 1rem 1.2rem; min-height: 14rem; }
+  #frame { border: 1px solid #ccc; background: #fff; padding: 1rem 1.2rem; min-height: 14rem;
+           overflow-x: auto; }
   .tab { display: none; } .tab.on { display: block; }
   #status { color: #666; margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
-  th, td { border: 1px solid #e0e0e0; padding: .25rem .5rem; text-align: left; }
+  th, td { border: 1px solid #e0e0e0; padding: .25rem .5rem; text-align: left; word-break: break-word; }
   th { background: #f5f5f5; color: #555; font-weight: 600; }
   .st-running, .st-done { color: #2a7; }
   .st-starting, .st-queued, .st-preparing_media, .st-model_loading { color: #b80; }
@@ -130,9 +132,7 @@
 
 </div>
 
-<p class="muted">Single-file console for the <a href="https://github.com/myurasov/AISee">AISee</a> REST API.
-When opened from disk, point the base URL at your server (CORS is enabled).
-Agent-oriented API docs: <span id="descLink">/v1/describe</span>.</p>
+<p class="muted"><a href="https://github.com/myurasov/AISee">https://github.com/myurasov/AISee</a></p>
 
 <script>
 "use strict";
@@ -234,7 +234,6 @@ async function connect() {
   localStorage.setItem("aisee.server", $("server").value.trim());
   localStorage.setItem("aisee.token", $("token").value.trim());
   localStorage.setItem("aisee.adminToken", $("adminToken").value.trim());
-  $("descLink").innerHTML = '<a href="' + base() + '/v1/describe">' + base() + "/v1/describe</a>";
   try {
     const h = await api("/v1/health");
     const models = await api("/v1/models");
