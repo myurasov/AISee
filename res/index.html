@@ -47,6 +47,12 @@
   .j-k { color: #369; }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
+  /* media drop zone */
+  #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center;
+          cursor: pointer; }
+  #drop.over { border-color: #76b900; background: #f3f9e8; }
+  #drop input { display: none; }
+  #drop .picked { color: #222; }
   .bar { background: #eee; border: 1px solid #ddd; height: .9rem; position: relative; min-width: 90px; }
   .bar > div { background: #76b900; height: 100%; }
   td button { padding: .1rem .5rem; font-size: .75rem; margin-right: .25rem; }
@@ -79,7 +85,10 @@
   </div>
   <div id="kindHint" class="muted" style="margin-top:.25rem"></div>
   <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images, or a video)</label>
-  <input type="file" id="files" multiple accept="image/*,video/*">
+  <div id="drop">
+    <input type="file" id="files" multiple accept="image/*,video/*">
+    <div id="dropHint" class="muted">drag &amp; drop files here, or click to browse</div>
+  </div>
   <label for="prompt" id="promptLabel">question</label>
   <textarea id="prompt" placeholder="What is shown on the screen?"></textarea>
   <label for="context" title="passed to the model alongside the media, e.g. 'the left panel is the scene tree'">context <span class="muted">(optional background the model cannot see in the pixels)</span></label>
@@ -485,6 +494,33 @@ async function refreshTasks(reattach = false) {
 }
 
 // ---------------- submitting queries ----------------
+
+// media drop zone: click to browse, or drop files onto it
+const drop = $("drop");
+drop.addEventListener("click", () => $("files").click());
+for (const ev of ["dragenter", "dragover"])
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); });
+for (const ev of ["dragleave", "drop"])
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); });
+drop.addEventListener("drop", e => {
+  if (e.dataTransfer.files.length) {
+    $("files").files = e.dataTransfer.files;
+    dropHint();
+  }
+});
+$("files").addEventListener("change", dropHint);
+function dropHint() {
+  const fs = [...$("files").files];
+  const h = $("dropHint");
+  if (!fs.length) {
+    h.textContent = "drag & drop files here, or click to browse";
+    h.className = "muted";
+  } else {
+    const mb = n => (n / 1048576).toFixed(1);
+    h.textContent = fs.map(f => f.name + " (" + mb(f.size) + " MB)").join(", ");
+    h.className = "picked";
+  }
+}
 
 const KIND_HINTS = {
   look: "free-form question about the media; returns text. OCR, descriptions, \"where is X\".",
