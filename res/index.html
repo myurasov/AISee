@@ -39,6 +39,12 @@
   .d-result { background: #fff; border: 1px solid #e4e4e4; padding: .5rem .7rem; white-space: pre-wrap;
               word-break: break-word; font-family: ui-monospace, monospace; font-size: .8rem; }
   .d-result.pass { border-left: 4px solid #4a4; } .d-result.fail { border-left: 4px solid #c33; }
+  /* collapsible JSON tree */
+  .j summary { cursor: pointer; color: #555; }
+  .j details > *:not(summary), .j .j-line { margin-left: 1rem; }
+  .j-k { color: #369; }
+  .j-line { word-break: break-word; }
+  .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   .bar { background: #eee; border: 1px solid #ddd; height: .9rem; position: relative; min-width: 90px; }
   .bar > div { background: #76b900; height: 100%; }
   td button { padding: .1rem .5rem; font-size: .75rem; margin-right: .25rem; }
@@ -150,10 +156,11 @@ function showTab(name) {
   for (const s of document.querySelectorAll(".tab"))
     s.className = s.id === "tab-" + name ? "tab on" : "tab";
   localStorage.setItem("aisee.tab", name);
-  if (name === "tasks") refreshTasks(true);
   if (name === "stat") connect();
   if (gpuTimer) { clearInterval(gpuTimer); gpuTimer = null; }
   if (name === "gpu") { refreshGpu(); gpuTimer = setInterval(refreshGpu, 2000); }
+  if (tasksTimer) { clearInterval(tasksTimer); tasksTimer = null; }
+  if (name === "tasks") { refreshTasks(true); tasksTimer = setInterval(refreshTasks, 3000); }
 }
 for (const b of document.querySelectorAll("nav button"))
   b.addEventListener("click", () => showTab(b.dataset.tab));
@@ -329,7 +336,42 @@ $("installBtn").addEventListener("click", async () => {
 
 // ---------------- tasks table with inline detail row ----------------
 
+let tasksTimer = null;
+let tasksSig = "";  // ids+statuses of the last render; refresh redraws only on change
+
+// collapsible JSON tree: objects/arrays render as <details> (collapsed unless `open`)
+function jsonTree(val, key, open) {
+  if (val === null || typeof val !== "object") {
+    const d = document.createElement("div");
+    d.className = "j-line";
+    if (key !== null) {
+      const k = document.createElement("span");
+      k.className = "j-k";
+      k.textContent = key + ": ";
+      d.appendChild(k);
+    }
+    d.appendChild(document.createTextNode(
+      typeof val === "string" ? val : JSON.stringify(val)));
+    return d;
+  }
+  const det = document.createElement("details");
+  det.className = "j";
+  if (open) det.open = true;
+  const sum = document.createElement("summary");
+  const n = Array.isArray(val) ? val.length : Object.keys(val).length;
+  sum.textContent = (key !== null ? key + " " : "") +
+                    (Array.isArray(val) ? "[" + n + "]" : "{" + n + "}");
+  det.appendChild(sum);
+  const entries = Array.isArray(val) ? val.map((v, i) => [i, v]) : Object.entries(val);
+  for (const [k2, v2] of entries) det.appendChild(jsonTree(v2, String(k2), false));
+  return det;
+}
+
 function fillDetail(td, t) {
+  // skip re-rendering when nothing changed, so open/closed JSON sections survive polling
+  const snap = JSON.stringify([t.status, t.progress, t.result, t.error]);
+  if (td.dataset.snap === snap) return;
+  td.dataset.snap = snap;
   const p = t.progress || {};
   let line = "[" + t.status + "] " + (p.detail || p.step || "");
   if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
@@ -338,16 +380,36 @@ function fillDetail(td, t) {
     line = "done" + (tm.total_s ? " in " + tm.total_s + "s" : "") +
            (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
            (tm.model_load_s ? ", model load " + tm.model_load_s + "s" : "");
-  let body = null, cls = "";
-  if (t.status === "failed") { body = ((t.error || {}).message || "unknown error").slice(0, 1000); cls = " fail"; }
-  else if (t.status === "done") {
-    const r = t.result || {};
-    if (t.kind === "look" && typeof r.answer === "string") body = r.answer;
-    else { body = JSON.stringify(r, null, 2); if (typeof r.pass === "boolean") cls = r.pass ? " pass" : " fail"; }
+  td.innerHTML = "";
+  const st = document.createElement("div");
+  st.className = "d-status";
+  st.textContent = line;
+  td.appendChild(st);
+  if (t.params && Object.keys(t.params).length) {
+    const par = document.createElement("div");
+    par.className = "j d-params";
+    par.appendChild(jsonTree(t.params, "parameters", false));
+    td.appendChild(par);
   }
-  td.innerHTML = '<div class="d-status"></div>' + (body !== null ? '<div class="d-result' + cls + '"></div>' : "");
-  td.querySelector(".d-status").textContent = line;
-  if (body !== null) td.querySelector(".d-result").textContent = body;
+  if (t.status === "failed") {
+    const box = document.createElement("div");
+    box.className = "d-result fail";
+    box.textContent = ((t.error || {}).message || "unknown error").slice(0, 1000);
+    td.appendChild(box);
+  } else if (t.status === "done") {
+    const r = t.result || {};
+    const box = document.createElement("div");
+    box.className = "d-result" +
+      (typeof r.pass === "boolean" ? (r.pass ? " pass" : " fail") : "");
+    if (t.kind === "look" && typeof r.answer === "string") {
+      box.textContent = r.answer;
+    } else {
+      // root level visible, nested sections collapsed by default
+      box.classList.add("j");
+      box.appendChild(jsonTree(r, "result", true));
+    }
+    td.appendChild(box);
+  }
 }
 
 function stopPoller(id) {
@@ -400,7 +462,11 @@ function expand(id) {
 async function refreshTasks(reattach = false) {
   try {
     const tasks = await api("/v1/tasks?limit=12");
-    if (!tasks.length) { $("tasksBox").textContent = "no tasks yet"; return; }
+    if (!tasks.length) { $("tasksBox").textContent = "no tasks yet"; tasksSig = ""; return; }
+    // live polling: redraw only when the set of tasks or a status actually changed
+    const sig = tasks.map(t => t.id + ":" + t.status).join("|");
+    if (sig === tasksSig && !reattach) return;
+    tasksSig = sig;
     const rows = tasks.map(t =>
       '<tr data-id="' + t.id + '">' +
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
@@ -412,11 +478,10 @@ async function refreshTasks(reattach = false) {
       rows + "</table>";
     for (const tr of document.querySelectorAll("#tasksBox tr[data-id]"))
       tr.addEventListener("click", () => tr.dataset.id === expandedId ? collapse() : expand(tr.dataset.id));
-    if (reattach) {
-      const wanted = expandedId && tasks.find(t => t.id === expandedId) ? expandedId
-        : (tasks.find(t => !TERMINAL.includes(t.status)) || {}).id;
-      if (wanted) { const keep = wanted; expandedId = null; expand(keep); }
-    }
+    // a redraw drops the detail row: re-expand what was open (or, on tab open, the newest live task)
+    const wanted = expandedId && tasks.find(t => t.id === expandedId) ? expandedId
+      : (reattach ? (tasks.find(t => !TERMINAL.includes(t.status)) || {}).id : null);
+    if (wanted) { const keep = wanted; expandedId = null; expand(keep); }
   } catch (e) { $("tasksBox").textContent = "tasks: " + e.message; }
 }
 
