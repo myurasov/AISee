@@ -48,8 +48,8 @@
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   /* media drop zone */
-  #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center;
-          cursor: pointer; }
+  #drop, #drop *, label[for=files] { cursor: pointer; }
+  #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center; }
   #drop.over { border-color: #76b900; background: #f3f9e8; }
   #drop input { display: none; }
   #drop .picked { color: #222; }
@@ -97,12 +97,12 @@
     <div><label for="fps" title="video sampling rate in frames per second: 1 is enough for 'what happens', 8-15 hunts flicker/glitches">fps</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
     <div><label for="frames" title="alternative to fps: this many frames spread evenly over the whole clip">frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
     <div><label for="chunk" title="watch only: seconds of video per chunk (default sized so each chunk gets the full frame budget)">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
-    <div><label for="native" style="margin-bottom:.35rem" title="send the video itself instead of sampled frames: the model sees motion/timing (better temporal reasoning, more frames for the same cost); video-capable models only - stills-only models read it as one frame">native video</label><input type="checkbox" id="native"></div>
+    <div><label for="native" title="frames: the video is sampled into still images. video: send the video itself - the model sees motion/timing (better temporal reasoning, more frames for the same cost); video-capable models only - stills-only models read it as one frame">input</label><select id="native"><option value="frames">frames</option><option value="video">video (native)</option></select></div>
   </div>
   <div class="muted" style="margin-top:.35rem">
     <b>fps</b>/<b>frames</b>: how densely a video is sampled into images (leave empty for auto).
-    <b>native video</b>: send the video itself - the model sees motion and timing (video-capable models only).
-    <b>chunk s</b>: watch chunk length. Hover any label for details.
+    <b>input</b>: sampled frames, or the video itself (native) - the model sees motion and timing
+    (video-capable models only). <b>chunk s</b>: watch chunk length. Hover any label for details.
   </div>
   <p style="margin-bottom:0"><button id="go">Run</button></p>
   <div id="status"></div>
@@ -629,7 +629,7 @@ $("go").addEventListener("click", async () => {
   if ($("fps").value) params.fps = parseFloat($("fps").value);
   if ($("frames").value) params.frames = parseInt($("frames").value, 10);
   if ($("chunk").value) params.chunk_seconds = parseFloat($("chunk").value);
-  if ($("native").checked) params.native = true;
+  if ($("native").value === "video") params.native = true;
 
   $("go").disabled = true;
   $("status").textContent = "checking which files are already on the server...";
