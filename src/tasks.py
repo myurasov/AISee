@@ -493,6 +493,10 @@ class Core:
             budget = server_frames if native else entry["max_images"]
             chunk_seconds = max(1.0, budget / fps)
         n = math.ceil(dur / chunk_seconds)
+        # a tail shorter than one frame interval (e.g. a 360.125 s video at 60 s chunks)
+        # would yield a frameless segment and crash ffmpeg - fold it into the last chunk
+        if n > 1 and dur - (n - 1) * chunk_seconds < max(1.0 / fps, 0.5):
+            n -= 1
         if n > 64:
             raise RuntimeError(f"watch: {n} chunks > 64 - raise chunk_seconds or lower fps")
 
@@ -501,7 +505,8 @@ class Core:
 
         def _do_chunk(i: int) -> dict | None:
             start = i * chunk_seconds
-            d_s = min(chunk_seconds, dur - start)
+            # the last chunk absorbs any folded-in tail (see the n adjustment above)
+            d_s = (dur - start) if i == n - 1 else min(chunk_seconds, dur - start)
             if d_s <= 0.05:
                 return None
             rng = f"{start:.1f}s-{min(start + d_s, dur):.1f}s"

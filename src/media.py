@@ -89,6 +89,9 @@ def reencode_segment(path: str | Path, start: float, dur: float, fps: float | No
         cmd += ["-vf", ",".join(vf)]
     cmd += ["-an", "-c:v", "mjpeg", "-q:v", "6", str(out)]
     subprocess.run(cmd, check=True)
+    if not out.exists() or out.stat().st_size == 0:
+        raise RuntimeError(f"ffmpeg produced no output for segment {start:.1f}s+{dur:.1f}s "
+                           f"of {path} - the window may contain no frames")
     return out
 
 
