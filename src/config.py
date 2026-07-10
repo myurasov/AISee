@@ -24,6 +24,17 @@ DEFAULTS: dict = {
 }
 
 
+def lan_ip() -> str | None:
+    """This host's outbound-interface IP (no packets sent)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
 def _dump_toml(cfg: dict) -> str:
     lines: list[str] = []
     for section, values in cfg.items():

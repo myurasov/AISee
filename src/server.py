@@ -99,11 +99,31 @@ def create_app() -> FastAPI:
         return {"ok": True, "version": __version__, "models": models}
 
     @app.get("/v1/describe")
-    def describe_api(format: str = "markdown", flavor: str = "api"):
+    def describe_api(request: Request, format: str = "markdown", flavor: str = "api"):
         """flavor=api (REST guide, default) or flavor=mcp (MCP tool guide)."""
         if format == "json":
             return describe.as_json(core)
-        return Response(describe.as_markdown(core, flavor), media_type="text/markdown")
+        md = describe.as_markdown(core, flavor)
+        if flavor == "mcp":
+            # concrete access details for the upload recipe. The URL is not a secret; the
+            # consumer token is echoed only to callers who already presented it (the MCP
+            # path always does - /mcp is consumer-guarded), never on the open endpoint.
+            cfg = config.load()["api"]
+            host = cfg["host"] if cfg["host"] != "0.0.0.0" else (config.lan_ip() or "<host-ip>")
+            md = md.replace("{{api_base}}", f"http://{host}:{cfg['port']}")
+            store = creds.load_store()
+            consumer = os.environ.get("AISEE_API_TOKEN") or store.get("AISEE_API_TOKEN")
+            admin = os.environ.get("AISEE_ADMIN_TOKEN") or store.get("AISEE_ADMIN_TOKEN")
+            got = request.headers.get("authorization", "")
+            bearer = got[7:].strip() if got.startswith("Bearer ") else ""
+            if not consumer:
+                token_text = "(none - auth is disabled on this host)"
+            elif bearer in {t for t in (consumer, admin) if t}:
+                token_text = consumer
+            else:
+                token_text = "<consumer token - ask the host operator>"
+            md = md.replace("{{consumer_token}}", token_text)
+        return Response(md, media_type="text/markdown")
 
     @app.get("/v1/gpu")
     def gpu():

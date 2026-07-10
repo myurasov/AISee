@@ -18,21 +18,11 @@ def _p(msg: str) -> None:
     print(msg, flush=True)
 
 
-def _lan_ip() -> str | None:
-    import socket
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))  # no packets sent; just picks the outbound interface
-            return s.getsockname()[0]
-    except OSError:
-        return None
-
-
 def _listen_line() -> str:
     cfg = config.load()["api"]
     line = f"listening on {cfg['host']}:{cfg['port']}"
     if cfg["host"] == "0.0.0.0":
-        ip = _lan_ip()
+        ip = config.lan_ip()
         line += f" — reachable at http://{ip or '<this-host-ip>'}:{cfg['port']}"
     return line
 

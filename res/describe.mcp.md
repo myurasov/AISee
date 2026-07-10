@@ -32,13 +32,17 @@ pixels), `max_tokens`; `watch` adds `chunk_seconds` and `wait`.
 MCP tool calls carry no file bytes, so a media entry is either a **path on the AISee host**
 or a **`sha256:<hex>` reference** to content you upload first over HTTP to the same server
 (one-time per unique file; the store keeps it for a TTL, default 24 hours, refreshed on
-each reuse):
+each reuse).
+
+**Access for this host: HTTP API base `{{api_base}}`; consumer token: `{{consumer_token}}`**
+(send it as `Authorization: Bearer <token>`; omit the header if auth is disabled).
 
 1. Compute the SHA-256 of the file bytes (lowercase hex): `sha256sum f.png` (Linux),
    `shasum -a 256 f.png` (macOS), or `hashlib.sha256(open("f","rb").read()).hexdigest()`.
-2. Probe `GET <server>/v1/blobs/<sha256>` -> `{"exists": ...}`. If it exists, skip the upload.
-3. Upload if missing: `curl -s -X POST <server>/v1/blobs -H "Authorization: Bearer <consumer
-   token>" -F files=@f.png` -> `[{"sha256": "...", "size": ...}]`.
+2. Probe `GET {{api_base}}/v1/blobs/<sha256>` -> `{"exists": ...}`. If it exists, skip the
+   upload.
+3. Upload if missing: `curl -s -X POST {{api_base}}/v1/blobs -H "Authorization: Bearer
+   {{consumer_token}}" -F files=@f.png` -> `[{"sha256": "...", "size": ...}]`.
 4. Pass `"sha256:<hex>"` as the media entry to `look` / `assert_visual` / `watch`.
 
 ## Behavior to plan around
