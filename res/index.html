@@ -52,6 +52,16 @@
   pre.describe { background: #fafafa; border: 1px solid #e4e4e4; padding: .6rem .8rem;
                  white-space: pre-wrap; word-break: break-word; font-size: .8rem;
                  max-height: 32rem; overflow-y: auto; margin: .3rem 0; }
+  /* rendered describe markdown */
+  .md h2 { font-size: 1.15rem; margin: 1rem 0 .4rem; }
+  .md h3 { font-size: 1rem; margin: .9rem 0 .3rem; }
+  .md h4 { font-size: .9rem; margin: .8rem 0 .2rem; }
+  .md p, .md li { font-size: .85rem; line-height: 1.5; }
+  .md ul, .md ol { margin: .3rem 0 .6rem; padding-left: 1.4rem; }
+  .md code { background: #f2f2f2; padding: 0 .25rem; font-size: .95em; }
+  .md pre { background: #fafafa; border: 1px solid #e4e4e4; padding: .5rem .7rem;
+            font-size: .8rem; white-space: pre-wrap; word-break: break-word; }
+  .md table { margin: .4rem 0 .8rem; }
   #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center; }
   #drop.over { border-color: #76b900; background: #f3f9e8; }
   #drop input { display: none; }
@@ -146,13 +156,11 @@
     <b>Cursor</b>: put the same JSON into <code>.cursor/mcp.json</code> in your project (or
     <code>~/.cursor/mcp.json</code> globally); enable it under Settings &gt; MCP.
   </div>
-  <b>What the agent sees (<code>describe</code> tool / <code>/v1/describe?flavor=mcp</code>)</b>
-  <pre id="mcpDescribe" class="describe muted">loading...</pre>
+  <div id="mcpDescribe" class="md muted">loading...</div>
 </div>
 
 <div class="tab" id="tab-api">
-  <b>REST API guide (<code>/v1/describe</code>)</b>
-  <pre id="apiDescribe" class="describe muted">loading...</pre>
+  <div id="apiDescribe" class="md muted">loading...</div>
 </div>
 
 <div class="tab" id="tab-server">
@@ -207,20 +215,83 @@ async function fetchText(path) {
   return r.text();
 }
 
+// minimal markdown renderer for the describe docs: headings, bold, inline code,
+// fenced code blocks, tables, lists, paragraphs. Escapes HTML first.
+function mdInline(s) {
+  return s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+          .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function mdToHtml(md) {
+  const lines = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                  .split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^```/.test(l)) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push("<pre>" + buf.join("\n") + "</pre>");
+    } else if (/^#{1,4} /.test(l)) {
+      const n = l.match(/^#+/)[0].length + 1;  // shift down: doc h1 -> tab h2
+      out.push("<h" + n + ">" + mdInline(l.replace(/^#+ /, "")) + "</h" + n + ">");
+      i++;
+    } else if (l.startsWith("|")) {
+      const rows = [];
+      while (i < lines.length && lines[i].startsWith("|")) rows.push(lines[i++]);
+      let html = "<table>";
+      rows.forEach((r, idx) => {
+        if (idx === 1 && /^\|[\s:|-]+$/.test(r)) return;  // |---|---| separator
+        const tag = idx === 0 ? "th" : "td";
+        const cells = r.split("|").slice(1, -1)
+          .map(c => "<" + tag + ">" + mdInline(c.trim()) + "</" + tag + ">").join("");
+        html += "<tr>" + cells + "</tr>";
+      });
+      out.push(html + "</table>");
+    } else if (/^- /.test(l) || /^\d+\. /.test(l)) {
+      const ordered = /^\d+\. /.test(l);
+      const items = [];
+      while (i < lines.length && lines[i].trim() !== "") {
+        if (/^- /.test(lines[i]) || /^\d+\. /.test(lines[i]))
+          items.push(lines[i].replace(/^- /, "").replace(/^\d+\. /, ""));
+        else items[items.length - 1] += " " + lines[i].trim();  // wrapped continuation
+        i++;
+      }
+      out.push((ordered ? "<ol>" : "<ul>") +
+               items.map(x => "<li>" + mdInline(x) + "</li>").join("") +
+               (ordered ? "</ol>" : "</ul>"));
+    } else if (l.trim() === "") {
+      i++;
+    } else {
+      const buf = [l];
+      i++;
+      while (i < lines.length && lines[i].trim() !== "" &&
+             !/^(#{1,4} |```|\||- |\d+\. )/.test(lines[i])) buf.push(lines[i++]);
+      out.push("<p>" + mdInline(buf.join(" ")) + "</p>");
+    }
+  }
+  return out.join("\n");
+}
+
+function loadDescribe(path, elId) {
+  fetchText(path)
+    .then(t => { const el = $(elId); el.innerHTML = mdToHtml(t); el.className = "md"; })
+    .catch(e => { $(elId).textContent = "cannot load: " + e.message; });
+}
+
 function loadMcpTab() {
   const tok = tokenFor(false);
   const entry = { type: "http", url: base() + "/mcp" };
   if (tok) entry.headers = { Authorization: "Bearer " + tok };
   $("mcpCfg").textContent = JSON.stringify({ mcpServers: { aisee: entry } }, null, 2);
-  fetchText("/v1/describe?flavor=mcp")
-    .then(t => { const el = $("mcpDescribe"); el.textContent = t; el.className = "describe"; })
-    .catch(e => { $("mcpDescribe").textContent = "cannot load: " + e.message; });
+  loadDescribe("/v1/describe?flavor=mcp", "mcpDescribe");
 }
 
 function loadApiTab() {
-  fetchText("/v1/describe")
-    .then(t => { const el = $("apiDescribe"); el.textContent = t; el.className = "describe"; })
-    .catch(e => { $("apiDescribe").textContent = "cannot load: " + e.message; });
+  loadDescribe("/v1/describe", "apiDescribe");
 }
 
 $("mcpCopy").addEventListener("click", () => {
