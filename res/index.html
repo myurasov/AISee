@@ -49,6 +49,9 @@
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   /* media drop zone */
   #drop, #drop *, label[for=files] { cursor: pointer; }
+  pre.describe { background: #fafafa; border: 1px solid #e4e4e4; padding: .6rem .8rem;
+                 white-space: pre-wrap; word-break: break-word; font-size: .8rem;
+                 max-height: 32rem; overflow-y: auto; margin: .3rem 0; }
   #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center; }
   #drop.over { border-color: #76b900; background: #f3f9e8; }
   #drop input { display: none; }
@@ -68,6 +71,8 @@
   <button data-tab="tasks">Tasks</button>
   <button data-tab="stat">Models</button>
   <button data-tab="gpu">GPU</button>
+  <button data-tab="mcp">MCP</button>
+  <button data-tab="api">API</button>
 </nav>
 <div id="frame">
 
@@ -130,6 +135,26 @@
   <div id="gpuBox" class="muted">-</div>
 </div>
 
+<div class="tab" id="tab-mcp">
+  <b>Connect an AI agent over MCP</b>
+  <div class="muted" style="margin:.2rem 0 .4rem">Add this to your MCP config, then restart the session:</div>
+  <pre id="mcpCfg" class="describe" style="max-height:none"></pre>
+  <p style="margin:.3rem 0"><button id="mcpCopy">Copy JSON</button> <span id="mcpCopyMsg" class="muted"></span></p>
+  <div class="muted" style="margin-bottom:.8rem">
+    <b>Claude Code</b>: put the JSON into <code>.mcp.json</code> in your project root (or add under
+    <code>mcpServers</code> in <code>~/.claude.json</code>); verify with <code>/mcp</code>.<br>
+    <b>Cursor</b>: put the same JSON into <code>.cursor/mcp.json</code> in your project (or
+    <code>~/.cursor/mcp.json</code> globally); enable it under Settings &gt; MCP.
+  </div>
+  <b>What the agent sees (<code>describe</code> tool / <code>/v1/describe?flavor=mcp</code>)</b>
+  <pre id="mcpDescribe" class="describe muted">loading...</pre>
+</div>
+
+<div class="tab" id="tab-api">
+  <b>REST API guide (<code>/v1/describe</code>)</b>
+  <pre id="apiDescribe" class="describe muted">loading...</pre>
+</div>
+
 <div class="tab" id="tab-server">
   <label for="server">API base URL</label><input type="text" id="server">
   <div class="row">
@@ -170,7 +195,49 @@ function showTab(name) {
   if (name === "gpu") { refreshGpu(); gpuTimer = setInterval(refreshGpu, 2000); }
   if (tasksTimer) { clearInterval(tasksTimer); tasksTimer = null; }
   if (name === "tasks") { refreshTasks(true); tasksTimer = setInterval(refreshTasks, 3000); }
+  if (name === "mcp") loadMcpTab();
+  if (name === "api") loadApiTab();
 }
+
+// ---------------- mcp + api tabs ----------------
+
+async function fetchText(path) {
+  const r = await fetch(base() + path, { headers: headers() });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.text();
+}
+
+function loadMcpTab() {
+  const tok = tokenFor(false);
+  const entry = { type: "http", url: base() + "/mcp" };
+  if (tok) entry.headers = { Authorization: "Bearer " + tok };
+  $("mcpCfg").textContent = JSON.stringify({ mcpServers: { aisee: entry } }, null, 2);
+  fetchText("/v1/describe?flavor=mcp")
+    .then(t => { const el = $("mcpDescribe"); el.textContent = t; el.className = "describe"; })
+    .catch(e => { $("mcpDescribe").textContent = "cannot load: " + e.message; });
+}
+
+function loadApiTab() {
+  fetchText("/v1/describe")
+    .then(t => { const el = $("apiDescribe"); el.textContent = t; el.className = "describe"; })
+    .catch(e => { $("apiDescribe").textContent = "cannot load: " + e.message; });
+}
+
+$("mcpCopy").addEventListener("click", () => {
+  const txt = $("mcpCfg").textContent;
+  const done = ok => { $("mcpCopyMsg").textContent = ok ? "copied" : "copy failed - select and copy manually"; };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(txt).then(() => done(true), () => done(false));
+  } else {
+    // plain-http origins have no async clipboard; fall back to a selected textarea
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    try { done(document.execCommand("copy")); } catch (e) { done(false); }
+    ta.remove();
+  }
+});
 for (const b of document.querySelectorAll("nav button"))
   b.addEventListener("click", () => showTab(b.dataset.tab));
 
