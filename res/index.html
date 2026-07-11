@@ -149,7 +149,6 @@
   <h2 style="font-size:1.15rem;margin:.2rem 0 .4rem">MCP configuration</h2>
   <div class="muted" style="margin:.2rem 0 .4rem">Add this to your MCP config, then restart the session:</div>
   <pre id="mcpCfg" class="describe" style="max-height:none"></pre>
-  <p style="margin:.3rem 0"><button id="mcpCopy">Copy JSON</button> <span id="mcpCopyMsg" class="muted"></span></p>
   <div class="muted" style="margin-bottom:.8rem">
     <b>Claude Code</b>: put the JSON into <code>.mcp.json</code> in your project root (or add under
     <code>mcpServers</code> in <code>~/.claude.json</code>); verify with <code>/mcp</code>.<br>
@@ -294,21 +293,6 @@ function loadApiTab() {
   loadDescribe("/v1/describe", "apiDescribe");
 }
 
-$("mcpCopy").addEventListener("click", () => {
-  const txt = $("mcpCfg").textContent;
-  const done = ok => { $("mcpCopyMsg").textContent = ok ? "copied" : "copy failed - select and copy manually"; };
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(txt).then(() => done(true), () => done(false));
-  } else {
-    // plain-http origins have no async clipboard; fall back to a selected textarea
-    const ta = document.createElement("textarea");
-    ta.value = txt;
-    document.body.appendChild(ta);
-    ta.select();
-    try { done(document.execCommand("copy")); } catch (e) { done(false); }
-    ta.remove();
-  }
-});
 for (const b of document.querySelectorAll("nav button"))
   b.addEventListener("click", () => showTab(b.dataset.tab));
 
