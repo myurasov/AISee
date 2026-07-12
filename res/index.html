@@ -470,7 +470,7 @@ async function modelAction(act, slug) {
     else if (act === "stop") await api("/v1/models/" + slug + "/stop", { method: "POST" }, true);
     else if (act === "remove") await api("/v1/models/" + slug, { method: "DELETE" }, true);
     modelsMsg(act + " " + slug + ": ok" +
-      (act === "start" ? " (loading can take minutes; Refresh to see progress)" : ""));
+      (act === "start" ? " (loading can take minutes)" : ""));
     await connect();
   } catch (e) { modelsMsg(act + " " + slug + ": " + e.message, true); }
 }
