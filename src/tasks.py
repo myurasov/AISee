@@ -231,6 +231,12 @@ class Core:
             "default": registry.default_model() == slug,
             "supports_native_video": entry.get("supports_native_video", True),
             "gpu_frac": entry.get("gpu_frac"),
+            "max_model_len": entry.get("max_model_len"),
+            "max_images": entry.get("max_images"),
+            "video_frames": entry.get("video_frames"),
+            "concurrency": entry.get("concurrency", 1),
+            # video sampling default: global config unless the model's TOML overrides it
+            "fps": entry.get("fps") or float(self.cfg["defaults"]["fps"]),
             "loading_note": self._model_loading.get(slug),
         }
 

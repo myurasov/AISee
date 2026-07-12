@@ -368,7 +368,9 @@ let statSig = "";  // live polling: redraw the models table only when something 
 
 function renderStat(h, models, force = false) {
   const sig = h.version + "|" + models.map(m =>
-    m.slug + ":" + m.state + ":" + (m.loading_note || "") + ":" + m.idle_timeout).join("|");
+    m.slug + ":" + m.state + ":" + (m.loading_note || "") + ":" + m.idle_timeout + ":" +
+    m.max_model_len + ":" + m.max_images + ":" + m.video_frames + ":" + m.concurrency + ":" +
+    m.fps).join("|");
   if (!force && sig === statSig) return;
   statSig = sig;
   $("apiInfo").textContent = "AISee v" + h.version + " at " + base() + " - " +
@@ -379,13 +381,24 @@ function renderStat(h, models, force = false) {
     '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
     "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
     "<td>" + (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-") + "</td>" +
+    "<td>" + (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") + "</td>" +
+    "<td>" + (m.max_images != null ? m.max_images : "-") + "</td>" +
+    "<td>" + (m.video_frames != null ? m.video_frames : "-") + "</td>" +
+    "<td>" + (m.fps != null ? m.fps : "-") + "</td>" +
+    "<td>" + (m.concurrency != null ? m.concurrency : "-") + "</td>" +
     "<td>" + (m.idle_timeout || "-") + " s</td>" +
     "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
     '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
     '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
     '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
   $("modelsBox").innerHTML = models.length
-    ? "<table><tr><th>model</th><th>state</th><th>video</th><th>gpu mem</th><th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
+    ? "<table><tr><th>model</th><th>state</th><th>video</th><th>gpu mem</th>" +
+      '<th title="context window (tokens)">context</th>' +
+      '<th title="max images per request">images</th>' +
+      '<th title="frames a native video is sampled to">frames</th>' +
+      '<th title="default video sampling rate (frames/second) when a query sets none">fps</th>' +
+      '<th title="parallel inferences">conc</th>' +
+      "<th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
     : '<div class="muted">no models installed</div>';
   for (const b of document.querySelectorAll("#modelsBox button"))
     b.addEventListener("click", () => modelAction(b.dataset.act, b.dataset.slug));
