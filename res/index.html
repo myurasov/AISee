@@ -18,6 +18,7 @@
   button { padding: .45rem 1.1rem; font: inherit; cursor: pointer; border: 1px solid #888; background: #f5f5f5; }
   button:hover { background: #eee; } button:disabled { opacity: .5; cursor: default; }
   .muted { color: #999; font-size: .8rem; }
+  .errmsg { color: #c33; font-size: .8rem; word-break: break-word; }
   a { color: #369; }
   /* tabs + frame */
   nav { display: flex; gap: 0; margin-bottom: -1px; }
@@ -454,33 +455,39 @@ async function loadCatalog(models) {
   } catch (e) { /* catalog optional */ }
 }
 
+function modelsMsg(text, isError = false) {
+  const el = $("modelsMsg");
+  el.textContent = text;
+  el.className = isError ? "errmsg" : "muted";
+}
+
 async function modelAction(act, slug) {
   if (act === "remove" &&
       !confirm("Uninstall model " + slug + "?\n\nThis stops it and removes it from this server. Downloaded weights stay in the shared cache, so reinstalling is fast.")) return;
-  $("modelsMsg").textContent = act + " " + slug + "...";
+  modelsMsg(act + " " + slug + "...");
   try {
     if (act === "start") await api("/v1/models/" + slug + "/start", { method: "POST" }, true);
     else if (act === "stop") await api("/v1/models/" + slug + "/stop", { method: "POST" }, true);
     else if (act === "remove") await api("/v1/models/" + slug, { method: "DELETE" }, true);
-    $("modelsMsg").textContent = act + " " + slug + ": ok" +
-      (act === "start" ? " (loading can take minutes; Refresh to see progress)" : "");
+    modelsMsg(act + " " + slug + ": ok" +
+      (act === "start" ? " (loading can take minutes; Refresh to see progress)" : ""));
     await connect();
-  } catch (e) { $("modelsMsg").textContent = act + " " + slug + ": " + e.message; }
+  } catch (e) { modelsMsg(act + " " + slug + ": " + e.message, true); }
 }
 
 $("installBtn").addEventListener("click", async () => {
   const name = $("installCustom").value.trim() || $("installSel").value;
-  if (!name) { $("modelsMsg").textContent = "pick a catalog model or enter an HF id"; return; }
-  $("modelsMsg").textContent = "installing " + name + "...";
+  if (!name) { modelsMsg("pick a catalog model or enter an HF id", true); return; }
+  modelsMsg("installing " + name + "...");
   try {
     const m = await api("/v1/models", { method: "POST",
       headers: Object.assign({ "Content-Type": "application/json" }, headers(true)),
       body: JSON.stringify({ name }) }, true);
-    $("modelsMsg").textContent = "installed " + m.slug +
-      " (weights download on first start)";
+    modelsMsg("installed " + m.slug +
+      " (weights download on first start)");
     $("installCustom").value = "";
     await connect();
-  } catch (e) { $("modelsMsg").textContent = "install: " + e.message; }
+  } catch (e) { modelsMsg("install: " + e.message, true); }
 });
 
 // ---------------- tasks table with inline detail row ----------------
