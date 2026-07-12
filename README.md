@@ -175,7 +175,9 @@ Things to know when going off-catalog:
 Several models can be installed at once, but with the single-model defaults only one fits the
 GPU at a time - to co-locate models, lower `gpu_frac` and `max_model_len` per model so the
 slices sum under 1.0 (weights + KV must fit each slice; e.g. an 8B at 0.25/32k next to the MoE
-at 0.55/32k). Tasks queue FIFO per model, with up to `concurrency` running at once.
+at 0.55/32k). A start that would push the running models' `gpu_frac` sum over 1.0 is refused
+up front with a clear error (HTTP 409) instead of letting the container crash-loop. Tasks
+queue FIFO per model, with up to `concurrency` running at once.
 
 A model idle longer than its `idle_timeout` (default 900 s, `0` disables) is stopped
 automatically to free the GPU. The next query targeting it starts it again; the task reports

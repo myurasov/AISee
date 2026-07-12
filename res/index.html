@@ -197,7 +197,8 @@ function showTab(name) {
   for (const s of document.querySelectorAll(".tab"))
     s.className = s.id === "tab-" + name ? "tab on" : "tab";
   localStorage.setItem("aisee.tab", name);
-  if (name === "stat") connect();
+  if (statTimer) { clearInterval(statTimer); statTimer = null; }
+  if (name === "stat") { connect(); statTimer = setInterval(refreshStat, 3000); }
   if (gpuTimer) { clearInterval(gpuTimer); gpuTimer = null; }
   if (name === "gpu") { refreshGpu(); gpuTimer = setInterval(refreshGpu, 2000); }
   if (tasksTimer) { clearInterval(tasksTimer); tasksTimer = null; }
@@ -361,6 +362,41 @@ async function api(path, opts = {}, admin = false) {
   return r.json();
 }
 
+let statTimer = null;
+let statSig = "";  // live polling: redraw the models table only when something changed
+
+function renderStat(h, models, force = false) {
+  const sig = h.version + "|" + models.map(m =>
+    m.slug + ":" + m.state + ":" + (m.loading_note || "") + ":" + m.idle_timeout).join("|");
+  if (!force && sig === statSig) return;
+  statSig = sig;
+  $("apiInfo").textContent = "AISee v" + h.version + " at " + base() + " - " +
+    (h.ok ? "healthy" : "unhealthy") + ", " + models.length + " model(s) installed, " +
+    models.filter(m => m.state === "running").length + " running";
+  const rows = models.map(m =>
+    "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
+    '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
+    "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
+    "<td>" + (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-") + "</td>" +
+    "<td>" + (m.idle_timeout || "-") + " s</td>" +
+    "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
+    '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
+    '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
+    '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
+  $("modelsBox").innerHTML = models.length
+    ? "<table><tr><th>model</th><th>state</th><th>video</th><th>gpu mem</th><th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
+    : '<div class="muted">no models installed</div>';
+  for (const b of document.querySelectorAll("#modelsBox button"))
+    b.addEventListener("click", () => modelAction(b.dataset.act, b.dataset.slug));
+  loadCatalog(models);
+}
+
+async function refreshStat() {
+  try {
+    renderStat(await api("/v1/health"), await api("/v1/models"));
+  } catch (e) { /* transient; the next poll retries */ }
+}
+
 async function connect() {
   localStorage.setItem("aisee.server", $("server").value.trim());
   localStorage.setItem("aisee.token", $("token").value.trim());
@@ -370,24 +406,7 @@ async function connect() {
     const models = await api("/v1/models");
     $("ver").textContent = "v" + h.version;
     $("health").textContent = "connected";
-    $("apiInfo").textContent = "AISee v" + h.version + " at " + base() + " - " +
-      (h.ok ? "healthy" : "unhealthy") + ", " + models.length + " model(s) installed, " +
-      models.filter(m => m.state === "running").length + " running";
-    const rows = models.map(m =>
-      "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
-      '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
-      "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
-      "<td>" + (m.idle_timeout || "-") + " s</td>" +
-      "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
-      '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
-      '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
-      '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
-    $("modelsBox").innerHTML = models.length
-      ? "<table><tr><th>model</th><th>state</th><th>video</th><th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
-      : '<div class="muted">no models installed</div>';
-    for (const b of document.querySelectorAll("#modelsBox button"))
-      b.addEventListener("click", () => modelAction(b.dataset.act, b.dataset.slug));
-    loadCatalog(models);
+    renderStat(h, models, true);
     const sel = $("model");
     const prev = sel.value;
     sel.innerHTML = '<option value="">(default)</option>';

@@ -230,8 +230,27 @@ class Core:
             "last_used": self.store.last_used(slug),
             "default": registry.default_model() == slug,
             "supports_native_video": entry.get("supports_native_video", True),
+            "gpu_frac": entry.get("gpu_frac"),
             "loading_note": self._model_loading.get(slug),
         }
+
+    def check_gpu_capacity(self, entry: dict) -> None:
+        """Refuse a start that would oversubscribe the GPU - before any container work.
+
+        Each model reserves gpu_frac of GPU memory at startup; if the running models'
+        fractions plus this one exceed 1.0, vLLM would crash-loop on allocation anyway,
+        so fail fast with an actionable message instead."""
+        others = [e for e in registry.list_installed()
+                  if e["slug"] != entry["slug"]
+                  and dockerctl.container_state(e["slug"]) == "running"]
+        used = sum(float(e.get("gpu_frac") or 0) for e in others)
+        need = float(entry.get("gpu_frac") or 0)
+        if used + need > 1.0 + 1e-6:
+            resident = ", ".join(f"{e['slug']} (gpu_frac {e['gpu_frac']})" for e in others)
+            raise RuntimeError(
+                f"not starting '{entry['slug']}': it needs gpu_frac {need} but running "
+                f"models already reserve {used:.2f} of the GPU ({resident}). Stop one "
+                f"first, or reinstall models with smaller --gpu-frac slices to co-locate.")
 
     def _lock_for(self, slug: str) -> threading.Lock:
         return self._model_locks.setdefault(slug, threading.Lock())
@@ -266,6 +285,7 @@ class Core:
                     pass  # container died or timed out -> full recreate below
                 finally:
                     self._model_loading.pop(slug, None)
+            self.check_gpu_capacity(entry)  # fail fast before any container work
             hf_token = creds.resolve("HF_TOKEN")
             with self._load_lock:  # admission control: one cold load at a time
                 self._model_loading[slug] = "starting container"
@@ -293,6 +313,11 @@ class Core:
             return entry
 
     def start_model_async(self, slug: str) -> None:
+        # capacity-check synchronously so the API can reject with a clear error
+        # instead of a container silently failing in the background
+        entry = registry.get(slug)
+        if entry and dockerctl.container_state(slug) != "running":
+            self.check_gpu_capacity(entry)
         threading.Thread(target=self._safe_ensure, args=(slug,), daemon=True).start()
 
     def _safe_ensure(self, slug: str) -> None:

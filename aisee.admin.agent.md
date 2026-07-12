@@ -117,8 +117,10 @@ strengths/weaknesses/pitfalls and the current serving configuration.
 - Model stuck loading: `./aisee model logs <slug>` - usually a weight download (HF can
   throttle to ~10-15 MB/s; the largest models take tens of minutes on first load).
 - HF 403 on a gated model: the token's account must accept the license on the model page.
-- "Free memory ... is less than desired": something else holds the GPU - stop the other
-  model/container and retry.
+- Starting a model whose gpu_frac does not fit next to the running ones is refused up front
+  (HTTP 409 / a clear CLI error) before any container work - stop a resident model first or
+  co-locate with smaller --gpu-frac slices. "Free memory ... is less than desired" can still
+  happen when a non-AISee process holds the GPU - stop it and retry.
 - Tasks orphaned in `model_loading` after a daemon crash are requeued automatically at the
   next `api start`.
 - Uploaded media is content-addressed (SHA-256 of the bytes) under `~/.aisee/tasks/blobs/`

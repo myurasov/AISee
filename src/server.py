@@ -178,7 +178,10 @@ def create_app() -> FastAPI:
     def model_start(slug: str):
         if not registry.get(slug):
             raise HTTPException(404, f"model '{slug}' is not installed")
-        core.start_model_async(slug)
+        try:
+            core.start_model_async(slug)
+        except RuntimeError as e:  # would oversubscribe the GPU
+            raise HTTPException(409, str(e))
         return {"slug": slug, "state": core.model_state(slug)}
 
     @app.post("/v1/models/{slug}/stop")

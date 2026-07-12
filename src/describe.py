@@ -33,7 +33,8 @@ _ENDPOINTS = [
     ("GET", "/v1/catalog", "consumer", "built-in model catalog with installed flags"),
     ("POST", "/v1/models", "admin", "install a model: {name: <catalog slug or HF id>, ...overrides}"),
     ("DELETE", "/v1/models/{slug}", "admin", "uninstall (weights stay cached)"),
-    ("POST", "/v1/models/{slug}/start", "admin", "start a model (non-blocking; poll /v1/models)"),
+    ("POST", "/v1/models/{slug}/start", "admin", "start a model (non-blocking; poll /v1/models; "
+                                                 "409 if it would oversubscribe GPU memory)"),
     ("POST", "/v1/models/{slug}/stop", "admin", "stop a model (frees GPU memory; stays installed)"),
     ("POST", "/v1/tasks", "consumer", "submit a query -> {id} (multipart: files + params JSON "
                                       "field; or JSON with media_paths on the server host)"),

@@ -19,7 +19,7 @@
 | POST | `/v1/blobs` | consumer | upload media into the content store -> [{sha256, size}] |
 | POST | `/v1/models` | admin | install a model: {"name": catalog slug or HF id} |
 | DELETE | `/v1/models/{slug}` | admin | uninstall (weights stay cached) |
-| POST | `/v1/models/{slug}/start` | admin | start a model (non-blocking; poll /v1/models) |
+| POST | `/v1/models/{slug}/start` | admin | start a model (non-blocking; poll /v1/models; 409 if it would oversubscribe GPU memory) |
 | POST | `/v1/models/{slug}/stop` | admin | stop a model (frees GPU memory; stays installed) |
 
 ## Authentication
