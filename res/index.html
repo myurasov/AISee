@@ -457,6 +457,7 @@ let statTimer = null;
 let statSig = "";  // live polling: redraw the models table only when something changed
 
 function renderStat(h, models, force = false) {
+  models = [...models].sort((a, b) => (b.last_used || 0) - (a.last_used || 0));
   const sig = h.version + "|" + models.map(m =>
     m.slug + ":" + m.state + ":" + (m.loading_note || "") + ":" + m.idle_timeout + ":" +
     m.gpu_frac + ":" + m.concurrency).join("|");
@@ -470,7 +471,6 @@ function renderStat(h, models, force = false) {
     '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
     "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
     "<td>" + (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-") + "</td>" +
-    "<td>" + (m.concurrency != null ? m.concurrency : "-") + "</td>" +
     "<td>" + (m.idle_timeout || "-") + " s</td>" +
     "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
     '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
@@ -478,7 +478,6 @@ function renderStat(h, models, force = false) {
     '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
   $("modelsBox").innerHTML = models.length
     ? "<table><tr><th>model</th><th>state</th><th>video</th><th>gpu mem</th>" +
-      '<th title="parallel inferences">conc</th>' +
       "<th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
     : '<div class="muted">no models installed</div>';
   for (const b of document.querySelectorAll("#modelsBox button"))
