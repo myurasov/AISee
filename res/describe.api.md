@@ -11,6 +11,7 @@
 | GET | `/v1/gpu` | consumer | live GPU stats: utilization, memory, power, temperature |
 | GET | `/v1/models` | consumer | installed models: state, port, idle_timeout, default flag |
 | GET | `/v1/catalog` | consumer | built-in model catalog with installed flags |
+| GET | `/v1/config` | consumer | effective global configuration (api + defaults) |
 | POST | `/v1/tasks` | consumer | submit a query -> {id} (multipart: files + params JSON field; or JSON with media_paths on the server host) |
 | GET | `/v1/tasks` | consumer | list tasks (?status=&model=) |
 | GET | `/v1/tasks/{id}` | consumer | full task: status, progress, timings, result |

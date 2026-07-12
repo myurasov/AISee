@@ -82,6 +82,7 @@
   <button data-tab="tasks">Tasks</button>
   <button data-tab="stat">Models</button>
   <button data-tab="gpu">GPU</button>
+  <button data-tab="config">Config</button>
   <button data-tab="mcp">MCP</button>
   <button data-tab="api">API</button>
 </nav>
@@ -146,6 +147,10 @@
   <div id="gpuBox" class="muted">-</div>
 </div>
 
+<div class="tab" id="tab-config">
+  <div id="configBox" class="muted">loading...</div>
+</div>
+
 <div class="tab" id="tab-mcp">
   <h2 style="font-size:1.15rem;margin:.2rem 0 .4rem">MCP configuration</h2>
   <div class="muted" style="margin:.2rem 0 .4rem">Add this to your MCP config, then restart the session:</div>
@@ -206,6 +211,91 @@ function showTab(name) {
   if (name === "tasks") { refreshTasks(true); tasksTimer = setInterval(refreshTasks, 3000); }
   if (name === "mcp") loadMcpTab();
   if (name === "api") loadApiTab();
+  if (name === "config") loadConfigTab();
+}
+
+// ---------------- config tab ----------------
+
+const CONFIG_DOC = {
+  "api.host": "bind address of the API daemon: 0.0.0.0 serves the whole network, 127.0.0.1 is this-host-only",
+  "api.port": "TCP port serving the REST API, this console, and the /mcp endpoint",
+  "defaults.default_model": "model used when a query does not name one (first installed model if empty)",
+  "defaults.idle_timeout": "seconds a started model stays on the GPU after its last use before auto-unload; 0 = never unload; per-model TOMLs override this and apply live",
+  "defaults.fps": "video sampling rate (frames per second of source time) when a query sets neither fps nor frames; 1 is enough for 'what happens', 8-15 hunts flicker",
+  "defaults.frames": "frames spread evenly over a video when sampling into images (bounded by the model's image budget)",
+  "defaults.max_tokens": "answer-length budget per inference; reasoning models also think inside it, so keep headroom",
+  "defaults.request_timeout": "seconds one inference may take before it is abandoned; a full 64-frame chunk on a dense model can take minutes",
+  "defaults.task_ttl_hours": "finished tasks and their media are deleted after this many hours",
+  "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"
+};
+
+const MODEL_FIELD_DOC = [
+  ["context (max_model_len)", "the model's working window in tokens: everything in one request - question, context text, images (~1-2.5k tokens each), and the answer - must fit. vLLM reserves KV-cache memory for the FULL window inside gpu_frac at startup, so a bigger context costs GPU memory even for short requests. Needs a model restart to change."],
+  ["images (max_images)", "per-request image budget; also caps how many sampled video frames go into one inference. Needs a model restart."],
+  ["frames (video_frames)", "how many frames a native video is reduced to server-side, spread evenly over the whole clip (temporal resolution, not a length limit). Needs a model restart."],
+  ["conc (concurrency)", "inferences vLLM runs in parallel for this model (batched on the GPU); further tasks queue FIFO. watch chunks use the same parallelism."],
+  ["gpu mem (gpu_frac)", "fraction of GPU memory reserved when the model starts; weights load into it and the remainder becomes KV cache. Starts are refused when running models' fractions would sum over 1.0."],
+  ["idle timeout", "seconds until an unused model is auto-unloaded (0 = never); read live from the model's TOML."],
+  ["image", "the vLLM serving container image for this model."]
+];
+
+async function loadConfigTab() {
+  try {
+    const [cfg, models] = [await api("/v1/config"), await api("/v1/models")];
+    const box = $("configBox");
+    box.className = "md";
+    box.innerHTML = "";
+    const h = t => { const e = document.createElement("h2"); e.textContent = t; return e; };
+    const note = t => { const e = document.createElement("p"); e.className = "muted"; e.textContent = t; return e; };
+
+    box.appendChild(h("Global configuration"));
+    box.appendChild(note("From ~/.aisee/config.toml on the host, merged over built-in defaults. " +
+                         "Edit the file to change; api.host/port need an API restart, the rest applies live."));
+    let t = "<table><tr><th>option</th><th>value</th><th>meaning</th></tr>";
+    for (const section of Object.keys(cfg)) {
+      for (const [k, v] of Object.entries(cfg[section])) {
+        const key = section + "." + k;
+        t += "<tr><td><code>" + key + "</code></td><td>" + String(v) + "</td><td>" +
+             (CONFIG_DOC[key] || "") + "</td></tr>";
+      }
+    }
+    const gt = document.createElement("div");
+    gt.innerHTML = t + "</table>";
+    box.appendChild(gt);
+
+    box.appendChild(h("Model serving configuration"));
+    box.appendChild(note("From ~/.aisee/models/<slug>.toml. context/images/frames/gpu mem bake into the " +
+                         "serving container, so changing them needs a model stop + start; idle timeout applies live."));
+    let mt = "<table><tr><th>model</th><th>context</th><th>images</th><th>frames</th><th>conc</th>" +
+             "<th>gpu mem</th><th>idle timeout</th><th>image</th></tr>";
+    for (const m of models) {
+      mt += "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
+        "<td>" + (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") + "</td>" +
+        "<td>" + (m.max_images != null ? m.max_images : "-") + "</td>" +
+        "<td>" + (m.video_frames != null ? m.video_frames : "-") + "</td>" +
+        "<td>" + (m.concurrency != null ? m.concurrency : "-") + "</td>" +
+        "<td>" + (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-") + "</td>" +
+        "<td>" + (m.idle_timeout != null ? m.idle_timeout + " s" : "-") + "</td>" +
+        "<td>" + (m.image || "-") + "</td></tr>";
+    }
+    const mtd = document.createElement("div");
+    mtd.innerHTML = mt + "</table>";
+    box.appendChild(mtd);
+
+    box.appendChild(h("What the model options mean"));
+    const dl = document.createElement("ul");
+    for (const [k, v] of MODEL_FIELD_DOC) {
+      const li = document.createElement("li");
+      const b = document.createElement("b");
+      b.textContent = k;
+      li.appendChild(b);
+      li.appendChild(document.createTextNode(" - " + v));
+      dl.appendChild(li);
+    }
+    box.appendChild(dl);
+  } catch (e) {
+    $("configBox").textContent = "cannot load: " + e.message;
+  }
 }
 
 // ---------------- mcp + api tabs ----------------
@@ -369,8 +459,7 @@ let statSig = "";  // live polling: redraw the models table only when something 
 function renderStat(h, models, force = false) {
   const sig = h.version + "|" + models.map(m =>
     m.slug + ":" + m.state + ":" + (m.loading_note || "") + ":" + m.idle_timeout + ":" +
-    m.max_model_len + ":" + m.max_images + ":" + m.video_frames + ":" + m.concurrency + ":" +
-    m.fps).join("|");
+    m.gpu_frac + ":" + m.concurrency).join("|");
   if (!force && sig === statSig) return;
   statSig = sig;
   $("apiInfo").textContent = "AISee v" + h.version + " at " + base() + " - " +
@@ -381,10 +470,6 @@ function renderStat(h, models, force = false) {
     '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
     "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
     "<td>" + (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-") + "</td>" +
-    "<td>" + (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") + "</td>" +
-    "<td>" + (m.max_images != null ? m.max_images : "-") + "</td>" +
-    "<td>" + (m.video_frames != null ? m.video_frames : "-") + "</td>" +
-    "<td>" + (m.fps != null ? m.fps : "-") + "</td>" +
     "<td>" + (m.concurrency != null ? m.concurrency : "-") + "</td>" +
     "<td>" + (m.idle_timeout || "-") + " s</td>" +
     "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
@@ -393,10 +478,6 @@ function renderStat(h, models, force = false) {
     '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
   $("modelsBox").innerHTML = models.length
     ? "<table><tr><th>model</th><th>state</th><th>video</th><th>gpu mem</th>" +
-      '<th title="context window (tokens)">context</th>' +
-      '<th title="max images per request">images</th>' +
-      '<th title="frames a native video is sampled to">frames</th>' +
-      '<th title="default video sampling rate (frames/second) when a query sets none">fps</th>' +
       '<th title="parallel inferences">conc</th>' +
       "<th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
     : '<div class="muted">no models installed</div>';

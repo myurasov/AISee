@@ -191,6 +191,11 @@ def create_app() -> FastAPI:
         core.stop_model(slug)
         return {"slug": slug, "state": core.model_state(slug)}
 
+    @app.get("/v1/config")
+    def get_config():
+        """Effective global configuration (config.toml merged over defaults). No secrets."""
+        return config.load()
+
     @app.get("/v1/catalog")
     def catalog_list():
         """Built-in model catalog with installed flags (for install UIs)."""

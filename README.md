@@ -209,6 +209,7 @@ Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 | `GET /v1/gpu` | consumer | live GPU utilization/memory/power/temperature |
 | `GET /v1/models` | consumer | registry with state, port, idle_timeout, last_used, default |
 | `GET /v1/catalog` | consumer | built-in catalog with installed flags |
+| `GET /v1/config` | consumer | effective global configuration (api + defaults) |
 | `POST /v1/tasks` | consumer | submit, returns `{id}`. Multipart: `files` + `params` (JSON string); or plain JSON with `media_paths` for files already on the host |
 | `GET /v1/tasks` | consumer | list, filters `?status=` `?model=` |
 | `GET /v1/tasks/{id}` | consumer | status, progress, timings, result |

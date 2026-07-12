@@ -31,6 +31,7 @@ _ENDPOINTS = [
     ("GET", "/v1/gpu", "consumer", "live GPU stats: utilization, memory, power, temperature"),
     ("GET", "/v1/models", "consumer", "installed models: state, port, idle_timeout, default flag"),
     ("GET", "/v1/catalog", "consumer", "built-in model catalog with installed flags"),
+    ("GET", "/v1/config", "consumer", "effective global configuration (api + defaults)"),
     ("POST", "/v1/models", "admin", "install a model: {name: <catalog slug or HF id>, ...overrides}"),
     ("DELETE", "/v1/models/{slug}", "admin", "uninstall (weights stay cached)"),
     ("POST", "/v1/models/{slug}/start", "admin", "start a model (non-blocking; poll /v1/models; "
