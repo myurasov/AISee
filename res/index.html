@@ -64,6 +64,9 @@
             font-size: .8rem; white-space: pre-wrap; word-break: break-word; }
   .md table { margin: .4rem 0 .8rem; }
   #configBox td:first-child { white-space: nowrap; word-break: normal; }
+  details.cfgm { margin: .35rem 0; }
+  details.cfgm summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+  details.cfgm table { margin-bottom: .6rem; }
   #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center; }
   #drop.over { border-color: #76b900; background: #f3f9e8; }
   #drop input { display: none; }
@@ -230,16 +233,6 @@ const CONFIG_DOC = {
   "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"
 };
 
-const MODEL_FIELD_DOC = [
-  ["context (max_model_len)", "the model's working window in tokens: everything in one request - question, context text, images (~1-2.5k tokens each), and the answer - must fit. vLLM reserves KV-cache memory for the FULL window inside gpu_frac at startup, so a bigger context costs GPU memory even for short requests. Needs a model restart to change."],
-  ["images (max_images)", "per-request image budget; also caps how many sampled video frames go into one inference. Needs a model restart."],
-  ["frames (video_frames)", "how many frames a native video is reduced to server-side, spread evenly over the whole clip (temporal resolution, not a length limit). Needs a model restart."],
-  ["conc (concurrency)", "inferences vLLM runs in parallel for this model (batched on the GPU); further tasks queue FIFO. watch chunks use the same parallelism."],
-  ["gpu mem (gpu_frac)", "fraction of GPU memory reserved when the model starts; weights load into it and the remainder becomes KV cache. Starts are refused when running models' fractions would sum over 1.0."],
-  ["idle timeout", "seconds until an unused model is auto-unloaded (0 = never); read live from the model's TOML."],
-  ["image", "the vLLM serving container image for this model."]
-];
-
 async function loadConfigTab() {
   try {
     const [cfg, models] = [await api("/v1/config"), await api("/v1/models")];
@@ -264,36 +257,59 @@ async function loadConfigTab() {
     gt.innerHTML = t + "</table>";
     box.appendChild(gt);
 
-    box.appendChild(h("Model serving configuration"));
-    box.appendChild(note("From ~/.aisee/models/<slug>.toml. context/images/frames/gpu mem bake into the " +
-                         "serving container, so changing them needs a model stop + start; idle timeout applies live."));
-    let mt = "<table><tr><th>model</th><th>context</th><th>images</th><th>frames</th><th>conc</th>" +
-             "<th>gpu mem</th><th>idle timeout</th><th>image</th></tr>";
+    box.appendChild(h("Model configuration (effective)"));
+    box.appendChild(note("Global defaults merged with each model's ~/.aisee/models/<slug>.toml. " +
+                         "The source column says where the value comes from. context/images/frames/" +
+                         "gpu mem bake into the serving container, so changing them needs a model " +
+                         "stop + start; idle timeout applies live."));
+    const d = cfg.defaults || {};
     for (const m of models) {
-      mt += "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
-        "<td>" + (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") + "</td>" +
-        "<td>" + (m.max_images != null ? m.max_images : "-") + "</td>" +
-        "<td>" + (m.video_frames != null ? m.video_frames : "-") + "</td>" +
-        "<td>" + (m.concurrency != null ? m.concurrency : "-") + "</td>" +
-        "<td>" + (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-") + "</td>" +
-        "<td>" + (m.idle_timeout != null ? m.idle_timeout + " s" : "-") + "</td>" +
-        "<td>" + (m.image || "-") + "</td></tr>";
+      const fields = [
+        ["hf_id", m.hf_id, "model", "HuggingFace model id served by the container"],
+        ["image", m.image || "-", "model", "vLLM serving container image"],
+        ["port", m.port, "model", "host port of the model's serving container"],
+        ["native video", m.supports_native_video ? "yes" : "no", "model",
+         "whether the model ingests video itself; stills-only models read a clip as one frame"],
+        ["gpu_frac", m.gpu_frac != null ? m.gpu_frac + " (" + Math.round(m.gpu_frac * 100) + "%)" : "-",
+         "model", "fraction of GPU memory reserved at start; weights + leftover-as-KV-cache. " +
+         "Starts are refused when running models' fractions would sum over 1.0"],
+        ["max_model_len", m.max_model_len ? m.max_model_len + " (" + Math.round(m.max_model_len / 1024) + "k)" : "-",
+         "model", "context window in tokens: question + context text + images (~1-2.5k tokens each) " +
+         "+ answer must fit; KV memory for the FULL window is reserved inside gpu_frac at startup"],
+        ["max_images", m.max_images != null ? m.max_images : "-", "model",
+         "per-request image budget (also caps sampled video frames per inference)"],
+        ["video_frames", m.video_frames != null ? m.video_frames : "-", "model",
+         "frames a native video is reduced to server-side, spread evenly over the clip"],
+        ["concurrency", m.concurrency != null ? m.concurrency : "-", "model",
+         "inferences vLLM runs in parallel (batched; shared KV pool - no extra memory); more queue FIFO"],
+        ["idle_timeout", m.idle_timeout != null ? m.idle_timeout + " s" : "-", "model",
+         "seconds until an unused model is auto-unloaded; 0 = never; applies live"],
+        ["fps", m.fps != null ? m.fps : "-", m.fps_override ? "model" : "default",
+         "video sampling rate when a query sets neither fps nor frames"],
+        ["frames", d.frames != null ? d.frames : "-", "default",
+         "frames spread evenly over a video when sampling into images and the query sets none"],
+        ["max_tokens", d.max_tokens != null ? d.max_tokens : "-", "default",
+         "answer-length budget per inference (reasoning models think inside it too)"],
+        ["request_timeout", d.request_timeout != null ? d.request_timeout + " s" : "-", "default",
+         "seconds one inference may take before it is abandoned"]
+      ];
+      const det = document.createElement("details");
+      det.className = "cfgm";
+      const sum = document.createElement("summary");
+      sum.textContent = m.slug + (m.default ? " *" : "") + "  -  " +
+        (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k context, " : "") +
+        (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "% gpu" : "");
+      det.appendChild(sum);
+      let ft = "<table><tr><th>option</th><th>value</th><th>source</th><th>meaning</th></tr>";
+      for (const [k, v, src, doc] of fields)
+        ft += "<tr><td><code>" + k + "</code></td><td>" + v + "</td><td>" +
+              (src === "model" ? "model" : "global default") + "</td><td>" + doc + "</td></tr>";
+      const wrap = document.createElement("div");
+      wrap.innerHTML = ft + "</table>";
+      det.appendChild(wrap);
+      box.appendChild(det);
     }
-    const mtd = document.createElement("div");
-    mtd.innerHTML = mt + "</table>";
-    box.appendChild(mtd);
 
-    box.appendChild(h("What the model options mean"));
-    const dl = document.createElement("ul");
-    for (const [k, v] of MODEL_FIELD_DOC) {
-      const li = document.createElement("li");
-      const b = document.createElement("b");
-      b.textContent = k;
-      li.appendChild(b);
-      li.appendChild(document.createTextNode(" - " + v));
-      dl.appendChild(li);
-    }
-    box.appendChild(dl);
   } catch (e) {
     $("configBox").textContent = "cannot load: " + e.message;
   }

@@ -237,6 +237,7 @@ class Core:
             "concurrency": entry.get("concurrency", 1),
             # video sampling default: global config unless the model's TOML overrides it
             "fps": entry.get("fps") or float(self.cfg["defaults"]["fps"]),
+            "fps_override": entry.get("fps") is not None,
             "image": entry.get("image"),
             "loading_note": self._model_loading.get(slug),
         }
