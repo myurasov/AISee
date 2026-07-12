@@ -296,9 +296,7 @@ async function loadConfigTab() {
       const det = document.createElement("details");
       det.className = "cfgm";
       const sum = document.createElement("summary");
-      sum.textContent = m.slug + (m.default ? " *" : "") + "  -  " +
-        (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k context, " : "") +
-        (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "% gpu" : "");
+      sum.textContent = m.slug + (m.default ? " *" : "");
       det.appendChild(sum);
       let ft = "<table><tr><th>option</th><th>value</th><th>source</th><th>meaning</th></tr>";
       for (const [k, v, src, doc] of fields)
