@@ -393,9 +393,10 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/tasks/{tid}/media/{idx}")
     def task_media(tid: str, idx: int):
-        """Download one of a task's media files (index into its media list)."""
+        """One of a task's media files, served inline (viewable in a browser tab);
+        the filename is still set for save-as."""
         p = _task_media_path(tid, idx)
-        return FileResponse(p, filename=p.name)
+        return FileResponse(p, filename=p.name, content_disposition_type="inline")
 
     @app.get("/v1/tasks/{tid}/media/{idx}/thumb")
     def task_media_thumb(tid: str, idx: int):
