@@ -48,6 +48,11 @@
   .j-k { color: #369; }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
+  .media-strip { margin: .2rem 0 .5rem; }
+  .media-strip a { display: inline-block; margin: 0 .4rem .2rem 0; text-align: center; }
+  .media-strip img { height: 64px; border: 1px solid #ddd; background: #fff; display: block; }
+  .media-strip .fname { font-size: .7rem; color: #777; max-width: 120px; overflow: hidden;
+                        text-overflow: ellipsis; white-space: nowrap; }
   /* media drop zone */
   #drop, #drop *, label[for=files] { cursor: pointer; }
   pre.describe { background: #fafafa; border: 1px solid #e4e4e4; padding: .6rem .8rem;
@@ -649,6 +654,30 @@ function fillDetail(td, t) {
   st.className = "d-status";
   st.textContent = line;
   td.appendChild(st);
+  const mediaList = (t.params || {}).media || [];
+  if (mediaList.length) {
+    const strip = document.createElement("div");
+    strip.className = "media-strip";
+    const tok = tokenFor(false);
+    const q = tok ? "?token=" + encodeURIComponent(tok) : "";
+    mediaList.forEach((path, i) => {
+      const name = String(path).split("/").pop();
+      const a = document.createElement("a");
+      a.href = base() + "/v1/tasks/" + t.id + "/media/" + i + q;
+      a.download = name;
+      a.title = name + " - click to download";
+      const img = document.createElement("img");
+      img.src = base() + "/v1/tasks/" + t.id + "/media/" + i + "/thumb" + q;
+      img.onerror = () => { a.remove(); };  // media expired or not thumbnailable
+      a.appendChild(img);
+      const cap = document.createElement("div");
+      cap.className = "fname";
+      cap.textContent = name;
+      a.appendChild(cap);
+      strip.appendChild(a);
+    });
+    td.appendChild(strip);
+  }
   if (t.params && Object.keys(t.params).length) {
     const par = document.createElement("div");
     par.className = "j d-params";

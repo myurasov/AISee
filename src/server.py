@@ -6,16 +6,17 @@ Also serves the MCP server at /mcp (streamable HTTP) as a thin adapter over the 
 
 import json
 import os
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.datastructures import UploadFile
 
-from . import (__version__, blobs, catalog, config, creds, describe, mcp_server, paths,
-               registry)
+from . import (__version__, blobs, catalog, config, creds, describe, media, mcp_server,
+               paths, registry)
 from .tasks import Core
 
 OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
@@ -81,6 +82,8 @@ def create_app() -> FastAPI:
     async def auth(request: Request, call_next):
         got = request.headers.get("authorization", "")
         bearer = got[7:].strip() if got.startswith("Bearer ") else ""
+        if not bearer:  # <img>/<a> tags cannot send headers; allow ?token= as a fallback
+            bearer = request.query_params.get("token", "")
         denied = check_auth(request.method, request.url.path, bearer)
         if denied:
             return JSONResponse({"detail": denied[1]}, status_code=denied[0])
@@ -352,6 +355,36 @@ def create_app() -> FastAPI:
         if not t:
             raise HTTPException(404, "no such task")
         return t
+
+    def _task_media_path(tid: str, idx: int) -> Path:
+        t = core.store.get(tid)
+        if not t:
+            raise HTTPException(404, "no such task")
+        media_list = (t.get("params") or {}).get("media") or []
+        if idx < 0 or idx >= len(media_list):
+            raise HTTPException(404, "no such media index")
+        p = Path(media_list[idx])
+        if not p.is_file():
+            raise HTTPException(404, "media no longer on disk (expired?)")
+        return p
+
+    @app.get("/v1/tasks/{tid}/media/{idx}")
+    def task_media(tid: str, idx: int):
+        """Download one of a task's media files (index into its media list)."""
+        p = _task_media_path(tid, idx)
+        return FileResponse(p, filename=p.name)
+
+    @app.get("/v1/tasks/{tid}/media/{idx}/thumb")
+    def task_media_thumb(tid: str, idx: int):
+        """JPEG thumbnail of a task's media (image or video first frame); cached."""
+        p = _task_media_path(tid, idx)
+        thumb = paths.media_dir() / tid / "thumbs" / f"{idx}.jpg"
+        if not thumb.exists():
+            try:
+                media.thumbnail(p, thumb)
+            except (RuntimeError, OSError, subprocess.CalledProcessError):
+                raise HTTPException(404, "cannot thumbnail this media")
+        return FileResponse(thumb, media_type="image/jpeg")
 
     @app.delete("/v1/tasks/{tid}")
     def cancel_task(tid: str):

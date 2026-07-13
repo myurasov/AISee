@@ -139,6 +139,17 @@ def build_content(media: list[str], text: str, *, frames: int, fps: float | None
     return parts
 
 
+def thumbnail(src: str | Path, dest: Path, width: int = 240) -> Path:
+    """First-frame JPEG thumbnail for an image or video (cached by the caller)."""
+    require_ffmpeg()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(src),
+                    "-vf", f"scale={width}:-2", "-frames:v", "1", str(dest)], check=True)
+    if not dest.exists() or dest.stat().st_size == 0:
+        raise RuntimeError(f"could not thumbnail {src}")
+    return dest
+
+
 def stage_bytes(data: bytes, filename: str, dest_dir: Path) -> Path:
     """Save an uploaded file into the task's staging dir with a sanitized name."""
     dest_dir.mkdir(parents=True, exist_ok=True)
