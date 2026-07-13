@@ -214,6 +214,7 @@ Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 | `GET /v1/tasks` | consumer | list, filters `?status=` `?model=` |
 | `GET /v1/tasks/{id}` | consumer | status, progress, timings, result |
 | `DELETE /v1/tasks/{id}` | consumer | cancel |
+| `GET /v1/tasks/{id}/media` | consumer | media facts per file: kind, dimensions, duration, frames, size |
 | `GET /v1/tasks/{id}/media/{i}` | consumer | download the task's i-th media file (`/thumb` for a JPEG thumbnail) |
 | `GET /v1/blobs/{sha256}` | consumer | upload-dedup probe: `{exists, size}` |
 | `POST /v1/blobs` | consumer | upload media into the content store without a task |

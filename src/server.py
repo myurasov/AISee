@@ -368,6 +368,29 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "media no longer on disk (expired?)")
         return p
 
+    media_info_cache: dict = {}  # (tid, idx) -> probe dict; media files are immutable
+
+    @app.get("/v1/tasks/{tid}/media")
+    def task_media_list(tid: str):
+        """The task's media files with facts: kind, dimensions, duration, frames, size."""
+        t = core.store.get(tid)
+        if not t:
+            raise HTTPException(404, "no such task")
+        out = []
+        for i, m in enumerate((t.get("params") or {}).get("media") or []):
+            p = Path(m)
+            entry = {"index": i, "filename": p.name, "exists": p.is_file()}
+            if p.is_file():
+                key = (tid, i)
+                if key not in media_info_cache:
+                    try:
+                        media_info_cache[key] = media.probe_info(p)
+                    except (OSError, subprocess.CalledProcessError, ValueError):
+                        media_info_cache[key] = {}
+                entry.update(media_info_cache[key])
+            out.append(entry)
+        return out
+
     @app.get("/v1/tasks/{tid}/media/{idx}")
     def task_media(tid: str, idx: int):
         """Download one of a task's media files (index into its media list)."""

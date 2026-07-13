@@ -10,6 +10,7 @@ Known pitfalls honored here:
 """
 
 import base64
+import json
 import mimetypes
 import os
 import shutil
@@ -137,6 +138,35 @@ def build_content(media: list[str], text: str, *, frames: int, fps: float | None
             n_images += 1
     parts.append({"type": "text", "text": text})
     return parts
+
+
+def probe_info(path: str | Path) -> dict:
+    """Media facts via ffprobe: kind, dimensions, duration, frame count, fps, size."""
+    out = subprocess.check_output(
+        ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
+         str(path)], stderr=subprocess.DEVNULL)
+    d = json.loads(out)
+    vs = next((s for s in d.get("streams", []) if s.get("codec_type") == "video"), {})
+    try:
+        dur = float(d.get("format", {}).get("duration") or 0) or None
+    except ValueError:
+        dur = None
+    fps = None
+    num, _, den = (vs.get("avg_frame_rate") or "0/1").partition("/")
+    if num.isdigit() and den.isdigit() and int(den):
+        fps = round(int(num) / int(den), 2)
+    frames = int(vs["nb_frames"]) if str(vs.get("nb_frames", "")).isdigit() else None
+    if frames is None and dur and fps:
+        frames = round(dur * fps)
+    video = is_video(path)
+    return {
+        "kind": "video" if video else "image",
+        "width": vs.get("width"), "height": vs.get("height"),
+        "duration_s": round(dur, 2) if (video and dur) else None,
+        "frames": frames if video else 1,
+        "fps": fps if video else None,
+        "bytes": Path(path).stat().st_size,
+    }
 
 
 def thumbnail(src: str | Path, dest: Path, width: int = 240) -> Path:

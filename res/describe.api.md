@@ -16,6 +16,7 @@
 | GET | `/v1/tasks` | consumer | list tasks (?status=&model=) |
 | GET | `/v1/tasks/{id}` | consumer | full task: status, progress, timings, result |
 | DELETE | `/v1/tasks/{id}` | consumer | cancel a task |
+| GET | `/v1/tasks/{id}/media` | consumer | the task's media files with facts: kind, dimensions, duration, frames, size |
 | GET | `/v1/tasks/{id}/media/{i}` | consumer | download the task's i-th media file; append `/thumb` for a JPEG thumbnail |
 | GET | `/v1/blobs/{sha256}` | consumer | dedup probe: {exists, size} for already-uploaded content |
 | POST | `/v1/blobs` | consumer | upload media into the content store -> [{sha256, size}] |
