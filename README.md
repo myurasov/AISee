@@ -121,6 +121,7 @@ slug applies the serving flags each one needs:
 | `holo1-5-7b` | 128k | UI element grounding; stills only |
 | `cosmos-reason2-8b` | 128k | temporal / physical video reasoning |
 | `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
+| `cosmos3-super` | 64k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 128k on GB10, 64k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
 | `ui-tars-1-5-7b` | 128k | GUI-agent model (action generation later); stills only |
 
 Serving defaults assume the **main mode of operation: a single resident model per GPU**, and

@@ -121,6 +121,35 @@ CATALOG: dict[str, dict] = {
                     "Cosmos3ForConditionalGeneration; ~9-minute quiet init before weight shards "
                     "load - it is not hung.",
     },
+    "cosmos3-super": {
+        "hf_id": "nvidia/Cosmos3-Super",
+        # reasoner-only serving: Cosmos3 is a two-tower MoT (32B AR reasoner + 32B
+        # diffusion generator). Upstream vLLM's Cosmos3ForConditionalGeneration IS the
+        # reasoner-only path ("the Reasoner-only part" per its source), so the 64B
+        # omnimodel's understanding side fits a single 96 GB card (64k) or a GB10 (128k).
+        # Needs vLLM >= 0.24 (the older cosmos3 image tag also works for nano but its
+        # vLLM predates this model's config); multi-arch image (amd64 + arm64).
+        "image": "vllm/vllm-omni:v0.24.0",
+        "weights_gib": 64, "kv_gib_128k": 32,
+        "extra_args": ["--hf-overrides",
+                       '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
+                       "--trust-remote-code"],
+        "supports_native_video": True,
+        "reasoning": True,
+        "load_timeout": 10800,
+        "license": "NVIDIA Open Model",
+        "strengths": "The 64B omnimodel's Reasoner tower (32B): deepest physical/temporal "
+                     "reasoning in the catalog; correct dense OCR; handles native video. "
+                     "Fast for its size (~3-7 s stills / asserts measured on RTX PRO 6000).",
+        "weaknesses": "64k context on 96 GB cards (128k needs a GB10-class pool). "
+                      "Borderline UI-state asserts can flip between runs - phrase "
+                      "expectations concretely.",
+        "pitfalls": "Understanding only - the generator tower is not loaded, so no "
+                    "image/video generation. First install downloads the full ~130 GB "
+                    "checkpoint although only the reasoner half loads. Requires a "
+                    "vLLM >= 0.24 serving image. One-time ~35 s first-call warmup "
+                    "after load.",
+    },
     "ui-tars-1-5-7b": {
         "hf_id": "ByteDance-Seed/UI-TARS-1.5-7B",
         "image": DEFAULT_IMAGE,
