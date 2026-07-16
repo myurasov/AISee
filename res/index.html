@@ -506,9 +506,22 @@ function renderStat(h, models, force = false) {
   loadCatalog(models);
 }
 
+// while the user has not picked a model, default the query dropdown to the
+// currently running model (largest weights when several are running)
+function pickRunningModel(models) {
+  const sel = $("model");
+  if (sel.value !== "") return;
+  const running = models.filter(m => m.state === "running")
+    .sort((a, b) => (b.weights_gib || 0) - (a.weights_gib || 0));
+  if (running.length && sel.querySelector(`option[value="${running[0].slug}"]`))
+    sel.value = running[0].slug;
+}
+
 async function refreshStat() {
   try {
-    renderStat(await api("/v1/health"), await api("/v1/models"));
+    const models = await api("/v1/models");
+    renderStat(await api("/v1/health"), models);
+    pickRunningModel(models);
   } catch (e) { /* transient; the next poll retries */ }
 }
 
@@ -532,6 +545,7 @@ async function connect() {
       sel.appendChild(o);
     }
     sel.value = prev;
+    pickRunningModel(models);
     await refreshTasks(true);
   } catch (e) {
     $("health").textContent = "cannot connect: " + e.message;

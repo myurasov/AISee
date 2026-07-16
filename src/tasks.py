@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import blobs, config, creds, dockerctl, media, paths, registry, vlm
+from . import blobs, catalog, config, creds, dockerctl, media, paths, registry, vlm
 
 TERMINAL = ("done", "failed", "canceled")
 
@@ -231,6 +231,8 @@ class Core:
             "default": registry.default_model() == slug,
             "supports_native_video": entry.get("supports_native_video", True),
             "gpu_frac": entry.get("gpu_frac"),
+            # size for "prefer the bigger running model" heuristics; None off-catalog
+            "weights_gib": (catalog.CATALOG.get(slug) or {}).get("weights_gib"),
             "max_model_len": entry.get("max_model_len"),
             "max_images": entry.get("max_images"),
             "video_frames": entry.get("video_frames"),
