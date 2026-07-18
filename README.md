@@ -132,7 +132,7 @@ fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified
 whole catalog at 128k; a **96 GB** discrete card serves everything at 128k except the dense 32B
 (64k - its 128k KV cache alone is ~34 GiB); a **48 GB** card fits the 7-17 GiB models at 128k
 and Cosmos3-Nano at 32k, while the two big Qwens (~62 GiB weights) do not fit at all (install
-warns). Media budgets are 16 images / 24 video frames per request (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
+warns). Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron); video is 1 per request at 24 frames (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`
@@ -169,8 +169,9 @@ Things to know when going off-catalog:
 - **Different serving image**: `--image` swaps the container image per model (e.g. an
   architecture only supported by a newer vLLM or a vendor build); nvcr.io images need the
   NGC key.
-- Per-request budgets default to 16 images and 1 video (24 server-sampled frames, keeping
-  each frame at ~720p); AISee's frame sampling respects them. There is no hard video-length
+- Per-request budgets: max_images sized so 1080p stills fill the context (install default 16;
+  see the catalog notes), 1 video (24 server-sampled frames, keeping each frame at ~720p);
+  AISee's frame sampling respects them. There is no hard video-length
   limit - only temporal resolution (the frame budget spread over the clip); use `watch` for
   long videos.
 

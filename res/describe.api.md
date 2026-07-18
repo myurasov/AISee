@@ -127,8 +127,8 @@ There is **no hard maximum video length** - only temporal resolution:
 - `native`: the video is reduced server-side to the model's frame budget (see its Serving
   line), spread evenly over the whole clip. A 60 s clip at a 24-frame budget keeps ~2.5 s
   resolution; a 10 min clip drops to one frame per ~25 s.
-- `frames` / `fps`: sampled client-side into the image budget (16 by default), so e.g. 1 fps
-  covers 16 s per request.
+- `frames` / `fps`: sampled client-side into the model's image budget (its `Image budget:`
+  line above), so e.g. 1 fps covers max_images seconds per request.
 - **Use `watch` for anything longer than a few minutes**: it splits the video into chunks of
   `server_frames/fps` seconds so every chunk gets the full frame budget, up to 64 chunks per
   call (about 25 min at fps=1 with 24 s chunks - raise `chunk_seconds` or lower `fps` for

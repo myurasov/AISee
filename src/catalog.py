@@ -16,6 +16,13 @@ DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 # KV cache fits next to the weights (catalog entries carry weights_gib / kv_gib_128k
 # estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
 DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
+# conservative install default; deployments tune it per model so a full batch of 1080p
+# stills fills the context (a 1080p still costs ~2k tokens on 32 px cell models, ~2.7k on
+# 28 px cells, ~3.3k on the tiled Nemotron; keep a ~4k reserve for prompt + answer -
+# e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron,
+# 28 for a 64k context). Targeting 4K stills instead roughly quarters the Qwen-family
+# numbers; models whose pixel ceiling is below 4K (Holo 3.69 MP, Nemotron tiles) gain
+# no detail from 4K inputs.
 DEFAULT_MAX_IMAGES = 16
 # 24 frames: the Qwen3-VL family budgets ~24 MP across ALL sampled frames, so 24 frames
 # keep each frame at ~1.05 MP - 720p passes natively (64 frames would drop it to ~0.39 MP)

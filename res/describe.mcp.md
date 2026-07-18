@@ -56,9 +56,10 @@ each reuse).
 - **`watch` on long videos takes minutes.** Pass `wait=false` to get `{task_id}` immediately,
   then poll `get_task` every few seconds until `status` is `done` / `failed` / `canceled`;
   `progress` carries a chunk counter.
-- **Media budgets are serving config, not model limits** (typically 16 images per request,
-  1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p, since the video
-  pixel budget is shared across frames). There is **no maximum video length - only temporal
+- **Media budgets are serving config, not model limits** (per-model `max_images` is sized
+  so a full batch of 1080p stills fills the context - see each model's `Image budget:`
+  line below; 1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p,
+  since the video pixel budget is shared across frames). There is **no maximum video length - only temporal
   resolution**: a `native` video is reduced to the frame budget spread evenly over the clip;
   `watch` chunks the video so every chunk gets the full budget - chunk length is frame
   budget / fps (24 s per chunk at fps=1; sparser fps means longer chunks), up to 64 chunks

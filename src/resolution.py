@@ -34,6 +34,10 @@ _STANDARD_RES = [("8K", 7680, 4320), ("4K", 3840, 2160), ("1440p", 2560, 1440),
 # answer + prompt headroom subtracted from the context before dividing it among frames
 _CTX_OVERHEAD_TOKENS = 2048
 
+# reserve when sizing image batches against the context (prompt + answer + specials);
+# max_images on deployments is tuned so a full batch of 1080p stills fits ctx - this
+_IMG_BATCH_RESERVE_TOKENS = 4096
+
 # pre-download fallbacks (values copied from the published preprocessor configs);
 # used only when the local snapshot is missing, and always marked estimated
 _CATALOG_FALLBACKS: dict[str, dict] = {
@@ -171,11 +175,19 @@ def input_resolution(entry: dict) -> dict:
         max_px = scheme["tile_px"] ** 2 * tiles
         tokens_per_tile = int((scheme["tile_px"] / scheme["patch"]) ** 2
                               * scheme["downsample"] ** 2)
+        import math
+        t1080 = min(math.ceil(1920 / scheme["tile_px"]) * math.ceil(1080 / scheme["tile_px"]),
+                    scheme["max_tiles"]) + (1 if scheme.get("thumbnail") else 0)
+        tokens_1080p = t1080 * tokens_per_tile
         still = {"scheme": "tiles", "tile_px": scheme["tile_px"], "max_tiles": tiles,
                  "max_pixels": max_px, "max_megapixels": round(max_px / 1e6, 2),
                  "min_pixels": None, "patch_px": scheme["patch"],
                  "aspect_preserved": True,  # tiling pads/arranges, gross aspect kept
-                 "tokens_per_tile": tokens_per_tile, "example": _example_still(max_px)}
+                 "tokens_per_tile": tokens_per_tile, "tokens_1080p": tokens_1080p,
+                 "example": _example_still(max_px)}
+        still["stills_1080p_per_context"] = (
+            (ctx - _IMG_BATCH_RESERVE_TOKENS) // tokens_1080p
+            if ctx > _IMG_BATCH_RESERVE_TOKENS else None)
         # per-frame tiling for video is processor-internal; do not guess
         video = ({"stills_only": True,
                   "note": "video is read as a single frame at the still budget"}
@@ -187,11 +199,18 @@ def input_resolution(entry: dict) -> dict:
     eff = scheme["patch"] * scheme["merge"]          # px per token cell edge
     px_per_token_still = eff * eff
     still_max = scheme.get("still_max")
+    # what one 1080p still costs: its token grid if it passes natively, else the
+    # model's pixel ceiling divided into token cells (image downscaled to the cap)
+    tokens_1080p = (round(1920 / eff) * round(1080 / eff)
+                    if not still_max or 1920 * 1080 <= still_max
+                    else int(still_max / px_per_token_still))
     still = {"scheme": scheme["scheme"], "patch_px": scheme["patch"],
              "token_cell_px": eff, "min_pixels": scheme.get("still_min"),
              "max_pixels": still_max,
              "max_megapixels": round(still_max / 1e6, 2) if still_max else None,
-             "aspect_preserved": True,
+             "aspect_preserved": True, "tokens_1080p": tokens_1080p,
+             "stills_1080p_per_context": ((ctx - _IMG_BATCH_RESERVE_TOKENS) // tokens_1080p
+                                          if ctx > _IMG_BATCH_RESERVE_TOKENS else None),
              "example": _example_still(still_max)}
 
     if stills_only:
@@ -217,6 +236,24 @@ def input_resolution(entry: dict) -> dict:
                  "stills_only": False, "example": _example_frame(per_frame)}
 
     return {"still": still, "video": video, "estimated": estimated, "source": source}
+
+
+def image_budget_line(entry: dict, ir: dict) -> str | None:
+    """One `Image budget:` guide line: what a 1080p still costs and why max_images is set."""
+    still = ir.get("still")
+    if not isinstance(still, dict) or not still.get("tokens_1080p"):
+        return None
+    t, cap = still["tokens_1080p"], still.get("stills_1080p_per_context")
+    n = entry.get("max_images")
+    line = (f"- Image budget: a 1080p still costs ~{t / 1000:.1f}k tokens"
+            + (f", so ~{cap} fit the {int(entry['max_model_len'] / 1024)}k context "
+               f"(with ~{_IMG_BATCH_RESERVE_TOKENS // 1024}k reserved for prompt + answer)"
+               if cap and entry.get("max_model_len") else "")
+            + (f"; max_images is {n}" if n else ""))
+    if still.get("max_pixels") and still["max_pixels"] < 3840 * 2160:
+        line += (" - note this model never sees more than "
+                 f"~{still.get('max_megapixels')} MP per still, so 4K inputs gain no detail")
+    return line + "."
 
 
 def markdown_line(ir: dict) -> str:

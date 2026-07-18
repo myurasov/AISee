@@ -65,7 +65,9 @@ def _model_lines(core) -> list[dict]:
     for entry in registry.list_installed():
         cat = catalog.CATALOG.get(entry["slug"], {})
         v = core.model_view(entry)
+        ir = resolution.input_resolution(entry)
         out.append({
+            "image_budget_line": resolution.image_budget_line(entry, ir),
             "slug": entry["slug"], "hf_id": entry["hf_id"], "state": v["state"],
             "default": v["default"],
             "supports_native_video": entry.get("supports_native_video", True),
@@ -77,7 +79,7 @@ def _model_lines(core) -> list[dict]:
                 "concurrency": entry.get("concurrency", 1),
                 "idle_timeout": entry.get("idle_timeout"),
             },
-            "input_resolution": resolution.input_resolution(entry),
+            "input_resolution": ir,
             "strengths": cat.get("strengths", ""), "weaknesses": cat.get("weaknesses", ""),
             "pitfalls": cat.get("pitfalls", ""), "license": cat.get("license", ""),
         })
@@ -101,6 +103,8 @@ def _render_models(core) -> str:
                        f"idle unload after {s['idle_timeout']} s")(m["serving"]),
             resolution.markdown_line(m["input_resolution"]),
         ]
+        if m["image_budget_line"]:
+            lines.append(m["image_budget_line"])
         if m["strengths"]:
             lines.append(f"- **Strengths:** {m['strengths']}")
         if m["weaknesses"]:

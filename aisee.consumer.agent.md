@@ -129,9 +129,14 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
 - **`model_loading` can take minutes.** First-ever use downloads weights (10-60+ min);
   a model idle-unloaded (default after 15 min) reloads from cache in ~2-3 min. Keep polling -
   `progress.detail` explains what is happening. Do not resubmit; that just queues more work.
-- **Media budgets are serving config, not model limits** (defaults: 16 images per request,
-  1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p, since the video
-  pixel budget is shared across frames). Each image/frame costs roughly 1-2.5k tokens.
+- **Media budgets are serving config, not model limits.** Per-model `max_images` is sized
+  so a full batch of 1080p stills fills the context: a 1080p still costs ~2k tokens on
+  32 px cell models (Qwen3-VL/Cosmos), ~2.7k on 28 px cells (Holo/UI-TARS), ~3.3k on the
+  tiled Nemotron - so e.g. ~60 fit a 128k context with a ~4k prompt+answer reserve (4K
+  stills cost ~4x, and models capped below 4K gain no detail from them). Video: 1 per
+  request, sampled to 24 frames server-side - 24 keeps each frame at ~720p, since the
+  video pixel budget is shared across frames. `/v1/describe` states each model's exact
+  budgets on its `Image budget:` and `Input resolution:` lines.
 - **There is no maximum video length - only temporal resolution.** A `native` video is reduced
   to the frame budget spread evenly over the clip. For anything longer than a few minutes use
   `watch`: it chunks the video so every chunk gets the full frame budget - chunk length is
