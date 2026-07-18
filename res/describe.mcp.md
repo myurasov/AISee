@@ -55,7 +55,8 @@ each reuse).
   is normal - do not resubmit, that only queues more work.
 - **`watch` on long videos takes minutes.** Pass `wait=false` to get `{task_id}` immediately,
   then poll `get_task` every few seconds until `status` is `done` / `failed` / `canceled`;
-  `progress` carries a chunk counter.
+  `progress` carries a chunk counter. The whole watch (all chunks + synthesis) must finish
+  within the host's request_timeout (default 1 h).
 - **Media budgets are serving config, not model limits** (per-model `max_images` is sized
   so a full batch of 1080p stills fills the context - see each model's `Image budget:`
   line below; 1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p,

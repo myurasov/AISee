@@ -143,7 +143,8 @@ There is **no hard maximum video length** - only temporal resolution:
   `server_frames/fps` seconds so every chunk gets the full frame budget, up to 64 chunks per
   call (about 25 min at fps=1 with 24 s chunks - raise `chunk_seconds` or lower `fps` for
   longer clips, trading per-frame resolution or temporal resolution for reach). A full-budget
-  chunk is a big request; expect tens of seconds per chunk.
+  chunk is a big request; expect tens of seconds per chunk. The whole watch (all chunks +
+  the final synthesis) must finish within the host's request_timeout (default 1 h).
 - Stills-only models (native video: no in the guide above) read a clip as a single frame - use
   frame sampling or pick a video-capable model.
 - **Spatial resolution**: AISee sends media at source resolution - `look` extracts

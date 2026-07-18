@@ -150,7 +150,8 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   `watch`: it chunks the video so every chunk gets the full frame budget - chunk length is
   frame budget / fps (24 s per chunk at fps=1; sparser fps means longer chunks), up to 64
   chunks (~25 min at fps=1) per call - raise `chunk_seconds` or lower `fps` for longer clips.
-  Chunks queue within one call. High fps hunts flicker/glitches; fps=1 is enough for "what
+  Chunks queue within one call, and the whole watch (all chunks + synthesis) must finish
+  within the host's request_timeout (default 1 h). High fps hunts flicker/glitches; fps=1 is enough for "what
   happens".
 - **Some models are stills-only** (they read a video as a single frame). Check `native video`
   in `/v1/describe` before sending video to a non-default model.

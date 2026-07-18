@@ -5,6 +5,7 @@
 
 import json
 import re
+import time
 
 import httpx
 
@@ -32,14 +33,21 @@ def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
     to be shrunk to fit the context next to a large prompt)."""
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
     clamped = False
-    for attempt in (0, 1):
+    retried_5xx = 0
+    while True:
         try:
             r = httpx.post(url, json={"model": hf_id, "messages": messages,
                                       "max_tokens": max_tokens, "temperature": 0},
                            timeout=timeout)
         except httpx.HTTPError as e:
             raise RuntimeError(f"cannot reach model endpoint {url}: {e}") from e
-        if r.status_code == 400 and attempt == 0:
+        if r.status_code >= 500 and retried_5xx < 2:
+            # transient engine errors happen (e.g. vLLM's multimodal receiver-cache
+            # race right after a client disconnect); the next attempt usually succeeds
+            retried_5xx += 1
+            time.sleep(1.5 * retried_5xx)
+            continue
+        if r.status_code == 400 and not clamped:
             # answer budget + prompt overflow the context: vLLM reports the exact prompt
             # size, so clamp max_tokens to what actually fits and retry once
             m = _CTX_OVERFLOW_RE.search(r.text)
@@ -65,7 +73,6 @@ def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
         text = (msg.get("content") or msg.get("reasoning_content")
                 or msg.get("reasoning") or "")
         return text, meta
-    raise RuntimeError("unreachable")  # the loop always returns or raises
 
 
 def extract_json(text: str) -> dict:

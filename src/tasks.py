@@ -58,6 +58,10 @@ class TaskStore:
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript(_SCHEMA)
+            try:  # migration for databases created before watch checkpointing
+                self._db.execute("ALTER TABLE tasks ADD COLUMN checkpoint TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             self._db.commit()
 
     def create(self, kind: str, model: str, params: dict) -> str:
@@ -65,7 +69,8 @@ class TaskStore:
         now = time.time()
         with self._lock:
             self._db.execute(
-                "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO tasks (id, kind, model, params, status, progress, timings, "
+                "result, error, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (tid, kind, model, json.dumps(params), "queued",
                  json.dumps({"step": "queued", "detail": "waiting in queue"}),
                  json.dumps({"queued_at": now}), None, None, now, now))
@@ -77,6 +82,9 @@ class TaskStore:
         if timings.get("finished_at") and timings.get("queued_at"):
             # wall-clock from submission to a terminal state (includes queue + model load)
             timings["total_s"] = round(timings["finished_at"] - timings["queued_at"], 1)
+        if timings.get("finished_at") and timings.get("started_at"):
+            # processing time only - excludes waiting in the queue (last attempt if requeued)
+            timings["active_s"] = round(timings["finished_at"] - timings["started_at"], 1)
         return {
             "id": r["id"], "kind": r["kind"], "model": r["model"],
             "params": json.loads(r["params"]), "status": r["status"],
@@ -113,8 +121,13 @@ class TaskStore:
     def update(self, tid: str, *, status: str | None = None, progress: dict | None = None,
                timing: dict | None = None, result=None, error: dict | None = None) -> None:
         with self._lock:
-            r = self._db.execute("SELECT timings FROM tasks WHERE id=?", (tid,)).fetchone()
+            r = self._db.execute("SELECT status, timings FROM tasks WHERE id=?",
+                                 (tid,)).fetchone()
             if not r:
+                return
+            if status and r["status"] in TERMINAL:
+                # terminal is final: a worker finishing after a cancel must not flip
+                # canceled back to done (it checks for cancellation only between steps)
                 return
             sets, args = ["updated=?"], [time.time()]
             if status:
@@ -136,6 +149,35 @@ class TaskStore:
                 args.append(json.dumps(error))
             args.append(tid)
             self._db.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", args)
+            self._db.commit()
+
+    def save_chunk(self, tid: str, plan_key: str, i: int, chunk) -> None:
+        """Checkpoint one finished watch chunk so a server restart resumes, not restarts."""
+        with self._lock:
+            r = self._db.execute("SELECT checkpoint FROM tasks WHERE id=?", (tid,)).fetchone()
+            if not r:
+                return
+            ck = json.loads(r["checkpoint"]) if r["checkpoint"] else {}
+            if ck.get("key") != plan_key:
+                ck = {"key": plan_key, "chunks": {}}
+            ck["chunks"][str(i)] = chunk
+            self._db.execute("UPDATE tasks SET checkpoint=?, updated=? WHERE id=?",
+                             (json.dumps(ck), time.time(), tid))
+            self._db.commit()
+
+    def load_chunks(self, tid: str, plan_key: str) -> dict[int, dict | None]:
+        """Previously checkpointed chunks, only if they belong to the same chunk plan."""
+        with self._lock:
+            r = self._db.execute("SELECT checkpoint FROM tasks WHERE id=?", (tid,)).fetchone()
+        ck = json.loads(r["checkpoint"]) if r and r["checkpoint"] else {}
+        if ck.get("key") != plan_key:
+            return {}
+        return {int(k): v for k, v in (ck.get("chunks") or {}).items()}
+
+    def clear_checkpoint(self, tid: str) -> None:
+        with self._lock:
+            self._db.execute("UPDATE tasks SET checkpoint=NULL, updated=? WHERE id=?",
+                             (time.time(), tid))
             self._db.commit()
 
     def claim_next(self, model: str) -> dict | None:
@@ -560,6 +602,30 @@ class Core:
         port, hf_id = entry["port"], entry["hf_id"]
         concurrency = max(1, int(entry.get("concurrency", 1)))
 
+        # request_timeout bounds the WHOLE watch task: every chunk and the final synthesis
+        # must finish before this deadline, so each inference gets only the time still left
+        deadline = time.time() + timeout
+
+        def _remaining(what: str) -> float:
+            rem = deadline - time.time()
+            if rem <= 1:
+                raise RuntimeError(
+                    f"watch exceeded request_timeout ({int(timeout)} s) before {what} - "
+                    "raise defaults.request_timeout, lower fps, or use chunk_seconds "
+                    "to reduce the chunk count")
+            return rem
+
+        # per-stage accounting: prep/inference are SUMS across chunks (they overlap in
+        # wall time up to `concurrency`); the chunk phase itself is reported as wall time
+        stage_s = {"prep": 0.0, "infer": 0.0}
+        stage_lock = threading.Lock()
+
+        def _account(kind: str, t0: float) -> float:
+            now = time.time()
+            with stage_lock:
+                stage_s[kind] += now - t0
+            return now
+
         def _do_chunk(i: int) -> dict | None:
             start = i * chunk_seconds
             # the last chunk absorbs any folded-in tail (see the n adjustment above)
@@ -567,6 +633,7 @@ class Core:
             if d_s <= 0.05:
                 return None
             rng = f"{start:.1f}s-{min(start + d_s, dur):.1f}s"
+            t_prep = time.time()
             seg = media.reencode_segment(path, start, d_s, fps, scale, work_dir,
                                          tag=f"seg{i}")
             try:
@@ -578,7 +645,10 @@ class Core:
                                                   fps=None, native=native,
                                                   max_images=entry["max_images"],
                                                   work_dir=work_dir / f"c{i}")
-                    r = vlm.run_assert(port, hf_id, content, max_tokens=max_tokens, timeout=timeout)
+                    t_inf = _account("prep", t_prep)
+                    r = vlm.run_assert(port, hf_id, content, max_tokens=max_tokens,
+                                       timeout=_remaining(f"chunk {rng}"))
+                    _account("infer", t_inf)
                     return {"range": rng, **r}
                 text = vlm.with_context(
                     f"This clip covers {rng} of a longer video (the clip's 0:00 is "
@@ -589,8 +659,10 @@ class Core:
                                               fps=None, native=native,
                                               max_images=entry["max_images"],
                                               work_dir=work_dir / f"c{i}")
+                t_inf = _account("prep", t_prep)
                 a, meta = vlm.run_look(port, hf_id, content, max_tokens=max_tokens,
-                                       timeout=timeout)
+                                       timeout=_remaining(f"chunk {rng}"))
+                _account("infer", t_inf)
                 if meta.get("finish_reason") == "length":
                     a += vlm.truncation_marker(meta)
                 return vlm.annotate({"range": rng, "answer": a}, meta)
@@ -598,26 +670,40 @@ class Core:
                 seg.unlink(missing_ok=True)
 
         # map: chunks run concurrently up to the model's concurrency (vLLM batches them);
-        # results keep chunk order
+        # results keep chunk order. Finished chunks are checkpointed so a server restart
+        # mid-watch (or mid-synthesis) resumes instead of re-paying for every chunk.
+        plan_key = (f"{path}|{fps}|{round(chunk_seconds, 3)}|{n}|{native}|{scale}|"
+                    f"{max_tokens}|{'assert' if expectation is not None else 'question'}")
+        results: dict[int, dict | None] = self.store.load_chunks(tid, plan_key)
+        todo = [i for i in range(n) if i not in results]
         self.store.update(tid, status="running")
-        self._progress(tid, "running", f"watching {n} chunks (concurrency {concurrency})",
-                       chunk={"i": 0, "n": n, "t_start": 0.0, "t_end": 0.0})
-        chunks: list = []
-        done_count = 0
+        self._progress(tid, "running",
+                       (f"resuming: {n - len(todo)}/{n} chunks already analyzed, "
+                        f"watching the rest (concurrency {concurrency})") if results else
+                       f"watching {n} chunks (concurrency {concurrency})",
+                       chunk={"i": n - len(todo), "n": n, "t_start": 0.0, "t_end": 0.0})
+        done_count = n - len(todo)
+        t_chunks = time.time()
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            futures = {pool.submit(_do_chunk, i): i for i in range(n)}
-            results: dict[int, dict | None] = {}
+            futures = {pool.submit(_do_chunk, i): i for i in todo}
             for fut in as_completed(futures):
                 if self._canceled(tid):
                     for f in futures:
                         f.cancel()
                     return
-                results[futures[fut]] = fut.result()
+                i = futures[fut]
+                results[i] = fut.result()
+                self.store.save_chunk(tid, plan_key, i, results[i])
                 done_count += 1
                 self._progress(tid, "running",
                                f"watched chunk {done_count}/{n}",
                                chunk={"i": done_count, "n": n, "t_start": 0.0, "t_end": 0.0})
         chunks = [results[i] for i in sorted(results) if results[i] is not None]
+        self.store.update(tid, timing={
+            "chunks_wall_s": round(time.time() - t_chunks, 1),
+            "media_prep_s": round(stage_s["prep"], 1),   # summed across chunks
+            "inference_s": round(stage_s["infer"], 1),   # summed across chunks
+        })
 
         out = {"mode": "assert" if expectation is not None else "question", "fps": fps,
                "chunk_seconds": round(chunk_seconds, 2), "native": native,
@@ -635,6 +721,7 @@ class Core:
                              "; ".join(f'[{c["range"]}] {c.get("reason", "")}' for c in failing)[:800])
         else:
             self._progress(tid, "running", "synthesizing final answer across chunks")
+            t_syn = time.time()
             notes = "\n".join(f'[{c["range"]}] {c["answer"]}' for c in chunks)
             answer, meta = vlm.chat(port, hf_id, [{"role": "user", "content": [{"type": "text", "text":
                 "These are sequential observations of one continuous video. Synthesize them into a "
@@ -642,10 +729,12 @@ class Core:
                 "is its ABSOLUTE span in the full video; treat any clip-local times inside an "
                 "observation as offset by that range's start. Cite absolute times only. "
                 f"Original question: {question}\n\nObservations:\n{notes}"}]}],
-                max_tokens=max_tokens, timeout=timeout)
+                max_tokens=max_tokens, timeout=_remaining("the final synthesis"))
             if meta.get("finish_reason") == "length":
                 answer += vlm.truncation_marker(meta)
             out["answer"] = answer
             vlm.annotate(out, meta)
+            self.store.update(tid, timing={"synthesis_s": round(time.time() - t_syn, 1)})
         self.store.update(tid, status="done", result=out, timing={"finished_at": time.time()})
+        self.store.clear_checkpoint(tid)
         self._progress(tid, "done", "")

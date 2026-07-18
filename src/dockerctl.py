@@ -95,6 +95,10 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
         "--max-model-len", str(entry["max_model_len"]),
         "--limit-mm-per-prompt", json.dumps({"image": entry["max_images"], "video": 1}),
         "--media-io-kwargs", json.dumps({"video": {"num_frames": entry["video_frames"]}}),
+        # the mm processor cache desyncs between vLLM's frontend and engine when a client
+        # disconnect aborts an in-flight request, then 500s forever on that media hash
+        # ("Expected a cached item for mm_hash=..."); re-preprocessing is cheap - disable it
+        "--mm-processor-cache-gb", "0",
     ] + list(entry.get("extra_args", []))
     _run(["rm", "-f", name], check=False)
     args = [

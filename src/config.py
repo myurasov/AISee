@@ -20,7 +20,7 @@ DEFAULTS: dict = {
         # 4096/chunk, look 8192; reasoning models 8192 for every kind). A host may pin
         # max_tokens (all kinds) or max_tokens_look/assert/watch; per-call still wins.
         "max_tokens": 0,
-        "request_timeout": 900, # per-inference HTTP timeout (s); a full 64-frame chunk on a dense model can take a few minutes
+        "request_timeout": 3600, # per-inference HTTP timeout (s); dense models with big answer budgets can run long
         "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
         "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it
     },
