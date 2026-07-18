@@ -134,8 +134,10 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   roughly 1-2.5k tokens.
 - **There is no maximum video length - only temporal resolution.** A `native` video is reduced
   to the frame budget spread evenly over the clip. For anything longer than a few minutes use
-  `watch`: it chunks the video so every chunk gets the full frame budget (about an hour of
-  video per call at fps=1). High fps hunts flicker/glitches; fps=1 is enough for "what happens".
+  `watch`: it chunks the video so every chunk gets the full frame budget - chunk length is
+  frame budget / fps (64 s per chunk at fps=1; sparser fps means longer chunks), and chunks
+  queue within one call, so an hour of video at fps=1 is ~56 chunks and a few minutes of
+  wall-clock. High fps hunts flicker/glitches; fps=1 is enough for "what happens".
 - **Some models are stills-only** (they read a video as a single frame). Check `native video`
   in `/v1/describe` before sending video to a non-default model.
 - **Model choice matters.** The default (Qwen3-VL MoE) is the safe all-rounder: correct OCR,
