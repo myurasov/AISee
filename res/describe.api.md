@@ -136,6 +136,12 @@ There is **no hard maximum video length** - only temporal resolution:
   tens of seconds per chunk.
 - Stills-only models (native video: no in the guide above) read a clip as a single frame - use
   frame sampling or pick a video-capable model.
+- **Spatial resolution**: AISee sends media at source resolution - `look` extracts
+  native-resolution frames, and the only AISee-side downscale is the optional `scale` task
+  param on `watch`. The model's preprocessor is the only implicit resizer; each model's
+  `Input resolution:` line above gives the exact still and per-video-frame pixel budgets, so
+  check it before relying on small text (OCR of fine print may need a full-res still via
+  `look` instead of a video frame).
 
 ## Tips
 

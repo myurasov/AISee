@@ -59,10 +59,18 @@ each reuse).
 - **Media budgets are serving config, not model limits** (typically 16 images per request,
   1 video sampled to 64 frames server-side). There is **no maximum video length - only
   temporal resolution**: a `native` video is reduced to the frame budget spread evenly over
-  the clip; `watch` chunks the video so every chunk gets the full budget (about an hour of
-  video per call at fps=1). fps=1 suits "what happens"; 8-15 hunts flicker/glitches.
+  the clip; `watch` chunks the video so every chunk gets the full budget - chunk length is
+  frame budget / fps (64 s per chunk at fps=1; sparser fps means longer chunks). Chunks
+  queue within one call, so an hour of video at fps=1 is ~56 chunks and a few minutes of
+  wall-clock. fps=1 suits "what happens"; 8-15 hunts flicker/glitches.
 - **Some models are stills-only** (they read a video as a single frame) - check `native
   video` in the model guide below before sending video to a non-default model.
+- **Spatial resolution**: AISee sends media at source resolution (`look` extracts
+  native-resolution frames; the only AISee-side downscale is the optional `scale` param on
+  `watch`) - the model's preprocessor is the only implicit resizer. Each model's
+  `Input resolution:` line below gives the exact still and per-video-frame pixel budgets;
+  when fine text must survive (dense OCR), prefer a full-res still via `look` over a
+  video frame.
 - **Trust but verify verdicts.** When an `assert_visual` verdict is surprising, read its
   `reason`/`evidence` and consider a follow-up `look` before acting on it.
 - **Model management is not available over MCP** (consumer capabilities only). If a model you

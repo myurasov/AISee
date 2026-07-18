@@ -11,7 +11,7 @@ strengths/weaknesses/pitfalls and live state).
 
 from pathlib import Path
 
-from . import __version__, catalog, registry
+from . import __version__, catalog, registry, resolution
 
 # res/ lives next to the package dir (repo layout: src/ + res/); AISee is deployed from a
 # source checkout, so this resolves both in dev and on hosts
@@ -77,6 +77,7 @@ def _model_lines(core) -> list[dict]:
                 "concurrency": entry.get("concurrency", 1),
                 "idle_timeout": entry.get("idle_timeout"),
             },
+            "input_resolution": resolution.input_resolution(entry),
             "strengths": cat.get("strengths", ""), "weaknesses": cat.get("weaknesses", ""),
             "pitfalls": cat.get("pitfalls", ""), "license": cat.get("license", ""),
         })
@@ -98,6 +99,7 @@ def _render_models(core) -> str:
                        f"{s['max_images']} images / 1 video sampled to {s['video_frames']} frames; "
                        f"{s['concurrency']} concurrent inferences; gpu_frac {s['gpu_frac']}; "
                        f"idle unload after {s['idle_timeout']} s")(m["serving"]),
+            resolution.markdown_line(m["input_resolution"]),
         ]
         if m["strengths"]:
             lines.append(f"- **Strengths:** {m['strengths']}")
