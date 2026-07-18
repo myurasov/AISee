@@ -22,7 +22,7 @@
     --border: #3b444d; --border-soft: #2e363e; --border-softer: #2e363e; --border-thumb: #3b444d;
     --tab-bg: #21272d; --btn-border: #4a545e; --link: #6cb1e0; --sel: #24344a;
     --ok: #4c9; --warn: #d9a03c; --err: #e77; --pass: #5b5;
-    --accent: #76b900; --accent-soft: #22301a; --drop-border: #4a545e; --bar-text: #d5dbe1;
+    --accent: #4f7c08; --accent-soft: #22301a; --drop-border: #4a545e; --bar-text: #e8ecf0;
     color-scheme: dark;
   }
   *, *::before, *::after { box-sizing: border-box; }
@@ -438,10 +438,8 @@ function setDark(on) {
   document.body.classList.toggle("dark", on);
   localStorage.setItem("aisee.dark", on ? "1" : "0");
 }
-// stored choice wins; first visit follows the OS preference
-setDark(localStorage.getItem("aisee.dark") != null
-        ? localStorage.getItem("aisee.dark") === "1"
-        : window.matchMedia("(prefers-color-scheme: dark)").matches);
+// stored choice wins; dark is the default
+setDark(localStorage.getItem("aisee.dark") !== "0");
 $("darkToggle").addEventListener("click",
   () => setDark(!document.body.classList.contains("dark")));
 
