@@ -744,7 +744,7 @@ function fillDetail(td, t) {
     } else {
       // root level visible, nested sections collapsed by default
       box.classList.add("j");
-      box.appendChild(jsonTree(r, "result", true));
+      box.appendChild(jsonTree(r, "result", false));
     }
     td.appendChild(box);
   }
