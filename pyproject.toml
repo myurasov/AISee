@@ -1,6 +1,6 @@
 [project]
 name = "aisee"
-version = "0.7.3"
+version = "0.8.0"
 description = "AISee is a tool that gives AI agents eyes: serve VLMs on a GPU host and query images/video via CLI or REST API."
 readme = "README.md"
 license = "Apache-2.0"
