@@ -7,7 +7,7 @@ AISee never downscales by default (look extracts native-resolution frames; only 
 optional scale param resizes client-side), so the model's own preprocessor is the only
 implicit resizer. This module derives the exact still/video pixel budgets from the model's
 HF snapshot on disk (preprocessor_config.json / video_preprocessor_config.json) plus the
-serving config in effect, so `describe` can tell a consumer whether e.g. a 1496x968 screen
+serving config in effect, so `describe` can tell a consumer whether e.g. a 1080p screen
 recording is read at native resolution or silently downscaled.
 
 Known preprocessor schemes:
@@ -26,8 +26,10 @@ from pathlib import Path
 
 from . import paths
 
-# worked example used across the guide: a realistic meeting-recording frame
-EXAMPLE_W, EXAMPLE_H = 1496, 968
+# standard resolutions used for the worked examples in the guide (largest first)
+_STANDARD_RES = [("8K", 7680, 4320), ("4K", 3840, 2160), ("1440p", 2560, 1440),
+                 ("1080p", 1920, 1080), ("720p", 1280, 720), ("480p", 854, 480),
+                 ("360p", 640, 360), ("240p", 426, 240)]
 
 # answer + prompt headroom subtracted from the context before dividing it among frames
 _CTX_OVERHEAD_TOKENS = 2048
@@ -119,27 +121,29 @@ def _mp(px: int | None) -> str:
     return f"{px / 1e6:.2f} MP" if px else "unknown"
 
 
-def _example_still(max_px: int | None) -> str:
-    src = EXAMPLE_W * EXAMPLE_H
+def _std_example(max_px: int | None, unit: str) -> str:
+    """Anchor a pixel budget to the standard-resolution ladder (8K/4K/1080p/...)."""
     if not max_px:
         return "unknown"
-    if src <= max_px:
-        return (f"a {EXAMPLE_W}x{EXAMPLE_H} still ({src / 1e6:.2f} MP) is processed at "
-                "native resolution")
-    scale = (max_px / src) ** 0.5
-    return (f"a {EXAMPLE_W}x{EXAMPLE_H} still ({src / 1e6:.2f} MP) is downscaled to "
-            f"~{_mp(max_px)} (~{round(EXAMPLE_W * scale)}x{round(EXAMPLE_H * scale)})")
+    fits = next(((n, w, h) for n, w, h in _STANDARD_RES if w * h <= max_px), None)
+    if fits is None:
+        return f"even a 240p {unit} is downscaled"
+    name, w, h = fits
+    if fits == _STANDARD_RES[0]:
+        return f"an 8K {unit} ({w}x{h}) passes untouched"
+    # the smallest standard resolution ABOVE the budget, with its downscaled size
+    on, ow, oh = _STANDARD_RES[_STANDARD_RES.index(fits) - 1]
+    scale = (max_px / (ow * oh)) ** 0.5
+    return (f"{name} ({w}x{h}) and below pass untouched; {on} is downscaled to "
+            f"~{round(ow * scale)}x{round(oh * scale)}")
+
+
+def _example_still(max_px: int | None) -> str:
+    return _std_example(max_px, "still")
 
 
 def _example_frame(per_frame_px: int | None) -> str:
-    src = EXAMPLE_W * EXAMPLE_H
-    if not per_frame_px:
-        return "unknown"
-    if src <= per_frame_px:
-        return f"a {EXAMPLE_W}x{EXAMPLE_H} frame stays at native resolution"
-    scale = (per_frame_px / src) ** 0.5
-    return (f"a {EXAMPLE_W}x{EXAMPLE_H} frame is downscaled to "
-            f"~{round(EXAMPLE_W * scale)}x{round(EXAMPLE_H * scale)}")
+    return _std_example(per_frame_px, "frame")
 
 
 def input_resolution(entry: dict) -> dict:
