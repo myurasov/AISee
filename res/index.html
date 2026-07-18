@@ -8,55 +8,75 @@
 <title>AISee</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="%2376b900"/><circle cx="8" cy="8" r="3" fill="%23222"/></svg>'>
 <style>
+  :root {
+    --bg: #fff; --panel: #fff; --soft: #f5f5f5; --softer: #fafafa; --code: #f2f2f2;
+    --fg: #222; --fg-strong: #111; --fg-dim: #666; --fg-label: #444; --fg-faint: #999;
+    --border: #ccc; --border-soft: #e0e0e0; --border-softer: #e4e4e4; --border-thumb: #ddd;
+    --tab-bg: #f0f0f0; --btn-border: #888; --link: #369; --sel: #eef4ff;
+    --ok: #2a7; --warn: #b80; --err: #c33; --pass: #4a4;
+    --accent: #76b900; --accent-soft: #f3f9e8; --drop-border: #bbb; --bar-text: #333;
+  }
+  body.dark {
+    --bg: #14181c; --panel: #1d2227; --soft: #262d34; --softer: #21272d; --code: #2a3138;
+    --fg: #d5dbe1; --fg-strong: #fff; --fg-dim: #9aa4ae; --fg-label: #aeb7c0; --fg-faint: #6d7883;
+    --border: #3b444d; --border-soft: #2e363e; --border-softer: #2e363e; --border-thumb: #3b444d;
+    --tab-bg: #21272d; --btn-border: #4a545e; --link: #6cb1e0; --sel: #24344a;
+    --ok: #4c9; --warn: #d9a03c; --err: #e77; --pass: #5b5;
+    --accent: #76b900; --accent-soft: #22301a; --drop-border: #4a545e; --bar-text: #d5dbe1;
+    color-scheme: dark;
+  }
   *, *::before, *::after { box-sizing: border-box; }
-  body { font: 14px/1.45 system-ui, sans-serif; margin: 1.5rem 2rem; color: #222; }
-  h1 { font-size: 1.3rem; } h1 small { color: #888; font-weight: normal; font-size: .8rem; }
-  label { display: block; margin: .45rem 0 .1rem; color: #444; font-size: .85rem; }
-  input[type=text], input[type=password], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid #ccc; font: inherit; }
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 1.5rem 2rem; color: var(--fg);
+         background: var(--bg); }
+  h1 { font-size: 1.3rem; } h1 small { color: var(--fg-faint); font-weight: normal; font-size: .8rem; }
+  label { display: block; margin: .45rem 0 .1rem; color: var(--fg-label); font-size: .85rem; }
+  input[type=text], input[type=password], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid var(--border); font: inherit; background: var(--panel); color: var(--fg); }
   textarea { min-height: 3.2em; resize: vertical; }
   .row { display: flex; gap: .8rem; } .row > div { flex: 1; }
-  button { padding: .45rem 1.1rem; font: inherit; cursor: pointer; border: 1px solid #888; background: #f5f5f5; }
-  button:hover { background: #eee; } button:disabled { opacity: .5; cursor: default; }
-  .muted { color: #999; font-size: .8rem; }
-  .errmsg { color: #c33; font-size: .8rem; word-break: break-word; }
-  a { color: #369; }
+  button { padding: .45rem 1.1rem; font: inherit; cursor: pointer; border: 1px solid var(--btn-border); background: var(--soft); color: var(--fg); }
+  button:hover { background: var(--softer); } button:disabled { opacity: .5; cursor: default; }
+  .muted { color: var(--fg-faint); font-size: .8rem; }
+  .errmsg { color: var(--err); font-size: .8rem; word-break: break-word; }
+  a { color: var(--link); }
   /* tabs + frame */
-  nav { display: flex; gap: 0; margin-bottom: -1px; }
-  nav button { border: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #f0f0f0; color: #666;
+  nav { display: flex; gap: 0; margin-bottom: -1px; align-items: flex-end; }
+  nav button { border: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--tab-bg); color: var(--fg-dim);
                padding: .4rem 1rem; margin-right: .25rem; position: relative; }
-  nav button.on { background: #fff; color: #111; border-bottom: 1px solid #fff; z-index: 2; }
-  #frame { border: 1px solid #ccc; background: #fff; padding: 1rem 1.2rem; min-height: 14rem;
+  nav button.on { background: var(--panel); color: var(--fg-strong); border-bottom: 1px solid var(--panel); z-index: 2; }
+  #darkToggle { margin-left: auto; margin-right: 0; border: 1px solid var(--border); background: var(--tab-bg);
+                color: var(--fg-dim); padding: .4rem .7rem; line-height: 1; }
+  #frame { border: 1px solid var(--border); background: var(--panel); padding: 1rem 1.2rem; min-height: 14rem;
            overflow-x: auto; }
   .tab { display: none; } .tab.on { display: block; }
-  #status { color: #666; margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
+  #status { color: var(--fg-dim); margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
-  th, td { border: 1px solid #e0e0e0; padding: .25rem .5rem; text-align: left; word-break: break-word; }
-  th { background: #f5f5f5; color: #555; font-weight: 600; }
-  .st-running, .st-done { color: #2a7; }
-  .st-starting, .st-queued, .st-preparing_media, .st-model_loading { color: #b80; }
-  .st-failed, .st-canceled { color: #c33; }
+  th, td { border: 1px solid var(--border-soft); padding: .25rem .5rem; text-align: left; word-break: break-word; }
+  th { background: var(--soft); color: var(--fg-dim); font-weight: 600; }
+  .st-running, .st-done { color: var(--ok); }
+  .st-starting, .st-queued, .st-preparing_media, .st-model_loading { color: var(--warn); }
+  .st-failed, .st-canceled { color: var(--err); }
   #tasksBox tr[data-id] { cursor: pointer; }
-  #tasksBox tr.sel td { background: #eef4ff; }
-  tr.detail > td { background: #fafafa; padding: .6rem .8rem; cursor: default; }
-  .d-status { color: #666; white-space: pre-wrap; margin-bottom: .4rem; }
-  .d-result { background: #fff; border: 1px solid #e4e4e4; padding: .5rem .7rem; white-space: pre-wrap;
+  #tasksBox tr.sel td { background: var(--sel); }
+  tr.detail > td { background: var(--softer); padding: .6rem .8rem; cursor: default; }
+  .d-status { color: var(--fg-dim); white-space: pre-wrap; margin-bottom: .4rem; }
+  .d-result { background: var(--panel); border: 1px solid var(--border-softer); padding: .5rem .7rem; white-space: pre-wrap;
               word-break: break-word; font-family: ui-monospace, monospace; font-size: .8rem; }
-  .d-result.pass { border-left: 4px solid #4a4; } .d-result.fail { border-left: 4px solid #c33; }
+  .d-result.pass { border-left: 4px solid var(--pass); } .d-result.fail { border-left: 4px solid var(--err); }
   /* collapsible JSON tree */
-  .j summary { cursor: pointer; color: #555; }
+  .j summary { cursor: pointer; color: var(--fg-dim); }
   .j details > *:not(summary), .j .j-line { margin-left: 1rem; }
-  .j-k { color: #369; }
+  .j-k { color: var(--link); }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   #tasksBox td.mediacell { min-width: 110px; }
   .mthumb { display: inline-block; margin: 0 .3rem .15rem 0; text-align: center; }
-  .mthumb img { max-height: 75px; width: auto; display: block; border: 1px solid #ddd;
-                background: #fff; }
-  .mthumb .fname { font-size: .68rem; color: #777; max-width: 140px; overflow: hidden;
+  .mthumb img { max-height: 75px; width: auto; display: block; border: 1px solid var(--border-thumb);
+                background: var(--panel); }
+  .mthumb .fname { font-size: .68rem; color: var(--fg-faint); max-width: 140px; overflow: hidden;
                    text-overflow: ellipsis; white-space: nowrap; }
   /* media drop zone */
   #drop, #drop *, label[for=files] { cursor: pointer; }
-  pre.describe { background: #fafafa; border: 1px solid #e4e4e4; padding: .6rem .8rem;
+  pre.describe { background: var(--softer); border: 1px solid var(--border-softer); padding: .6rem .8rem;
                  white-space: pre-wrap; word-break: break-word; font-size: .8rem;
                  max-height: 32rem; overflow-y: auto; margin: .3rem 0; }
   /* rendered describe markdown */
@@ -65,26 +85,26 @@
   .md h4 { font-size: .9rem; margin: .8rem 0 .2rem; }
   .md p, .md li { font-size: .85rem; line-height: 1.5; }
   .md ul, .md ol { margin: .3rem 0 .6rem; padding-left: 1.4rem; }
-  .md code { background: #f2f2f2; padding: 0 .25rem; font-size: .95em; }
-  .md pre { background: #fafafa; border: 1px solid #e4e4e4; padding: .5rem .7rem;
+  .md code { background: var(--code); padding: 0 .25rem; font-size: .95em; }
+  .md pre { background: var(--softer); border: 1px solid var(--border-softer); padding: .5rem .7rem;
             font-size: .8rem; white-space: pre-wrap; word-break: break-word; }
   .md table { margin: .4rem 0 .8rem; }
   #configBox td:first-child { white-space: nowrap; word-break: normal; }
   details.cfgm { margin: .35rem 0; }
   details.cfgm summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   details.cfgm table { margin-bottom: .6rem; }
-  #drop { border: 2px dashed #bbb; background: #fafafa; padding: 1.1rem 1rem; text-align: center; }
-  #drop.over { border-color: #76b900; background: #f3f9e8; }
+  #drop { border: 2px dashed var(--drop-border); background: var(--softer); padding: 1.1rem 1rem; text-align: center; }
+  #drop.over { border-color: var(--accent); background: var(--accent-soft); }
   #drop input { display: none; }
-  #drop .picked { color: #222; }
-  .bar { background: #eee; border: 1px solid #ddd; height: .9rem; position: relative; min-width: 90px; }
-  .bar > div { background: #76b900; height: 100%; }
+  #drop .picked { color: var(--fg); }
+  .bar { background: var(--soft); border: 1px solid var(--border-thumb); height: .9rem; position: relative; min-width: 90px; }
+  .bar > div { background: var(--accent); height: 100%; }
   td button { padding: .1rem .5rem; font-size: .75rem; margin-right: .25rem; }
-  .bar span { position: absolute; inset: 0; font-size: .7rem; text-align: center; line-height: .9rem; color: #333; white-space: nowrap; overflow: hidden; }
+  .bar span { position: absolute; inset: 0; font-size: .7rem; text-align: center; line-height: .9rem; color: var(--bar-text); white-space: nowrap; overflow: hidden; }
 </style>
 </head>
 <body>
-<h1>AISee <span id="ver" style="font-weight:normal;color:#999"></span></h1>
+<h1>AISee <span id="ver" style="font-weight:normal;color:var(--fg-faint)"></span></h1>
 
 <nav>
   <button data-tab="server">Server</button>
@@ -95,6 +115,7 @@
   <button data-tab="config">Config</button>
   <button data-tab="mcp">MCP</button>
   <button data-tab="api">API</button>
+  <button id="darkToggle" title="toggle dark mode">&#9681;</button>
 </nav>
 <div id="frame">
 
@@ -208,7 +229,7 @@ let expandedId = localStorage.getItem("aisee.expanded") || null;
 // ---------------- tabs ----------------
 
 function showTab(name) {
-  for (const b of document.querySelectorAll("nav button"))
+  for (const b of document.querySelectorAll("nav button[data-tab]"))
     b.className = b.dataset.tab === name ? "on" : "";
   for (const s of document.querySelectorAll(".tab"))
     s.className = s.id === "tab-" + name ? "tab on" : "tab";
@@ -406,8 +427,22 @@ function loadApiTab() {
   loadDescribe("/v1/describe", "apiDescribe");
 }
 
-for (const b of document.querySelectorAll("nav button"))
+for (const b of document.querySelectorAll("nav button[data-tab]"))
   b.addEventListener("click", () => showTab(b.dataset.tab));
+
+// ---------------- dark mode ----------------
+
+function setDark(on) {
+  document.body.classList.toggle("dark", on);
+  $("darkToggle").textContent = on ? "☼" : "◑"; // sun to leave, half-circle to enter
+  localStorage.setItem("aisee.dark", on ? "1" : "0");
+}
+// stored choice wins; first visit follows the OS preference
+setDark(localStorage.getItem("aisee.dark") != null
+        ? localStorage.getItem("aisee.dark") === "1"
+        : window.matchMedia("(prefers-color-scheme: dark)").matches);
+$("darkToggle").addEventListener("click",
+  () => setDark(!document.body.classList.contains("dark")));
 
 // ---------------- gpu tab ----------------
 
