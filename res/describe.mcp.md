@@ -74,6 +74,13 @@ each reuse).
   `Input resolution:` line below gives the exact still and per-video-frame pixel budgets;
   when fine text must survive (dense OCR), prefer a full-res still via `look` over a
   video frame.
+- **Answer budgets are per kind and truncation is never silent.** Without an explicit
+  `max_tokens`: `assert_visual` 1024, `watch` 4096 per chunk, `look` 8192; reasoning models
+  8192 everywhere (thinking counts against the same budget). A capped answer ends with
+  `[truncated at N tokens]` and carries `truncated: true`; a truncated assert fails with a
+  "verdict truncated" reason; `max_tokens_clamped: true` means a large media payload forced
+  a smaller budget. Size `max_tokens` to the largest useful answer - it is a runaway bound,
+  not a target.
 - **Trust but verify verdicts.** When an `assert_visual` verdict is surprising, read its
   `reason`/`evidence` and consider a follow-up `look` before acting on it.
 - **Model management is not available over MCP** (consumer capabilities only). If a model you

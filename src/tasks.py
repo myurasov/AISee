@@ -18,6 +18,25 @@ from pathlib import Path
 
 from . import blobs, catalog, config, creds, dockerctl, media, paths, registry, vlm
 
+# answer budgets applied when the caller does not pass max_tokens: verdict JSON never
+# needs much; dense-OCR looks must never clip content; watch is per chunk. Reasoning
+# models get the top tier for every kind - thinking counts against the same budget.
+BUILTIN_MAX_TOKENS = {"assert": 1024, "look": 8192, "watch": 4096}
+REASONING_MAX_TOKENS = 8192
+
+
+def resolve_max_tokens(kind: str, params: dict, entry: dict, defaults: dict) -> int:
+    """Per-call > config max_tokens_<kind> > config global (>0) > built-in per kind."""
+    if params.get("max_tokens"):
+        return int(params["max_tokens"])
+    per_kind = defaults.get(f"max_tokens_{kind}")
+    if per_kind:
+        return int(per_kind)
+    if defaults.get("max_tokens"):  # legacy single knob; 0 (the default) = unset
+        return int(defaults["max_tokens"])
+    builtin = BUILTIN_MAX_TOKENS.get(kind, 4096)
+    return max(builtin, REASONING_MAX_TOKENS) if entry.get("reasoning") else builtin
+
 TERMINAL = ("done", "failed", "canceled")
 
 _SCHEMA = """
@@ -469,7 +488,7 @@ class Core:
         native = bool(p.get("native", False)) and entry.get("supports_native_video", True)
         frames = int(p.get("frames") or d["frames"])
         fps = float(p["fps"]) if p.get("fps") else None
-        max_tokens = int(p.get("max_tokens") or d["max_tokens"])
+        max_tokens = resolve_max_tokens(kind, p, entry, d)
         timeout = float(d["request_timeout"])
         context = p.get("context") or None
 
@@ -491,8 +510,11 @@ class Core:
                 return
             t1 = time.time()
             if kind == "look":
-                result = {"answer": vlm.run_look(entry["port"], entry["hf_id"], content,
-                                                 max_tokens=max_tokens, timeout=timeout)}
+                answer, meta = vlm.run_look(entry["port"], entry["hf_id"], content,
+                                            max_tokens=max_tokens, timeout=timeout)
+                if meta.get("finish_reason") == "length":
+                    answer += vlm.truncation_marker(meta)
+                result = vlm.annotate({"answer": answer}, meta)
             else:
                 result = vlm.run_assert(entry["port"], entry["hf_id"], content,
                                         max_tokens=max_tokens, timeout=timeout)
@@ -567,8 +589,11 @@ class Core:
                                               fps=None, native=native,
                                               max_images=entry["max_images"],
                                               work_dir=work_dir / f"c{i}")
-                a = vlm.run_look(port, hf_id, content, max_tokens=max_tokens, timeout=timeout)
-                return {"range": rng, "answer": a}
+                a, meta = vlm.run_look(port, hf_id, content, max_tokens=max_tokens,
+                                       timeout=timeout)
+                if meta.get("finish_reason") == "length":
+                    a += vlm.truncation_marker(meta)
+                return vlm.annotate({"range": rng, "answer": a}, meta)
             finally:
                 seg.unlink(missing_ok=True)
 
@@ -597,6 +622,11 @@ class Core:
         out = {"mode": "assert" if expectation is not None else "question", "fps": fps,
                "chunk_seconds": round(chunk_seconds, 2), "native": native,
                "duration_s": round(dur, 2), "chunks": chunks}
+        # task-level rollups so consumers need not scan chunks for coverage holes
+        if any(c.get("truncated") for c in chunks):
+            out["truncated"] = True
+        if any(c.get("max_tokens_clamped") for c in chunks):
+            out["max_tokens_clamped"] = True
         if expectation is not None:
             failing = [c for c in chunks if not c.get("pass")]
             out["pass"] = not failing
@@ -606,12 +636,16 @@ class Core:
         else:
             self._progress(tid, "running", "synthesizing final answer across chunks")
             notes = "\n".join(f'[{c["range"]}] {c["answer"]}' for c in chunks)
-            out["answer"] = vlm.chat(port, hf_id, [{"role": "user", "content": [{"type": "text", "text":
+            answer, meta = vlm.chat(port, hf_id, [{"role": "user", "content": [{"type": "text", "text":
                 "These are sequential observations of one continuous video. Synthesize them into a "
                 "single coherent answer to the original question. Each observation's [range] prefix "
                 "is its ABSOLUTE span in the full video; treat any clip-local times inside an "
                 "observation as offset by that range's start. Cite absolute times only. "
                 f"Original question: {question}\n\nObservations:\n{notes}"}]}],
                 max_tokens=max_tokens, timeout=timeout)
+            if meta.get("finish_reason") == "length":
+                answer += vlm.truncation_marker(meta)
+            out["answer"] = answer
+            vlm.annotate(out, meta)
         self.store.update(tid, status="done", result=out, timing={"finished_at": time.time()})
         self._progress(tid, "done", "")

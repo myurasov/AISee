@@ -16,7 +16,10 @@ DEFAULTS: dict = {
         "idle_timeout": 3600, # seconds; 0 = never unload
         "fps": 3.0,
         "frames": 16, # even-sampled frames per video (= the image budget)
-        "max_tokens": 2048, # headroom for reasoning models and long syntheses
+        # answer budget knobs. 0 = unset: per-kind built-ins apply (assert 1024, watch
+        # 4096/chunk, look 8192; reasoning models 8192 for every kind). A host may pin
+        # max_tokens (all kinds) or max_tokens_look/assert/watch; per-call still wins.
+        "max_tokens": 0,
         "request_timeout": 900, # per-inference HTTP timeout (s); a full 64-frame chunk on a dense model can take a few minutes
         "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
         "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it

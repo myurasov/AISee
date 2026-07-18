@@ -109,6 +109,14 @@ done`. `progress` carries a human-readable step, and for `watch` a chunk counter
 splits `model_load_s` / `media_prep_s` / `inference_s` and, once terminal, includes `total_s`
 (wall-clock seconds from submission to finish). On `failed`, read `error.message`.
 
+**Answer budgets (`max_tokens`):** per-kind defaults when not passed - `assert` 1024, `watch`
+4096 per chunk, `look` 8192; reasoning models 8192 everywhere (thinking spends the same
+budget). Truncation is never silent: capped answers end with `[truncated at N tokens]` and set
+`truncated: true` (watch also rolls it up task-level); a truncated assert fails with a
+"verdict truncated" reason - raise `max_tokens` and retry. `max_tokens_clamped: true` means a
+large media payload forced a smaller answer budget. Size the cap to the largest useful
+answer; it is a runaway bound, not a target.
+
 **Upload dedup:** uploads are content-addressed by the SHA-256 of the file bytes and kept
 for a TTL (default 24 h, refreshed on reuse). Probe `GET /v1/blobs/{sha256}` (hash via `sha256sum` /
 `shasum -a 256` / python `hashlib.sha256(data).hexdigest()`); if it exists, pass

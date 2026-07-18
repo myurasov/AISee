@@ -233,7 +233,7 @@ const CONFIG_DOC = {
   "defaults.idle_timeout": "seconds a started model stays on the GPU after its last use before auto-unload; 0 = never unload; per-model TOMLs override this and apply live",
   "defaults.fps": "video sampling rate (frames per second of source time) when a query sets neither fps nor frames; 1 is enough for 'what happens', 8-15 hunts flicker",
   "defaults.frames": "frames spread evenly over a video when sampling into images (bounded by the model's image budget)",
-  "defaults.max_tokens": "answer-length budget per inference; reasoning models also think inside it, so keep headroom",
+  "defaults.max_tokens": "answer-length budget per inference; 0 = unset, per-kind built-ins apply (assert 1024, watch 4096/chunk, look 8192; reasoning models 8192 everywhere); max_tokens_look/assert/watch pin one kind; reasoning models think inside the same budget",
   "defaults.request_timeout": "seconds one inference may take before it is abandoned; a full 64-frame chunk on a dense model can take minutes",
   "defaults.task_ttl_hours": "finished tasks and their media are deleted after this many hours",
   "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"

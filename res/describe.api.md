@@ -74,6 +74,16 @@ Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON stri
 frames, if the model supports it), `chunk_seconds` (watch), `context` (extra background text the
 model should assume), `max_tokens`.
 
+Answer budgets (`max_tokens`): when not passed per call, defaults are per kind - `assert` 1024,
+`watch` 4096 per chunk, `look` 8192 (dense OCR must never clip content); reasoning models get
+8192 for every kind since thinking counts against the same budget. Size it to the largest
+useful answer - the cap is your runaway bound, so do not blanket-raise it. Truncation is never
+silent: an answer that hit the cap ends with `[truncated at N tokens]` and the result carries
+`truncated: true` (per chunk and task-level for `watch`); a truncated `assert` fails with a
+distinct "verdict truncated" reason. If a large media payload leaves no room for the requested
+budget, the budget is automatically shrunk to fit and the result carries
+`max_tokens_clamped: true`.
+
 ## Example
 
 ```
