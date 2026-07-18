@@ -883,7 +883,14 @@ async function refreshTasks(reattach = false) {
       b.addEventListener("click", async e => {
         e.stopPropagation();  // do not toggle the row expansion
         b.disabled = true;
-        try { await api("/v1/tasks/" + b.dataset.cancel, {method: "DELETE"}); } catch {}
+        try {
+          await api("/v1/tasks/" + b.dataset.cancel, {method: "DELETE"});
+        } catch (err) {
+          b.disabled = false;
+          b.textContent = "retry";
+          b.title = "cancel failed: " + err.message;
+          return;
+        }
         tasksSig = "";        // force a redraw on the next poll
         refreshTasks();
       });

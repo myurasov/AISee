@@ -414,11 +414,16 @@ class Core:
         t = self.store.get(tid)
         if not t or t["status"] in TERMINAL:
             return False
-        if t["status"] == "queued":
-            self.store.update(tid, status="canceled",
-                              progress={"step": "canceled", "detail": "canceled while queued"})
-        else:
-            self._cancel.add(tid)  # best-effort: workers check between steps/chunks
+        # mark terminal IMMEDIATELY and in the DB: the intent survives API restarts
+        # (requeue_stale only picks up non-terminal tasks) and the UI reflects it at once;
+        # a worker mid-inference notices at its next check and stops silently (the
+        # terminal-state guard keeps it from flipping this back to done)
+        self.store.update(tid, status="canceled",
+                          progress={"step": "canceled",
+                                    "detail": "canceled" if t["status"] == "queued" else
+                                    "canceled; the in-flight inference stops at its "
+                                    "next checkpoint"})
+        self._cancel.add(tid)  # fast-path hint for the worker loop
         return True
 
     # ---------------- worker machinery ----------------
@@ -492,10 +497,10 @@ class Core:
     def _canceled(self, tid: str) -> bool:
         if tid in self._cancel:
             self._cancel.discard(tid)
-            self.store.update(tid, status="canceled",
-                              progress={"step": "canceled", "detail": "canceled by request"})
             return True
-        return False
+        # authoritative check: cancel() persists the status, so this survives restarts
+        t = self.store.get(tid)
+        return bool(t) and t["status"] == "canceled"
 
     def _progress(self, tid: str, step: str, detail: str = "", **extra) -> None:
         self.store.update(tid, progress={"step": step, "detail": detail, **extra})
