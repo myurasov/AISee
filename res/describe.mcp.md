@@ -57,12 +57,14 @@ each reuse).
   then poll `get_task` every few seconds until `status` is `done` / `failed` / `canceled`;
   `progress` carries a chunk counter.
 - **Media budgets are serving config, not model limits** (typically 16 images per request,
-  1 video sampled to 64 frames server-side). There is **no maximum video length - only
-  temporal resolution**: a `native` video is reduced to the frame budget spread evenly over
-  the clip; `watch` chunks the video so every chunk gets the full budget - chunk length is
-  frame budget / fps (64 s per chunk at fps=1; sparser fps means longer chunks). Chunks
-  queue within one call, so an hour of video at fps=1 is ~56 chunks and a few minutes of
-  wall-clock. fps=1 suits "what happens"; 8-15 hunts flicker/glitches.
+  1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p, since the video
+  pixel budget is shared across frames). There is **no maximum video length - only temporal
+  resolution**: a `native` video is reduced to the frame budget spread evenly over the clip;
+  `watch` chunks the video so every chunk gets the full budget - chunk length is frame
+  budget / fps (24 s per chunk at fps=1; sparser fps means longer chunks), up to 64 chunks
+  (~25 min at fps=1) per call - raise `chunk_seconds` or lower `fps` for longer clips.
+  Chunks queue within one call, expect tens of seconds each. fps=1 suits "what happens";
+  8-15 hunts flicker/glitches.
 - **Some models are stills-only** (they read a video as a single frame) - check `native
   video` in the model guide below before sending video to a non-default model.
 - **Spatial resolution**: AISee sends media at source resolution (`look` extracts

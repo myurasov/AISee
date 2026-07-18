@@ -132,7 +132,7 @@ fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified
 whole catalog at 128k; a **96 GB** discrete card serves everything at 128k except the dense 32B
 (64k - its 128k KV cache alone is ~34 GiB); a **48 GB** card fits the 7-17 GiB models at 128k
 and Cosmos3-Nano at 32k, while the two big Qwens (~62 GiB weights) do not fit at all (install
-warns). Media budgets are 16 images / 64 video frames per request. Execution mode is also per-GPU:
+warns). Media budgets are 16 images / 24 video frames per request (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`
@@ -169,9 +169,10 @@ Things to know when going off-catalog:
 - **Different serving image**: `--image` swaps the container image per model (e.g. an
   architecture only supported by a newer vLLM or a vendor build); nvcr.io images need the
   NGC key.
-- Per-request budgets default to 16 images and 1 video (64 server-sampled frames); AISee's
-  frame sampling respects them. There is no hard video-length limit - only temporal resolution
-  (64 frames spread over the clip); use `watch` for long videos.
+- Per-request budgets default to 16 images and 1 video (24 server-sampled frames, keeping
+  each frame at ~720p); AISee's frame sampling respects them. There is no hard video-length
+  limit - only temporal resolution (the frame budget spread over the clip); use `watch` for
+  long videos.
 
 Several models can be installed at once, but with the single-model defaults only one fits the
 GPU at a time - to co-locate models, lower `gpu_frac` and `max_model_len` per model so the

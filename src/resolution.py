@@ -24,7 +24,7 @@ downloaded, catalog fallbacks (same numbers, hand-copied) are used and marked es
 import json
 from pathlib import Path
 
-from . import paths
+from . import catalog, paths
 
 # standard resolutions used for the worked examples in the guide (largest first)
 _STANDARD_RES = [("8K", 7680, 4320), ("4K", 3840, 2160), ("1440p", 2560, 1440),
@@ -162,7 +162,7 @@ def input_resolution(entry: dict) -> dict:
         return {"still": "unknown", "video": "unknown",
                 "estimated": True, "source": source}
 
-    frames = int(entry.get("video_frames") or 64)
+    frames = int(entry.get("video_frames") or catalog.DEFAULT_VIDEO_FRAMES)
     ctx = int(entry.get("max_model_len") or 0)
     stills_only = not entry.get("supports_native_video", True)
 
@@ -237,10 +237,13 @@ def markdown_line(ir: dict) -> str:
     if isinstance(video, dict) and video.get("stills_only"):
         v = "video is read as a SINGLE frame at the still budget"
     elif isinstance(video, dict) and video.get("per_frame_max_pixels"):
+        shared = (video.get("total_pixel_budget")
+                  and "; the budget is shared, so fewer sampled frames get "
+                      "proportionally more pixels each" or "")
         v = (f"video ~{_mp(video['per_frame_max_pixels'])} per frame at "
              f"{video['frame_budget']} frames"
              + (" (context-bound)" if video.get("context_bound") else "")
-             + f" ({video['example']})")
+             + f" ({video['example']}{shared})")
     else:
         v = "video per-frame budget unknown"
     return f"- Input resolution: {s}; {v}.{tag}"

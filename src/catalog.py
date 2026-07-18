@@ -17,7 +17,9 @@ DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 # estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
 DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
 DEFAULT_MAX_IMAGES = 16
-DEFAULT_VIDEO_FRAMES = 64
+# 24 frames: the Qwen3-VL family budgets ~24 MP across ALL sampled frames, so 24 frames
+# keep each frame at ~1.05 MP - 720p passes natively (64 frames would drop it to ~0.39 MP)
+DEFAULT_VIDEO_FRAMES = 24
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
 CONTEXT_CANDIDATES = (131072, 65536, 32768, 16384, 8192)
 ACTIVATION_HEADROOM_GIB = 4               # runtime overhead on top of weights + KV

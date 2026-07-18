@@ -130,14 +130,15 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   a model idle-unloaded (default after 15 min) reloads from cache in ~2-3 min. Keep polling -
   `progress.detail` explains what is happening. Do not resubmit; that just queues more work.
 - **Media budgets are serving config, not model limits** (defaults: 16 images per request,
-  1 video sampled to 64 frames server-side, sized for a 128k context). Each image/frame costs
-  roughly 1-2.5k tokens.
+  1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p, since the video
+  pixel budget is shared across frames). Each image/frame costs roughly 1-2.5k tokens.
 - **There is no maximum video length - only temporal resolution.** A `native` video is reduced
   to the frame budget spread evenly over the clip. For anything longer than a few minutes use
   `watch`: it chunks the video so every chunk gets the full frame budget - chunk length is
-  frame budget / fps (64 s per chunk at fps=1; sparser fps means longer chunks), and chunks
-  queue within one call, so an hour of video at fps=1 is ~56 chunks and a few minutes of
-  wall-clock. High fps hunts flicker/glitches; fps=1 is enough for "what happens".
+  frame budget / fps (24 s per chunk at fps=1; sparser fps means longer chunks), up to 64
+  chunks (~25 min at fps=1) per call - raise `chunk_seconds` or lower `fps` for longer clips.
+  Chunks queue within one call. High fps hunts flicker/glitches; fps=1 is enough for "what
+  happens".
 - **Some models are stills-only** (they read a video as a single frame). Check `native video`
   in `/v1/describe` before sending video to a non-default model.
 - **Model choice matters.** The default (Qwen3-VL MoE) is the safe all-rounder: correct OCR,
