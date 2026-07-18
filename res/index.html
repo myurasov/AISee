@@ -52,7 +52,7 @@
   .tab { display: none; } .tab.on { display: block; }
   #status { color: var(--fg-dim); margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
-  th, td { border: 1px solid var(--border-soft); padding: .25rem .5rem; text-align: left; word-break: break-word; }
+  th, td { border: 1px solid var(--border-soft); padding: .25rem .5rem; text-align: left; word-break: normal; overflow-wrap: break-word; }
   th { background: var(--soft); color: var(--fg-dim); font-weight: 600; }
   .st-running, .st-done { color: var(--ok); }
   .st-starting, .st-queued, .st-preparing_media, .st-model_loading { color: var(--warn); }
@@ -76,6 +76,8 @@
                 background: var(--panel); }
   .mthumb .fname { font-size: .68rem; color: var(--fg-faint); max-width: 140px; overflow: hidden;
                    text-overflow: ellipsis; white-space: nowrap; }
+  button.morethumbs { padding: .2rem .6rem; font-size: .75rem; vertical-align: top;
+                      margin-top: 1.6rem; }
   /* media drop zone */
   #drop, #drop *, label[for=files] { cursor: pointer; }
   pre.describe { background: var(--softer); border: 1px solid var(--border-softer); padding: .6rem .8rem;
@@ -260,7 +262,7 @@ const CONFIG_DOC = {
   "defaults.fps": "video sampling rate (frames per second of source time) when a query sets neither fps nor frames; 1 is enough for 'what happens', 8-15 hunts flicker",
   "defaults.frames": "frames spread evenly over a video when sampling into images (bounded by the model's image budget)",
   "defaults.max_tokens": "answer-length budget per inference; 0 = unset, per-kind built-ins apply (assert 1024, watch 4096/chunk, look 8192; reasoning models 8192 everywhere); max_tokens_look/assert/watch pin one kind; reasoning models think inside the same budget",
-  "defaults.request_timeout": "seconds one inference may take before it is abandoned; a full 64-frame chunk on a dense model can take minutes",
+  "defaults.request_timeout": "end-to-end budget for one task (default 3600 = 1 h): a look/assert inference, or ALL of a watch's chunks plus its synthesis",
   "defaults.task_ttl_hours": "finished tasks and their media are deleted after this many hours",
   "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"
 };
@@ -697,10 +699,21 @@ function fillDetail(td, t) {
   let line = "[" + t.status + "] " + (p.detail || p.step || "");
   if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
   const tm = t.timings || {};
-  if (t.status === "done")
-    line = "done" + (tm.total_s ? " in " + tm.total_s + "s" : "") +
-           (tm.inference_s ? " - inference " + tm.inference_s + "s" : "") +
-           (tm.model_load_s ? ", model load " + tm.model_load_s + "s" : "");
+  if (t.status === "done") {
+    const stages = [];
+    if (tm.queued_at && tm.started_at)
+      stages.push("queue wait " + (Math.round((tm.started_at - tm.queued_at) * 10) / 10) + "s");
+    if (tm.model_load_s) stages.push("model load " + tm.model_load_s + "s");
+    if (tm.media_prep_s) stages.push("media prep " + tm.media_prep_s + "s" +
+                                     (tm.chunks_wall_s ? " (sum over chunks)" : ""));
+    if (tm.inference_s) stages.push("inference " + tm.inference_s + "s" +
+                                    (tm.chunks_wall_s ? " (sum over chunks)" : ""));
+    if (tm.chunks_wall_s) stages.push("chunk phase " + tm.chunks_wall_s + "s wall");
+    if (tm.synthesis_s) stages.push("synthesis " + tm.synthesis_s + "s");
+    line = "done" + (tm.active_s != null ? " in " + tm.active_s + "s (excl. queue)" : "") +
+           (stages.length ? " - " + stages.join(", ") : "") +
+           (tm.total_s != null ? "; total incl. queue " + tm.total_s + "s" : "");
+  }
   td.innerHTML = "";
   const st = document.createElement("div");
   st.className = "d-status";
@@ -793,8 +806,23 @@ async function fillMediaCells() {
       const q = tok ? "?token=" + encodeURIComponent(tok) : "";
       td.innerHTML = "";
       let shown = 0;
-      for (const mi of mediaInfoCache[id]) {
-        if (!mi.exists) continue;
+      const files = mediaInfoCache[id].filter(mi => mi.exists);
+      const CAP = 6;  // thumbs shown before folding into a "+N more" expander
+      const uncapped = td.dataset.showall === "1";
+      for (const mi of files) {
+        if (!uncapped && shown === CAP && files.length > CAP + 1) {
+          const more = document.createElement("button");
+          more.className = "morethumbs";
+          more.textContent = "+" + (files.length - CAP) + " more";
+          more.addEventListener("click", e => {
+            e.stopPropagation();
+            td.dataset.showall = "1";
+            delete td.dataset.filled;    // re-render this cell without the cap
+            fillMediaCells();
+          });
+          td.appendChild(more);
+          break;
+        }
         const a = document.createElement("a");
         a.className = "mthumb";
         a.href = base() + "/v1/tasks/" + id + "/media/" + mi.index + q;
@@ -825,7 +853,7 @@ async function fillMediaCells() {
 
 async function refreshTasks(reattach = false) {
   try {
-    const tasks = await api("/v1/tasks?limit=12");
+    const tasks = await api("/v1/tasks?limit=10000");  // everything the TTL has not evicted
     if (!tasks.length) { $("tasksBox").textContent = "no tasks yet"; tasksSig = ""; return; }
     // live polling: redraw only when the set of tasks or a status actually changed
     const sig = tasks.map(t => t.id + ":" + t.status).join("|");
@@ -837,12 +865,24 @@ async function refreshTasks(reattach = false) {
       '<td class="mediacell" data-id="' + t.id + '">...</td>' +
       '<td class="st st-' + t.status + '">' + t.status + "</td>" +
       "<td>" + fmtDate(t.created) + "</td>" +
-      "<td>" + ((t.timings || {}).total_s != null ? t.timings.total_s + " s" : "-") + "</td></tr>").join("");
+      "<td>" + ((t.timings || {}).active_s != null ? t.timings.active_s + " s"
+            : (t.timings || {}).total_s != null ? t.timings.total_s + " s" : "-") + "</td>" +
+      "<td>" + (TERMINAL.includes(t.status) ? "" :
+                '<button class="cancel" data-cancel="' + t.id + '">cancel</button>') +
+      "</td></tr>").join("");
     $("tasksBox").innerHTML =
-      "<table><tr><th>id</th><th>kind</th><th>model</th><th>media</th><th>status</th><th>created</th><th>took</th></tr>" +
+      "<table><tr><th>id</th><th>kind</th><th>model</th><th>media</th><th>status</th><th>created</th><th>took</th><th></th></tr>" +
       rows + "</table>";
     for (const tr of document.querySelectorAll("#tasksBox tr[data-id]"))
       tr.addEventListener("click", () => tr.dataset.id === expandedId ? collapse() : expand(tr.dataset.id));
+    for (const b of document.querySelectorAll("#tasksBox button[data-cancel]"))
+      b.addEventListener("click", async e => {
+        e.stopPropagation();  // do not toggle the row expansion
+        b.disabled = true;
+        try { await api("/v1/tasks/" + b.dataset.cancel, {method: "DELETE"}); } catch {}
+        tasksSig = "";        // force a redraw on the next poll
+        refreshTasks();
+      });
     fillMediaCells();
     // a redraw drops the detail row: re-expand what was open (or, on tab open, the newest live task)
     const wanted = expandedId && tasks.find(t => t.id === expandedId) ? expandedId
