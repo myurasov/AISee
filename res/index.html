@@ -64,6 +64,10 @@
   .d-result { background: var(--panel); border: 1px solid var(--border-softer); padding: .5rem .7rem; white-space: pre-wrap;
               word-break: break-word; font-family: ui-monospace, monospace; font-size: .8rem; }
   .d-result.pass { border-left: 4px solid var(--pass); } .d-result.fail { border-left: 4px solid var(--err); }
+  .d-answer { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace;
+              font-size: .8rem; padding: .1rem 0; }
+  .d-answer.pass { border-left: 4px solid var(--pass); padding-left: .6rem; }
+  .d-answer.fail { border-left: 4px solid var(--err); padding-left: .6rem; }
   /* collapsible JSON tree */
   .j summary { cursor: pointer; color: var(--fg-dim); }
   .j details > *:not(summary), .j .j-line { margin-left: 1rem; }
@@ -722,7 +726,7 @@ function fillDetail(td, t) {
   if (t.params && Object.keys(t.params).length) {
     const par = document.createElement("div");
     par.className = "j d-params";
-    par.appendChild(jsonTree(t.params, "parameters", false));
+    par.appendChild(jsonTree(t.params, "request", false));
     td.appendChild(par);
   }
   if (t.status === "failed") {
@@ -733,7 +737,7 @@ function fillDetail(td, t) {
   } else if (t.status === "done") {
     const r = t.result || {};
     const box = document.createElement("div");
-    box.className = "d-result" +
+    box.className = "d-answer" +
       (typeof r.pass === "boolean" ? (r.pass ? " pass" : " fail") : "");
     if (t.kind === "look" && typeof r.answer === "string") {
       box.textContent = r.answer;
