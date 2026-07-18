@@ -237,6 +237,8 @@ function showTab(name) {
   for (const s of document.querySelectorAll(".tab"))
     s.className = s.id === "tab-" + name ? "tab on" : "tab";
   localStorage.setItem("aisee.tab", name);
+  if (location.hash.slice(1) !== name)
+    history.replaceState(null, "", "#" + name);
   if (statTimer) { clearInterval(statTimer); statTimer = null; }
   if (name === "stat") { connect(); statTimer = setInterval(refreshStat, 3000); }
   if (gpuTimer) { clearInterval(gpuTimer); gpuTimer = null; }
@@ -1027,7 +1029,18 @@ $("go").addEventListener("click", async () => {
   $("go").disabled = false;
 });
 
-showTab(localStorage.getItem("aisee.tab") || "server");
+// the URL hash names the tab (shareable); it wins over the remembered tab
+const TABS = [...document.querySelectorAll("nav button[data-tab]")].map(b => b.dataset.tab);
+function tabFromHash() {
+  const h = location.hash.slice(1);
+  return TABS.includes(h) ? h : null;
+}
+window.addEventListener("hashchange", () => {
+  const t = tabFromHash();
+  if (t && !document.querySelector('nav button[data-tab="' + t + '"]').classList.contains("on"))
+    showTab(t);
+});
+showTab(tabFromHash() || localStorage.getItem("aisee.tab") || "server");
 connect();
 </script>
 </body>
