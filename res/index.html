@@ -43,8 +43,10 @@
   nav button { border: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--tab-bg); color: var(--fg-dim);
                padding: .4rem 1rem; margin-right: .25rem; position: relative; }
   nav button.on { background: var(--panel); color: var(--fg-strong); border-bottom: 1px solid var(--panel); z-index: 2; }
-  #darkToggle { margin-left: auto; margin-right: 0; border: 1px solid var(--border); background: var(--tab-bg);
-                color: var(--fg-dim); padding: .4rem .7rem; line-height: 1; }
+  #darkToggle { position: fixed; top: .9rem; right: 1.1rem; z-index: 10; border: none;
+               background: none; color: var(--fg-dim); padding: .2rem; font-size: 1.25rem;
+               line-height: 1; }
+  #darkToggle:hover { background: none; color: var(--fg); }
   #frame { border: 1px solid var(--border); background: var(--panel); padding: 1rem 1.2rem; min-height: 14rem;
            overflow-x: auto; }
   .tab { display: none; } .tab.on { display: block; }
@@ -115,8 +117,8 @@
   <button data-tab="config">Config</button>
   <button data-tab="mcp">MCP</button>
   <button data-tab="api">API</button>
-  <button id="darkToggle" title="toggle dark mode">&#9681;</button>
 </nav>
+<button id="darkToggle" title="toggle dark mode">&#9681;</button>
 <div id="frame">
 
 <div class="tab" id="tab-query">
@@ -434,7 +436,6 @@ for (const b of document.querySelectorAll("nav button[data-tab]"))
 
 function setDark(on) {
   document.body.classList.toggle("dark", on);
-  $("darkToggle").textContent = on ? "☼" : "◑"; // sun to leave, half-circle to enter
   localStorage.setItem("aisee.dark", on ? "1" : "0");
 }
 // stored choice wins; first visit follows the OS preference
