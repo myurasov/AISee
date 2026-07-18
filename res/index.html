@@ -789,7 +789,7 @@ function expand(id) {
   const d = row.insertAdjacentElement("afterend", document.createElement("tr"));
   d.className = "detail";
   const td = document.createElement("td");
-  td.colSpan = 7;
+  td.colSpan = 8;  // all columns incl. the cancel one
   td.id = "detail-" + id;
   td.innerHTML = '<div class="d-status">loading...</div>';
   d.appendChild(td);
