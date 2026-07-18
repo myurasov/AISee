@@ -266,6 +266,7 @@ const CONFIG_DOC = {
   "defaults.fps": "video sampling rate (frames per second of source time) when a query sets neither fps nor frames; 1 is enough for 'what happens', 8-15 hunts flicker",
   "defaults.frames": "frames spread evenly over a video when sampling into images (bounded by the model's image budget)",
   "defaults.max_tokens": "answer-length budget per inference; 0 = unset, per-kind built-ins apply (assert 1024, watch 4096/chunk, look 8192; reasoning models 8192 everywhere); max_tokens_look/assert/watch pin one kind; reasoning models think inside the same budget",
+  "defaults.watch_repetition_penalty": "sampling penalty for watch chunk narration (discourages per-frame restatement loops); 1.0 or 0 disables; look/assert always sample neutrally to protect OCR",
   "defaults.request_timeout": "end-to-end budget for one task (default 3600 = 1 h): a look/assert inference, or ALL of a watch's chunks plus its synthesis",
   "defaults.task_ttl_hours": "finished tasks and their media are deleted after this many hours",
   "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"

@@ -21,6 +21,10 @@ DEFAULTS: dict = {
         # max_tokens (all kinds) or max_tokens_look/assert/watch; per-call still wins.
         "max_tokens": 0,
         "request_timeout": 3600, # per-inference HTTP timeout (s); dense models with big answer budgets can run long
+        # discourages per-frame restatement loops in watch chunk answers (vLLM sampling
+        # param; watch only - look/assert keep neutral sampling so OCR repetition like
+        # table cells survives). Set to 1.0 (or 0) to disable.
+        "watch_repetition_penalty": 1.1,
         "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
         "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it
     },

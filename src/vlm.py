@@ -26,8 +26,20 @@ _CTX_OVERFLOW_RE = re.compile(
     re.DOTALL | re.IGNORECASE)
 
 
+# serving-side honesty hint: confabulation under uncertainty (invented document titles,
+# fabricated comment threads) is worse than a terse answer
+HONESTY_SYSTEM = (
+    "You describe visual media for a downstream consumer that acts on your words. "
+    "If something is not clearly legible or visible, say so plainly. NEVER guess or "
+    "invent titles, names, text, timestamps, or UI details - quote only text you can "
+    "actually read. Describe only frames you were actually given; never infer or "
+    "imagine scenes between or beyond them. If nothing changes across frames, say so "
+    "once instead of repeating the observation."
+)
+
+
 def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
-         timeout: float = 600.0) -> tuple[str, dict]:
+         timeout: float = 600.0, sampling: dict | None = None) -> tuple[str, dict]:
     """One chat completion. Returns (text, meta) where meta carries finish_reason,
     completion_tokens, and max_tokens_clamped (set when the requested answer budget had
     to be shrunk to fit the context next to a large prompt)."""
@@ -37,7 +49,8 @@ def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
     while True:
         try:
             r = httpx.post(url, json={"model": hf_id, "messages": messages,
-                                      "max_tokens": max_tokens, "temperature": 0},
+                                      "max_tokens": max_tokens, "temperature": 0,
+                                      **(sampling or {})},
                            timeout=timeout)
         except httpx.HTTPError as e:
             raise RuntimeError(f"cannot reach model endpoint {url}: {e}") from e
@@ -115,9 +128,10 @@ def annotate(result: dict, meta: dict) -> dict:
 
 
 def run_look(port: int, hf_id: str, content: list[dict], *, max_tokens: int,
-             timeout: float) -> tuple[str, dict]:
-    return chat(port, hf_id, [{"role": "user", "content": content}],
-                max_tokens=max_tokens, timeout=timeout)
+             timeout: float, sampling: dict | None = None) -> tuple[str, dict]:
+    return chat(port, hf_id, [{"role": "system", "content": HONESTY_SYSTEM},
+                              {"role": "user", "content": content}],
+                max_tokens=max_tokens, timeout=timeout, sampling=sampling)
 
 
 def run_assert(port: int, hf_id: str, content: list[dict], *, max_tokens: int,

@@ -84,6 +84,16 @@ distinct "verdict truncated" reason. If a large media payload leaves no room for
 budget, the budget is automatically shrunk to fit and the result carries
 `max_tokens_clamped: true`.
 
+Repetition handling: watch chunk generation runs with a mild repetition penalty (host
+config `watch_repetition_penalty`, default 1.1; look/assert keep neutral sampling so
+legitimate OCR repetition survives). Degenerate repetition that still occurs is collapsed
+after generation with an inline note and surfaced as `deduped: <units removed>`; an A/B
+alternation between two contradictory readings is replaced by a low-confidence line and
+flagged `unstable: true` - verify unstable readings with a still. Models can still invent
+plausible-but-nonexistent content in video mode; when a claim is surprising, confirm it
+against a single extracted frame (`look`/`assert` on a still is immune to between-frame
+imagination).
+
 ## Example
 
 ```

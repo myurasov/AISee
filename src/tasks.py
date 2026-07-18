@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import blobs, catalog, config, creds, dockerctl, media, paths, registry, vlm
+from . import blobs, catalog, config, creds, dockerctl, media, paths, registry, textclean, vlm
 
 # answer budgets applied when the caller does not pass max_tokens: verdict JSON never
 # needs much; dense-OCR looks must never clip content; watch is per chunk. Reasoning
@@ -561,7 +561,15 @@ class Core:
                                             max_tokens=max_tokens, timeout=timeout)
                 if meta.get("finish_reason") == "length":
                     answer += vlm.truncation_marker(meta)
+                # conservative loop cleanup only (exact match, 4+ cycles): legitimate
+                # OCR repetition must survive, degenerate loops must not
+                answer, n_collapsed, unstable = textclean.collapse_repeats(
+                    answer, fold_digits=False, min_cycles=4)
                 result = vlm.annotate({"answer": answer}, meta)
+                if n_collapsed:
+                    result["deduped"] = n_collapsed
+                if unstable:
+                    result["unstable"] = True
             else:
                 result = vlm.run_assert(entry["port"], entry["hf_id"], content,
                                         max_tokens=max_tokens, timeout=timeout)
@@ -606,6 +614,10 @@ class Core:
 
         port, hf_id = entry["port"], entry["hf_id"]
         concurrency = max(1, int(entry.get("concurrency", 1)))
+
+        # mild anti-repetition sampling for chunk narration (config-escapable; see config)
+        rp = float(self.cfg["defaults"].get("watch_repetition_penalty") or 0)
+        sampling = {"repetition_penalty": rp} if rp and rp != 1.0 else None
 
         # request_timeout bounds the WHOLE watch task: every chunk and the final synthesis
         # must finish before this deadline, so each inference gets only the time still left
@@ -666,11 +678,18 @@ class Core:
                                               work_dir=work_dir / f"c{i}")
                 t_inf = _account("prep", t_prep)
                 a, meta = vlm.run_look(port, hf_id, content, max_tokens=max_tokens,
-                                       timeout=_remaining(f"chunk {rng}"))
+                                       timeout=_remaining(f"chunk {rng}"),
+                                       sampling=sampling)
                 _account("infer", t_inf)
                 if meta.get("finish_reason") == "length":
                     a += vlm.truncation_marker(meta)
-                return vlm.annotate({"range": rng, "answer": a}, meta)
+                a, n_collapsed, oscillated = textclean.collapse_repeats(a)
+                rec = vlm.annotate({"range": rng, "answer": a}, meta)
+                if n_collapsed:
+                    rec["deduped"] = n_collapsed
+                if oscillated:
+                    rec["unstable"] = True
+                return rec
             finally:
                 seg.unlink(missing_ok=True)
 
@@ -718,6 +737,10 @@ class Core:
             out["truncated"] = True
         if any(c.get("max_tokens_clamped") for c in chunks):
             out["max_tokens_clamped"] = True
+        if any(c.get("deduped") for c in chunks):
+            out["deduped"] = sum(c.get("deduped") or 0 for c in chunks)
+        if any(c.get("unstable") for c in chunks):
+            out["unstable"] = True
         if expectation is not None:
             failing = [c for c in chunks if not c.get("pass")]
             out["pass"] = not failing

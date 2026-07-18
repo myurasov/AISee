@@ -82,6 +82,11 @@ each reuse).
   "verdict truncated" reason; `max_tokens_clamped: true` means a large media payload forced
   a smaller budget. Size `max_tokens` to the largest useful answer - it is a runaway bound,
   not a target.
+- **Repetition and stability flags.** Degenerate repetition in answers is collapsed
+  post-hoc (`deduped: N`); an A/B alternation between contradictory readings becomes one
+  low-confidence line flagged `unstable: true` - verify with a still frame. Video-mode
+  answers can invent plausible content; confirm surprising claims against an extracted
+  still.
 - **Trust but verify verdicts.** When an `assert_visual` verdict is surprising, read its
   `reason`/`evidence` and consider a follow-up `look` before acting on it.
 - **Model management is not available over MCP** (consumer capabilities only). If a model you
