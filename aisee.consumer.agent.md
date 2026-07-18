@@ -117,8 +117,10 @@ budget). Truncation is never silent: capped answers end with `[truncated at N to
 large media payload forced a smaller answer budget. Size the cap to the largest useful
 answer; it is a runaway bound, not a target. Degenerate repetition is collapsed post-hoc
 (`deduped: N` on the result); contradictory A/B readings become one low-confidence line
-with `unstable: true` - verify those with a still. Video-mode answers can invent plausible
-content (titles, documents); confirm surprising claims against a single extracted frame.
+with `unstable: true`. Risky watch claims (titles, share-state) are auto-verified against a
+still frame; refuted ones are removed/replaced, flagged `unstable: true`, and recorded in
+`still_checks`. Video-mode answers can still invent content; confirm surprising claims
+against a single extracted frame.
 
 **Upload dedup:** uploads are content-addressed by the SHA-256 of the file bytes and kept
 for a TTL (default 24 h, refreshed on reuse). Probe `GET /v1/blobs/{sha256}` (hash via `sha256sum` /

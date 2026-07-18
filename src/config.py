@@ -25,6 +25,11 @@ DEFAULTS: dict = {
         # param; watch only - look/assert keep neutral sampling so OCR repetition like
         # table cells survives). Set to 1.0 (or 0) to disable.
         "watch_repetition_penalty": 1.1,
+        # video-mode narration invents specific titles and share-state stories; risky
+        # claims in chunk answers are cross-checked against a still frame (up to this
+        # many checks per chunk; refuted claims are removed/replaced and the chunk is
+        # flagged unstable). 0 disables.
+        "watch_still_checks": 2,
         "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
         "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it
     },

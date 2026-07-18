@@ -89,10 +89,14 @@ config `watch_repetition_penalty`, default 1.1; look/assert keep neutral samplin
 legitimate OCR repetition survives). Degenerate repetition that still occurs is collapsed
 after generation with an inline note and surfaced as `deduped: <units removed>`; an A/B
 alternation between two contradictory readings is replaced by a low-confidence line and
-flagged `unstable: true` - verify unstable readings with a still. Models can still invent
-plausible-but-nonexistent content in video mode; when a claim is surprising, confirm it
-against a single extracted frame (`look`/`assert` on a still is immune to between-frame
-imagination).
+flagged `unstable: true` - verify unstable readings with a still. Risky video-mode claims
+(specific document/window titles, share-state stories) are automatically cross-checked
+against a full-resolution still from the same moment (host config `watch_still_checks`,
+default 2 per chunk; 0 disables): refuted titles are removed with an inline note, refuted
+share claims become an explicit cannot-determine line, the chunk is flagged
+`unstable: true`, and each check is recorded under `still_checks` (kind, at_s, confirmed).
+Video-mode invention can still slip through; when a claim is surprising, confirm it against
+a single extracted frame yourself.
 
 ## Example
 

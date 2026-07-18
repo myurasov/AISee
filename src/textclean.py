@@ -105,3 +105,57 @@ def collapse_repeats(text: str, *, fold_digits: bool = True,
     if removed == 0:
         return text, 0, False
     return "".join(out), removed, unstable
+
+
+# ---------------- risky-claim extraction (for the watch still cross-check) ----------------
+
+# a quoted string DIRECTLY preceded by a naming cue is a "title claim"; VLMs reproducibly
+# invent such titles in video mode, so they get verified against a still. The cue must be
+# adjacent - a quoted email sender in a sentence that merely mentions a window is not a
+# title claim (learned from a false positive that removed real Outlook content)
+_TITLE_CLAIM = re.compile(
+    r"\b(?:titled|named|called|labell?ed|headed)\s*[:,]?\s*[\"“''`]([^\"“”''`]{4,90})[\"”''`]",
+    re.IGNORECASE)
+# share-state claims ("PDF now shared as presentation content") flip readily between
+# frames and produce confident false narratives - verified against a still too
+_SHARE_CUE = re.compile(r"\b(re-?shared|shared|sharing|presenter|presentation content|"
+                        r"presenting)\b", re.IGNORECASE)
+_SHARE_OBJ = re.compile(r"\b(pdf|document|screen|window|slide|content|file)\b", re.IGNORECASE)
+_TS = re.compile(r"\b(\d+(?:\.\d+)?)\s*s\b")
+
+
+def extract_risky_claims(text: str, max_claims: int = 2) -> list[dict]:
+    """Claims worth verifying against a still frame, each with a timestamp hint (seconds,
+    in the same reference frame as the timestamps in the text) when one is present."""
+    claims: list[dict] = []
+    seen: set[str] = set()
+    for unit in _units(text):
+        ts = None
+        m = _TS.search(unit)
+        if m:
+            ts = float(m.group(1))
+        for q in _TITLE_CLAIM.findall(unit):
+            key = q.lower()
+            if key not in seen:
+                seen.add(key)
+                claims.append({"kind": "title", "quote": q,
+                               "sentence": unit.strip(), "ts": ts})
+        if (_SHARE_CUE.search(unit) and _SHARE_OBJ.search(unit)
+                and "not shared" not in unit.lower()
+                and "local" not in unit.lower()):
+            key = "share:" + _norm(unit, True)
+            if key not in seen:
+                seen.add(key)
+                claims.append({"kind": "share", "quote": None,
+                               "sentence": unit.strip(), "ts": ts})
+    return claims[:max_claims]
+
+
+def drop_sentences_mentioning(text: str, needle: str, note: str) -> str:
+    """Remove every sentence containing `needle` and append an explanatory note."""
+    kept = [u for u in _units(text) if needle.lower() not in u.lower()]
+    return "".join(kept).rstrip() + "\n" + note + "\n"
+
+
+def replace_sentence(text: str, sentence: str, replacement: str) -> str:
+    return text.replace(sentence, replacement, 1)

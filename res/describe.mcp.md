@@ -84,9 +84,11 @@ each reuse).
   not a target.
 - **Repetition and stability flags.** Degenerate repetition in answers is collapsed
   post-hoc (`deduped: N`); an A/B alternation between contradictory readings becomes one
-  low-confidence line flagged `unstable: true` - verify with a still frame. Video-mode
-  answers can invent plausible content; confirm surprising claims against an extracted
-  still.
+  low-confidence line flagged `unstable: true`. Risky `watch` claims (specific titles,
+  share-state stories) are auto-verified against a still frame: refuted claims are
+  removed or replaced with a cannot-determine line, flagged `unstable: true`, and listed
+  under `still_checks`. Video-mode answers can still invent content; confirm surprising
+  claims against an extracted still.
 - **Trust but verify verdicts.** When an `assert_visual` verdict is surprising, read its
   `reason`/`evidence` and consider a follow-up `look` before acting on it.
 - **Model management is not available over MCP** (consumer capabilities only). If a model you

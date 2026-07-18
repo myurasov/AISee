@@ -584,6 +584,98 @@ class Core:
             raise RuntimeError(f"unknown task kind '{kind}'")
         self.store.touch_model(slug)
 
+    def _still_check_claims(self, answer: str, path: str, start: float, d_s: float,
+                            entry: dict, timeout_fn) -> tuple[str, list[dict], bool]:
+        """Cross-check risky chunk claims (invented-looking titles, share-state stories)
+        against a full-resolution still. Refuted title claims are removed; refuted
+        share claims become an explicit cannot-determine line. Returns
+        (answer, check_records, any_refuted)."""
+        limit = int(self.cfg["defaults"].get("watch_still_checks") or 0)
+        if limit <= 0:
+            return answer, [], False
+        claims = textclean.extract_risky_claims(answer, max_claims=limit)
+        checks: list[dict] = []
+        refuted_any = False
+        for cl in claims:
+            # claim timestamps are absolute (the prompt asks for absolute times) but
+            # often mistimed by a few seconds - sample the claimed moment plus two later
+            # points in the chunk, and refute only if NO sampled frame confirms
+            end = start + max(d_s - 0.2, 0.1)
+            ts = (cl["ts"] + 1.5) if cl["ts"] is not None else start + d_s / 2
+            ts = min(max(ts, start), end)
+            sample_ts = [ts] + [min(ts + (end - ts) * f, end) for f in (0.4, 0.8)]
+            frame = None
+            try:
+                if cl["kind"] == "title":
+                    # approximate match: the model may quote a real title imperfectly -
+                    # only a title with no on-screen counterpart should be refuted
+                    expect = ('a window, document, file, or editor is visible whose '
+                              f'title or heading approximately matches "{cl["quote"]}" '
+                              "(small OCR or wording differences are fine)")
+                else:
+                    expect = ("the on-screen content is being shared into the video "
+                              "meeting as presentation/share content (presenter or "
+                              "share chrome visible), rather than being merely a "
+                              "local window on the desktop")
+                confirmed = False
+                confirmed_at = None
+                tried: list[float] = []
+                for t_probe in sample_ts:
+                    if tried and abs(t_probe - tried[-1]) < 2.0:
+                        continue  # clamping collapsed the samples
+                    tried.append(t_probe)
+                    if frame is not None:
+                        frame.unlink(missing_ok=True)
+                    frame = media.extract_frame(path, t_probe,
+                                                paths.media_dir() / "stillcheck" /
+                                                f"{uuid.uuid4().hex[:8]}.png")
+                    content = media.build_content([str(frame)], vlm.with_context(
+                        f"Expectation to verify: {expect}", None), frames=1, fps=None,
+                        native=False, max_images=entry["max_images"],
+                        work_dir=frame.parent / "c")
+                    verdict = vlm.run_assert(entry["port"], entry["hf_id"], content,
+                                             max_tokens=1024,
+                                             timeout=timeout_fn("a still cross-check"))
+                    if verdict.get("pass"):
+                        confirmed = True
+                        confirmed_at = t_probe
+                        break
+                checks.append({"kind": cl["kind"], "quote": cl.get("quote"),
+                               "at_s": [round(x, 1) for x in tried],
+                               "confirmed": confirmed,
+                               **({"confirmed_at_s": round(confirmed_at, 1)}
+                                  if confirmed_at is not None else {})})
+                if (confirmed and cl["kind"] == "title" and cl["ts"] is not None
+                        and confirmed_at is not None and confirmed_at - ts > 10):
+                    # real content, wrong time: the model back-projected something it
+                    # saw later in the chunk - correct the timeline instead of dropping
+                    refuted_any = True  # timing was unreliable: surface as unstable
+                    answer = (answer.rstrip() + "\n"
+                              f'[Timing correction from a still-frame check: '
+                              f'"{cl["quote"]}" is NOT visible at {cl["ts"]:.0f}s; it '
+                              f"appears around {confirmed_at:.0f}s.]\n")
+                if not confirmed:
+                    refuted_any = True
+                    if cl["kind"] == "title":
+                        answer = textclean.drop_sentences_mentioning(
+                            answer, cl["quote"],
+                            f'[A still-frame check at {ts:.0f}s found no document or '
+                            f'window titled "{cl["quote"]}" - that claim was removed '
+                            "as unreliable.]")
+                    else:
+                        answer = textclean.replace_sentence(
+                            answer, cl["sentence"],
+                            "Cannot determine from video frames whether the content "
+                            f"is shared into the meeting; a still-frame check at "
+                            f"{ts:.0f}s shows no share surface (likely a local "
+                            "window - low confidence). ")
+            except RuntimeError:
+                break  # deadline or ffmpeg trouble: keep the answer as generated
+            finally:
+                if frame is not None:
+                    frame.unlink(missing_ok=True)
+        return answer, checks, refuted_any
+
     def _watch(self, tid: str, entry: dict, p: dict, work_dir, *, fps: float,
                max_tokens: int, timeout: float, context: str | None) -> None:
         """Chunked whole-video analysis. Result shape follows the query type (spec §9)."""
@@ -684,11 +776,15 @@ class Core:
                 if meta.get("finish_reason") == "length":
                     a += vlm.truncation_marker(meta)
                 a, n_collapsed, oscillated = textclean.collapse_repeats(a)
+                a, checks, refuted = self._still_check_claims(
+                    a, path, start, d_s, entry, timeout_fn=_remaining)
                 rec = vlm.annotate({"range": rng, "answer": a}, meta)
                 if n_collapsed:
                     rec["deduped"] = n_collapsed
-                if oscillated:
+                if oscillated or refuted:
                     rec["unstable"] = True
+                if checks:
+                    rec["still_checks"] = checks
                 return rec
             finally:
                 seg.unlink(missing_ok=True)

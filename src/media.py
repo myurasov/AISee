@@ -41,6 +41,17 @@ def video_duration(path: str | Path) -> float | None:
         return None
 
 
+def extract_frame(path: str | Path, t_s: float, out_path: Path) -> Path:
+    """One full-resolution frame at t_s seconds (clamped into the clip by the caller)."""
+    require_ffmpeg()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-ss", f"{max(t_s, 0):.3f}",
+                    "-i", str(path), "-frames:v", "1", str(out_path)], check=True)
+    if not out_path.exists() or out_path.stat().st_size == 0:
+        raise RuntimeError(f"ffmpeg produced no frame at {t_s:.1f}s from {path}")
+    return out_path
+
+
 def sample_even(path: str | Path, frames: int, out_dir: Path) -> list[Path]:
     """`frames` frames spread evenly across the WHOLE clip."""
     require_ffmpeg()
