@@ -108,6 +108,8 @@
   .bar { background: var(--soft); border: 1px solid var(--border-thumb); height: .9rem; position: relative; min-width: 90px; }
   .bar > div { background: var(--accent); height: 100%; }
   td button { padding: .1rem .5rem; font-size: .75rem; margin-right: .25rem; }
+  .pager { margin: .5rem 0 .1rem; display: flex; align-items: center; gap: .7rem; }
+  .pager button { padding: .2rem .7rem; font-size: .8rem; }
   .bar span { position: absolute; inset: 0; font-size: .65rem; display: flex; align-items: center;
               justify-content: center; color: var(--bar-text); white-space: nowrap; overflow: hidden; }
 </style>
@@ -866,12 +868,18 @@ async function fillMediaCells() {
   }
 }
 
+const TASKS_PAGE_SIZE = 100;
+let tasksPage = 0;
+
 async function refreshTasks(reattach = false) {
   try {
-    const tasks = await api("/v1/tasks?limit=10000");  // everything the TTL has not evicted
-    if (!tasks.length) { $("tasksBox").textContent = "no tasks yet"; tasksSig = ""; return; }
-    // live polling: redraw only when the set of tasks or a status actually changed
-    const sig = tasks.map(t => t.id + ":" + t.status).join("|");
+    const all = await api("/v1/tasks?limit=10000");  // everything the TTL has not evicted
+    if (!all.length) { $("tasksBox").textContent = "no tasks yet"; tasksSig = ""; return; }
+    const pages = Math.max(1, Math.ceil(all.length / TASKS_PAGE_SIZE));
+    tasksPage = Math.min(tasksPage, pages - 1);
+    const tasks = all.slice(tasksPage * TASKS_PAGE_SIZE, (tasksPage + 1) * TASKS_PAGE_SIZE);
+    // live polling: redraw only when the visible page, set of tasks, or a status changed
+    const sig = tasksPage + "/" + all.map(t => t.id + ":" + t.status).join("|");
     if (sig === tasksSig && !reattach) return;
     tasksSig = sig;
     const rows = tasks.map(t =>
@@ -885,9 +893,23 @@ async function refreshTasks(reattach = false) {
       "<td>" + (TERMINAL.includes(t.status) ? "" :
                 '<button class="cancel" data-cancel="' + t.id + '">cancel</button>') +
       "</td></tr>").join("");
+    const first = tasksPage * TASKS_PAGE_SIZE + 1;
+    const pager = pages > 1
+      ? '<div class="pager"><button id="pgPrev"' + (tasksPage === 0 ? " disabled" : "") +
+        '>&#8249; prev</button> <span class="muted">' + first + "-" +
+        (first + tasks.length - 1) + " of " + all.length +
+        '</span> <button id="pgNext"' + (tasksPage >= pages - 1 ? " disabled" : "") +
+        ">next &#8250;</button></div>"
+      : "";
     $("tasksBox").innerHTML =
       "<table><tr><th>id</th><th>kind</th><th>model</th><th>media</th><th>status</th><th>created</th><th>took</th><th></th></tr>" +
-      rows + "</table>";
+      rows + "</table>" + pager;
+    for (const b of [["pgPrev", -1], ["pgNext", 1]])
+      $(b[0]) && $(b[0]).addEventListener("click", () => {
+        tasksPage += b[1];
+        tasksSig = "";
+        refreshTasks();
+      });
     for (const tr of document.querySelectorAll("#tasksBox tr[data-id]"))
       tr.addEventListener("click", () => tr.dataset.id === expandedId ? collapse() : expand(tr.dataset.id));
     for (const b of document.querySelectorAll("#tasksBox button[data-cancel]"))
