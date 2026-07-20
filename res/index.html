@@ -74,7 +74,9 @@
   .j-k { color: var(--link); }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
-  #tasksBox td.mediacell { min-width: 110px; }
+  #tasksBox td.mediacell { min-width: 110px; height: 92px; }  /* height acts as
+     min-height in table cells: reserves one thumb row (75px img + caption) so the row
+     does not grow when thumbnails replace the placeholder text */
   .mthumb { display: inline-block; margin: 0 .3rem .15rem 0; text-align: center; }
   .mthumb img { height: 75px; display: block; border: 1px solid var(--border-thumb);
                 background: var(--softer); object-fit: contain; }
