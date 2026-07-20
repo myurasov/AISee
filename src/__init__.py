@@ -3,4 +3,4 @@
 
 """AISee is a tool that gives AI agents eyes."""
 
-__version__ = "0.10.2"
+__version__ = "0.10.3"
