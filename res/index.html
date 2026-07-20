@@ -668,8 +668,9 @@ $("installBtn").addEventListener("click", async () => {
 let tasksTimer = null;
 let tasksSig = "";  // ids+statuses of the last render; refresh redraws only on change
 
-// collapsible JSON tree: objects/arrays render as <details> (collapsed unless `open`)
-function jsonTree(val, key, open) {
+// collapsible JSON tree: objects/arrays render as <details> (collapsed unless `open`);
+// `path` keys each node so expansion state can survive re-renders
+function jsonTree(val, key, open, path) {
   if (val === null || typeof val !== "object") {
     const d = document.createElement("div");
     d.className = "j-line";
@@ -685,6 +686,7 @@ function jsonTree(val, key, open) {
   }
   const det = document.createElement("details");
   det.className = "j";
+  if (path) det.dataset.path = path;
   if (open) det.open = true;
   const sum = document.createElement("summary");
   const n = Array.isArray(val) ? val.length : Object.keys(val).length;
@@ -692,7 +694,8 @@ function jsonTree(val, key, open) {
                     (Array.isArray(val) ? "[" + n + "]" : "{" + n + "}");
   det.appendChild(sum);
   const entries = Array.isArray(val) ? val.map((v, i) => [i, v]) : Object.entries(val);
-  for (const [k2, v2] of entries) det.appendChild(jsonTree(v2, String(k2), false));
+  for (const [k2, v2] of entries)
+    det.appendChild(jsonTree(v2, String(k2), false, path ? path + "/" + k2 : ""));
   return det;
 }
 
@@ -701,6 +704,9 @@ function fillDetail(td, t) {
   const snap = JSON.stringify([t.status, t.progress, t.result, t.error]);
   if (td.dataset.snap === snap) return;
   td.dataset.snap = snap;
+  // progress updates redraw this cell: remember which JSON sections were expanded
+  const openPaths = new Set([...td.querySelectorAll("details[open][data-path]")]
+                            .map(el => el.dataset.path));
   const p = t.progress || {};
   let line = "[" + t.status + "] " + (p.detail || p.step || "");
   if (p.chunk && p.chunk.n) line += " (chunk " + p.chunk.i + "/" + p.chunk.n + ")";
@@ -728,7 +734,7 @@ function fillDetail(td, t) {
   if (t.params && Object.keys(t.params).length) {
     const par = document.createElement("div");
     par.className = "j d-params";
-    par.appendChild(jsonTree(t.params, "request", false));
+    par.appendChild(jsonTree(t.params, "request", false, "request"));
     td.appendChild(par);
   }
   if (t.status === "failed") {
@@ -746,10 +752,13 @@ function fillDetail(td, t) {
     } else {
       // root level visible, nested sections collapsed by default
       box.classList.add("j");
-      box.appendChild(jsonTree(r, "result", false));
+      box.appendChild(jsonTree(r, "result", false, "result"));
     }
     td.appendChild(box);
   }
+  // restore the JSON sections the user had expanded before this redraw
+  for (const el of td.querySelectorAll("details[data-path]"))
+    if (openPaths.has(el.dataset.path)) el.open = true;
 }
 
 function stopPoller(id) {
