@@ -76,8 +76,8 @@
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   #tasksBox td.mediacell { min-width: 110px; }
   .mthumb { display: inline-block; margin: 0 .3rem .15rem 0; text-align: center; }
-  .mthumb img { max-height: 75px; width: auto; display: block; border: 1px solid var(--border-thumb);
-                background: var(--panel); }
+  .mthumb img { height: 75px; display: block; border: 1px solid var(--border-thumb);
+                background: var(--softer); object-fit: contain; }
   .mthumb .fname { font-size: .68rem; color: var(--fg-faint); max-width: 140px; overflow: hidden;
                    text-overflow: ellipsis; white-space: nowrap; }
   button.morethumbs { padding: .2rem .6rem; font-size: .75rem; vertical-align: top;
@@ -848,6 +848,10 @@ async function fillMediaCells() {
         a.title = mi.filename + " - click to open";
         a.addEventListener("click", e => e.stopPropagation());  // don't toggle the row
         const img = document.createElement("img");
+        img.style.height = "75px";
+        img.style.width = (mi.width && mi.height
+                           ? Math.max(24, Math.round(75 * mi.width / mi.height))
+                           : 100) + "px";
         img.src = base() + "/v1/tasks/" + id + "/media/" + mi.index + "/thumb" + q;
         img.onerror = () => { a.remove(); };
         a.appendChild(img);

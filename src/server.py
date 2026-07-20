@@ -7,6 +7,7 @@ Also serves the MCP server at /mcp (streamable HTTP) as a thin adapter over the 
 import json
 import os
 import subprocess
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -343,6 +344,21 @@ def create_app() -> FastAPI:
             tid = core.submit(kind, model, params)
         except ValueError as e:
             raise HTTPException(400, str(e))
+
+        # pregenerate thumbnails in the background so the console never renders a
+        # placeholder for long (the /thumb endpoint still generates on demand as a
+        # fallback for tasks submitted before this or if this thread loses a race)
+        def _pregen(media_list: list[str], task_id: str) -> None:
+            for i, m in enumerate(media_list):
+                dest = paths.media_dir() / task_id / "thumbs" / f"{i}.jpg"
+                if dest.exists():
+                    continue
+                try:
+                    media.thumbnail(m, dest)
+                except Exception:
+                    pass  # non-thumbnailable media; the endpoint 404s the same way
+        threading.Thread(target=_pregen, args=(list(params.get("media") or []), tid),
+                         daemon=True).start()
         return {"id": tid}
 
     @app.get("/v1/tasks")
