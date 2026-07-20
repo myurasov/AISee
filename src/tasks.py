@@ -241,13 +241,22 @@ class TaskStore:
                 self._db.commit()
         return len(ids)
 
-    def gc(self, retention_days: float) -> int:
+    def gc(self, retention_days: float, keep_max: int = 0) -> int:
+        """Drop finished tasks past the TTL, then - when keep_max > 0 - drop the oldest
+        finished tasks beyond the newest keep_max regardless of age. Running/queued
+        tasks are never touched."""
         cutoff = time.time() - retention_days * 86400
         with self._lock:
             rows = self._db.execute(
                 "SELECT id FROM tasks WHERE updated<? AND status IN (?,?,?)",
                 (cutoff, *TERMINAL)).fetchall()
             ids = [r["id"] for r in rows]
+            if keep_max > 0:
+                rows = self._db.execute(
+                    "SELECT id FROM tasks WHERE status IN (?,?,?) "
+                    "ORDER BY created DESC LIMIT -1 OFFSET ?",
+                    (*TERMINAL, keep_max)).fetchall()
+                ids = list({r["id"] for r in rows} | set(ids))
             if ids:
                 self._db.executemany("DELETE FROM tasks WHERE id=?", [(i,) for i in ids])
                 self._db.commit()
@@ -488,7 +497,7 @@ class Core:
             # task_retention_days is the pre-0.6 name; honor it if a host still sets it
             task_ttl_h = (float(d["task_retention_days"]) * 24 if "task_retention_days" in d
                           else float(d.get("task_ttl_hours", 24)))
-            self.store.gc(task_ttl_h / 24)
+            self.store.gc(task_ttl_h / 24, keep_max=int(d.get("task_keep_max") or 0))
             # tasks keep hardlinked copies of their media, so blob GC is always safe
             blobs.gc(float(d.get("blob_ttl_hours", 24)))
 

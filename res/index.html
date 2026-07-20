@@ -277,6 +277,7 @@ const CONFIG_DOC = {
   "defaults.watch_still_checks": "risky watch claims (titles, share-state) verified against a still frame, up to this many per chunk; refuted claims are removed/replaced and flagged unstable; 0 disables",
   "defaults.watch_repetition_penalty": "sampling penalty for watch chunk narration (discourages per-frame restatement loops); 1.0 or 0 disables; look/assert always sample neutrally to protect OCR",
   "defaults.request_timeout": "end-to-end budget for one task (default 3600 = 1 h): a look/assert inference, or ALL of a watch's chunks plus its synthesis",
+  "defaults.task_keep_max": "keep at most this many finished tasks regardless of age (oldest deleted first; running/queued never touched); 0 = unlimited",
   "defaults.task_ttl_hours": "finished tasks and their media are deleted after this many hours",
   "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"
 };
