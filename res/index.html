@@ -74,14 +74,17 @@
   .j-k { color: var(--link); }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
-  #tasksBox td.mediacell { min-width: 110px; height: 92px; }  /* height acts as
-     min-height in table cells: reserves one thumb row (75px img + caption) so the row
-     does not grow when thumbnails replace the placeholder text */
-  .mthumb { display: inline-block; margin: 0 .3rem .15rem 0; text-align: center; }
+  #tasksBox td.mediacell { min-width: 110px; }
+  /* flex layout with a min-height reservation: filled and empty cells compute the same
+     height (no inline-block baseline gaps), so rows never jump when thumbnails load */
+  .mrow { display: flex; flex-wrap: wrap; gap: .3rem; align-items: flex-start;
+          min-height: 92px; }
+  .mrow .placeholder { color: var(--fg-faint); align-self: center; }
+  .mthumb { display: block; margin: 0; text-align: center; }
   .mthumb img { height: 75px; display: block; border: 1px solid var(--border-thumb);
                 background: var(--softer); object-fit: contain; }
-  .mthumb .fname { font-size: .68rem; color: var(--fg-faint); max-width: 140px; overflow: hidden;
-                   text-overflow: ellipsis; white-space: nowrap; }
+  .mthumb .fname { font-size: .68rem; line-height: 15px; color: var(--fg-faint); max-width: 140px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button.morethumbs { padding: .2rem .6rem; font-size: .75rem; vertical-align: top;
                       margin-top: 1.6rem; }
   /* media drop zone */
@@ -825,6 +828,9 @@ async function fillMediaCells() {
       const tok = tokenFor(false);
       const q = tok ? "?token=" + encodeURIComponent(tok) : "";
       td.innerHTML = "";
+      const wrap = document.createElement("div");
+      wrap.className = "mrow";
+      td.appendChild(wrap);
       let shown = 0;
       const files = mediaInfoCache[id].filter(mi => mi.exists);
       const CAP = 6;  // thumbs shown before folding into a "+N more" expander
@@ -840,7 +846,7 @@ async function fillMediaCells() {
             delete td.dataset.filled;    // re-render this cell without the cap
             fillMediaCells();
           });
-          td.appendChild(more);
+          wrap.appendChild(more);
           break;
         }
         const a = document.createElement("a");
@@ -867,10 +873,10 @@ async function fillMediaCells() {
         }
         cap.textContent = info || mi.filename;
         a.appendChild(cap);
-        td.appendChild(a);
+        wrap.appendChild(a);
         shown++;
       }
-      if (!shown) td.textContent = "-";
+      if (!shown) wrap.innerHTML = '<span class="placeholder">-</span>';
     } catch (e) { td.textContent = "-"; }
   }
 }
@@ -892,7 +898,8 @@ async function refreshTasks(reattach = false) {
     const rows = tasks.map(t =>
       '<tr data-id="' + t.id + '">' +
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
-      '<td class="mediacell" data-id="' + t.id + '">...</td>' +
+      '<td class="mediacell" data-id="' + t.id + '"><div class="mrow">' +
+      '<span class="placeholder">...</span></div></td>' +
       '<td class="st st-' + t.status + '">' + t.status + "</td>" +
       "<td>" + fmtDate(t.created) + "</td>" +
       "<td>" + ((t.timings || {}).active_s != null ? t.timings.active_s + " s"
