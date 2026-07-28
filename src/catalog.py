@@ -55,6 +55,26 @@ CATALOG: dict[str, dict] = {
                       "specialist at physical/temporal reasoning.",
         "pitfalls": "Needs --enforce-eager on GB10-class hardware. First install downloads ~62 GB.",
     },
+    "qwen3-vl-30b-a3b-thinking": {
+        "hf_id": "Qwen/Qwen3-VL-30B-A3B-Thinking",
+        "image": DEFAULT_IMAGE,
+        "weights_gib": 62, "kv_gib_128k": 13,
+        # the parser routes the always-on chain-of-thought into the reasoning field so
+        # answers stay clean; without it the CoT would pollute the answer text
+        "extra_args": ["--reasoning-parser", "qwen3"],
+        "supports_native_video": True,
+        "reasoning": True,
+        "load_timeout": 7200,
+        "license": "Apache-2.0",
+        "strengths": "The thinking twin of the recommended default (MoE, ~3B active params): "
+                     "genuine chain-of-thought with clean answers, still fast (~6 s looks, "
+                     "~9 s asserts measured on GB10); exact dense OCR; handles native video; "
+                     "correctly reports static clips instead of inventing motion.",
+        "weaknesses": "Always thinks - cannot be disabled, so trivial checks pay the CoT tax; "
+                      "thinking spends the same max_tokens budget (defaults to 8192 everywhere).",
+        "pitfalls": "Keep --reasoning-parser qwen3 in the serve args or the CoT lands in the "
+                    "answer text. First install downloads ~62 GB.",
+    },
     "qwen3-vl-32b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-32B-Instruct",
         "image": DEFAULT_IMAGE,
