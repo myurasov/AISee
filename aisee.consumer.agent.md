@@ -83,8 +83,9 @@ aisee status | model list | task list | task show <id>
 
 Useful flags: `--model <slug>` (else the default model), `--context "<background the model
 cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--native` (send the
-video itself, video-capable models only), `--no-wait` (print task id, poll later),
-`--server URL`, `--token T`.
+video itself, video-capable models only), `--max-tokens N` (answer budget),
+`--no-thinking` (skip chain-of-thought on thinking-toggle models), `--no-wait` (print task
+id, poll later), `--server URL`, `--token T`.
 
 ## Using the REST API
 
@@ -99,7 +100,7 @@ Submit and poll:
 POST /v1/tasks     multipart: files=<media>..., params=<JSON string>
                    params: {"kind":"look|assert|watch", "question"|"expectation":"...",
                             "model":"<slug>?", "fps"?, "frames"?, "native"?, "chunk_seconds"?,
-                            "context"?, "max_tokens"?}
+                            "context"?, "max_tokens"?, "thinking"?}
   -> {"id": "..."}
 GET  /v1/tasks/{id}   poll every 2-5 s until status is done | failed | canceled
 ```
@@ -109,9 +110,15 @@ done`. `progress` carries a human-readable step, and for `watch` a chunk counter
 splits `model_load_s` / `media_prep_s` / `inference_s` and, once terminal, includes `total_s`
 (wall-clock seconds from submission to finish). On `failed`, read `error.message`.
 
+**Thinking (`thinking`):** each model's `Thinking:` line in describe gives its class -
+always-on reasoning models think on every call and cannot be switched off; thinking-toggle
+models (e.g. Qwen3-VL) think by default and take `thinking: false` per call for a faster
+direct answer; other models never think. Thinking calls are slower and spend the same
+`max_tokens` budget as the answer.
+
 **Answer budgets (`max_tokens`):** per-kind defaults when not passed - `assert` 1024, `watch`
-4096 per chunk, `look` 8192; reasoning models 8192 everywhere (thinking spends the same
-budget). Truncation is never silent: capped answers end with `[truncated at N tokens]` and set
+4096 per chunk, `look` 8192; reasoning models (and toggle models with thinking enabled) 8192
+everywhere (thinking spends the same budget). Truncation is never silent: capped answers end with `[truncated at N tokens]` and set
 `truncated: true` (watch also rolls it up task-level); a truncated assert fails with a
 "verdict truncated" reason - raise `max_tokens` and retry. `max_tokens_clamped: true` means a
 large media payload forced a smaller answer budget. Size the cap to the largest useful
