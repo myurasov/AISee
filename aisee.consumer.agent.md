@@ -111,10 +111,10 @@ splits `model_load_s` / `media_prep_s` / `inference_s` and, once terminal, inclu
 (wall-clock seconds from submission to finish). On `failed`, read `error.message`.
 
 **Thinking (`thinking`):** each model's `Thinking:` line in describe gives its class -
-always-on reasoning models think on every call and cannot be switched off; thinking-toggle
-models (e.g. Qwen3-VL) think by default and take `thinking: false` per call for a faster
-direct answer; other models never think. Thinking calls are slower and spend the same
-`max_tokens` budget as the answer.
+always-on reasoning models think on every call and cannot be switched off; models marked
+`Thinking: optional` think by default and take `thinking: false` per call for a faster
+direct answer; models with no `Thinking:` line never think. Thinking calls are slower and
+spend the same `max_tokens` budget as the answer.
 
 **Answer budgets (`max_tokens`):** per-kind defaults when not passed - `assert` 1024, `watch`
 4096 per chunk, `look` 8192; reasoning models (and toggle models with thinking enabled) 8192

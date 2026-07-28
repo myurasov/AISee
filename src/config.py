@@ -33,9 +33,9 @@ DEFAULTS: dict = {
         "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
         "task_keep_max": 1000, # also keep at most this many finished tasks regardless of age; 0 = unlimited
         "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it
-        # chain-of-thought for models with a thinking toggle (thinking_toggle=true, e.g.
-        # Qwen3-VL): on by default; per-call `thinking` wins. Always-on reasoning models
-        # (reasoning=true) think regardless of this.
+        # chain-of-thought default for models with a thinking toggle (thinking_toggle=true
+        # in the model TOML; none in the current catalog - hybrid-template models only):
+        # per-call `thinking` wins. Always-on reasoning models think regardless of this.
         "thinking": True,
     },
 }
