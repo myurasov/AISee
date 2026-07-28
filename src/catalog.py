@@ -39,9 +39,11 @@ CATALOG: dict[str, dict] = {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
         "image": DEFAULT_IMAGE,
         "weights_gib": 62, "kv_gib_128k": 13,
-        "extra_args": [],
+        # the parser splits <think> blocks into reasoning_content when thinking is on
+        "extra_args": ["--reasoning-parser", "qwen3"],
         "supports_native_video": True,
         "reasoning": False,
+        "thinking_toggle": True,  # hybrid: thinks only when asked (chat_template_kwargs)
         "load_timeout": 3600,
         "license": "Apache-2.0",
         "strengths": "Recommended default. 32B-class quality at small-model speed (MoE, ~3B active "
@@ -54,11 +56,12 @@ CATALOG: dict[str, dict] = {
     "qwen3-vl-32b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-32B-Instruct",
         "image": DEFAULT_IMAGE,
-        
+
         "weights_gib": 63, "kv_gib_128k": 34,
-        "extra_args": [],
+        "extra_args": ["--reasoning-parser", "qwen3"],
         "supports_native_video": True,
         "reasoning": False,
+        "thinking_toggle": True,
         "load_timeout": 3600,
         "license": "Apache-2.0",
         "strengths": "Deepest synthesis / long narration; correct OCR; handles native video.",

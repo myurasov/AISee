@@ -259,6 +259,8 @@ def _query_params(args, kind: str) -> dict:
             params[k] = v
     if getattr(args, "native", False):
         params["native"] = True
+    if getattr(args, "no_thinking", False):
+        params["thinking"] = False
     ctx = getattr(args, "context", None)
     if getattr(args, "context_file", None):
         ctx = ((ctx + "\n") if ctx else "") + open(args.context_file).read()
@@ -410,6 +412,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--context")
         p.add_argument("--context-file")
         p.add_argument("--max-tokens", type=int)
+        p.add_argument("--no-thinking", action="store_true",
+                       help="disable chain-of-thought on thinking-toggle models")
         p.add_argument("--no-wait", action="store_true", help="print task id and exit")
         add_server(p)
 
@@ -434,6 +438,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--context")
     p.add_argument("--context-file")
     p.add_argument("--max-tokens", type=int)
+    p.add_argument("--no-thinking", action="store_true",
+                   help="disable chain-of-thought on thinking-toggle models")
     p.add_argument("--no-wait", action="store_true")
     add_server(p)
     p.set_defaults(fn=lambda a: cmd_query(a, "watch"))

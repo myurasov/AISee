@@ -141,6 +141,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
                          or fit_max_model_len(cat, profile, frac),
         "supports_native_video": cat.get("supports_native_video", True),
         "reasoning": cat.get("reasoning", False),
+        "thinking_toggle": cat.get("thinking_toggle", False),
         "load_timeout": cat.get("load_timeout", 1800),
         "concurrency": concurrency or cat.get("concurrency", catalog.DEFAULT_CONCURRENCY),
         "idle_timeout": idle_timeout if idle_timeout is not None

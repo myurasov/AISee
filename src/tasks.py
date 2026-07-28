@@ -890,7 +890,8 @@ class Core:
                 "is its ABSOLUTE span in the full video; treat any clip-local times inside an "
                 "observation as offset by that range's start. Cite absolute times only. "
                 f"Original question: {question}\n\nObservations:\n{notes}"}]}],
-                max_tokens=max_tokens, timeout=_remaining("the final synthesis"))
+                max_tokens=max_tokens, timeout=_remaining("the final synthesis"),
+                sampling=thinking_kw or None)
             if meta.get("finish_reason") == "length":
                 answer += vlm.truncation_marker(meta)
             out["answer"] = answer

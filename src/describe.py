@@ -106,9 +106,9 @@ def _render_models(core) -> str:
             resolution.markdown_line(m["input_resolution"]),
         ]
         if m["thinking_toggle"]:
-            lines.append("- Thinking: optional (default on) — pass `thinking: false` to disable")
+            lines.append("- Thinking: optional, ON by default - pass `thinking: false` to disable")
         elif m["reasoning"]:
-            lines.append("- Thinking: always on (reasoning model; cannot be disabled per-call)")
+            lines.append("- Thinking: always on (reasoning model; cannot be disabled)")
         if m["image_budget_line"]:
             lines.append(m["image_budget_line"])
         if m["strengths"]:

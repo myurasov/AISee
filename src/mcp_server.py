@@ -52,7 +52,9 @@ async def _run(fn, *args, **kw):
 
 def _query(kind: str, media: list[str], params: dict, wait: bool = True) -> dict:
     c = _client()
-    params = {k: v for k, v in params.items() if v is not None and v is not False}
+    # drop unset optionals; thinking=false is a meaningful value (explicit disable)
+    params = {k: v for k, v in params.items()
+              if v is not None and (v is not False or k == "thinking")}
     tid = c.submit(kind, media, params)
     if not wait:
         return {"task_id": tid, "hint": "poll get_task(task_id) until status is terminal"}
@@ -67,53 +69,60 @@ def _query(kind: str, media: list[str], params: dict, wait: bool = True) -> dict
 @mcp.tool()
 async def look(media: list[str], question: str, model: str | None = None,
                frames: int | None = None, fps: float | None = None, native: bool = False,
-               context: str | None = None, max_tokens: int | None = None) -> dict:
+               context: str | None = None, max_tokens: int | None = None,
+               thinking: bool | None = None) -> dict:
     """Ask a free-form question about image/video files (OCR, descriptions, "where is X").
 
     media: file paths on the AISee host, or 'sha256:<hex>' refs to media uploaded via
     POST /v1/blobs. Video is frame-sampled (frames/fps) unless native=true (video-capable
-    models only). context: background the model cannot see in the pixels. Blocks until the
-    answer is ready (a cold model may take minutes to load)."""
+    models only). context: background the model cannot see in the pixels. thinking:
+    enable/disable chain-of-thought on models with a thinking toggle (on by default there;
+    ignored by always-on reasoning models and plain models). Blocks until the answer is
+    ready (a cold model may take minutes to load)."""
     return await _run(_query, "look", media,
                       {"question": question, "model": model, "frames": frames,
                        "fps": fps, "native": native, "context": context,
-                       "max_tokens": max_tokens})
+                       "max_tokens": max_tokens, "thinking": thinking})
 
 
 @mcp.tool()
 async def assert_visual(media: list[str], expectation: str, model: str | None = None,
                         frames: int | None = None, fps: float | None = None,
                         native: bool = False, context: str | None = None,
-                        max_tokens: int | None = None) -> dict:
+                        max_tokens: int | None = None,
+                        thinking: bool | None = None) -> dict:
     """Verify an expectation about image/video files; returns {pass, reason, evidence}.
 
     media: host paths or 'sha256:<hex>' blob refs (see look). Prefer this over `look`
-    whenever you will branch on the outcome (tests, gates). Blocks until the verdict is
-    ready."""
+    whenever you will branch on the outcome (tests, gates). thinking: see look. Blocks
+    until the verdict is ready."""
     return await _run(_query, "assert", media,
                       {"expectation": expectation, "model": model,
                        "frames": frames, "fps": fps, "native": native,
-                       "context": context, "max_tokens": max_tokens})
+                       "context": context, "max_tokens": max_tokens,
+                       "thinking": thinking})
 
 
 @mcp.tool()
 async def watch(video: str, question: str | None = None, expectation: str | None = None,
                 model: str | None = None, fps: float | None = None,
                 chunk_seconds: float | None = None, context: str | None = None,
-                max_tokens: int | None = None, wait: bool = True) -> dict:
+                max_tokens: int | None = None, thinking: bool | None = None,
+                wait: bool = True) -> dict:
     """Analyze a whole video chunk by chunk (use for videos longer than ~1 minute).
 
     Give exactly one of question (returns per-chunk findings + a synthesized answer) or
     expectation (returns {pass, failing_ranges} with the time spans where it broke).
     video: a host path or a 'sha256:<hex>' blob ref (see look). fps sets temporal
-    resolution (1 for overviews, 8-15 to hunt flicker). Long videos take minutes: pass
-    wait=false to get a task_id immediately and poll get_task."""
+    resolution (1 for overviews, 8-15 to hunt flicker). thinking: see look. Long videos
+    take minutes: pass wait=false to get a task_id immediately and poll get_task."""
     if bool(question) == bool(expectation):
         return {"error": "give exactly one of question / expectation"}
     return await _run(_query, "watch", [video],
                       {"question": question, "expectation": expectation,
                        "model": model, "fps": fps, "chunk_seconds": chunk_seconds,
-                       "context": context, "max_tokens": max_tokens}, wait=wait)
+                       "context": context, "max_tokens": max_tokens,
+                       "thinking": thinking}, wait=wait)
 
 
 @mcp.tool()
