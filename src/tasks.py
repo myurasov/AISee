@@ -25,7 +25,8 @@ BUILTIN_MAX_TOKENS = {"assert": 1024, "look": 8192, "watch": 4096}
 REASONING_MAX_TOKENS = 8192
 
 
-def resolve_max_tokens(kind: str, params: dict, entry: dict, defaults: dict) -> int:
+def resolve_max_tokens(kind: str, params: dict, entry: dict, defaults: dict,
+                       thinking: bool | None = None) -> int:
     """Per-call > config max_tokens_<kind> > config global (>0) > built-in per kind."""
     if params.get("max_tokens"):
         return int(params["max_tokens"])
@@ -35,7 +36,24 @@ def resolve_max_tokens(kind: str, params: dict, entry: dict, defaults: dict) -> 
     if defaults.get("max_tokens"):  # legacy single knob; 0 (the default) = unset
         return int(defaults["max_tokens"])
     builtin = BUILTIN_MAX_TOKENS.get(kind, 4096)
-    return max(builtin, REASONING_MAX_TOKENS) if entry.get("reasoning") else builtin
+    is_reasoning = entry.get("reasoning") or (entry.get("thinking_toggle") and thinking)
+    return max(builtin, REASONING_MAX_TOKENS) if is_reasoning else builtin
+
+
+def resolve_thinking(params: dict, entry: dict, defaults: dict) -> bool | None:
+    """Returns True/False for thinking state on toggle models; None if model doesn't support it."""
+    if not entry.get("thinking_toggle"):
+        return None
+    if "thinking" in params:
+        return bool(params["thinking"])
+    v = defaults.get("thinking")
+    return bool(v) if v is not None else True  # default on
+
+
+def _thinking_sampling(thinking: bool) -> dict:
+    if thinking:
+        return {"chat_template_kwargs": {"enable_thinking": True}, "temperature": 0.6}
+    return {"chat_template_kwargs": {"enable_thinking": False}}
 
 TERMINAL = ("done", "failed", "canceled")
 
@@ -544,9 +562,11 @@ class Core:
         native = bool(p.get("native", False)) and entry.get("supports_native_video", True)
         frames = int(p.get("frames") or d["frames"])
         fps = float(p["fps"]) if p.get("fps") else None
-        max_tokens = resolve_max_tokens(kind, p, entry, d)
+        thinking = resolve_thinking(p, entry, d)
+        max_tokens = resolve_max_tokens(kind, p, entry, d, thinking=thinking)
         timeout = float(d["request_timeout"])
         context = p.get("context") or None
+        ts = _thinking_sampling(thinking) if thinking is not None else None
 
         t0 = time.time()
         if kind in ("look", "assert"):
@@ -567,7 +587,8 @@ class Core:
             t1 = time.time()
             if kind == "look":
                 answer, meta = vlm.run_look(entry["port"], entry["hf_id"], content,
-                                            max_tokens=max_tokens, timeout=timeout)
+                                            max_tokens=max_tokens, timeout=timeout,
+                                            sampling=ts)
                 if meta.get("finish_reason") == "length":
                     answer += vlm.truncation_marker(meta)
                 # conservative loop cleanup only (exact match, 4+ cycles): legitimate
@@ -581,14 +602,15 @@ class Core:
                     result["unstable"] = True
             else:
                 result = vlm.run_assert(entry["port"], entry["hf_id"], content,
-                                        max_tokens=max_tokens, timeout=timeout)
+                                        max_tokens=max_tokens, timeout=timeout, sampling=ts)
             self.store.update(tid, status="done", result=result,
                               timing={"inference_s": round(time.time() - t1, 1),
                                       "finished_at": time.time()})
             self._progress(tid, "done", "")
         elif kind == "watch":
             self._watch(tid, entry, p, work_dir, fps=fps or float(d["fps"]),
-                        max_tokens=max_tokens, timeout=timeout, context=context)
+                        max_tokens=max_tokens, timeout=timeout, context=context,
+                        thinking=thinking)
         else:
             raise RuntimeError(f"unknown task kind '{kind}'")
         self.store.touch_model(slug)
@@ -686,7 +708,8 @@ class Core:
         return answer, checks, refuted_any
 
     def _watch(self, tid: str, entry: dict, p: dict, work_dir, *, fps: float,
-               max_tokens: int, timeout: float, context: str | None) -> None:
+               max_tokens: int, timeout: float, context: str | None,
+               thinking: bool | None = None) -> None:
         """Chunked whole-video analysis. Result shape follows the query type (spec §9)."""
         question, expectation = p.get("question"), p.get("expectation")
         if (question is None) == (expectation is None):
@@ -718,7 +741,11 @@ class Core:
 
         # mild anti-repetition sampling for chunk narration (config-escapable; see config)
         rp = float(self.cfg["defaults"].get("watch_repetition_penalty") or 0)
-        sampling = {"repetition_penalty": rp} if rp and rp != 1.0 else None
+        rp_kw = {"repetition_penalty": rp} if rp and rp != 1.0 else {}
+        thinking_kw = _thinking_sampling(thinking) if thinking is not None else {}
+        # look chunks: repetition penalty + thinking; assert chunks: thinking only
+        look_sampling = {**rp_kw, **thinking_kw} or None
+        assert_sampling = thinking_kw or None
 
         # request_timeout bounds the WHOLE watch task: every chunk and the final synthesis
         # must finish before this deadline, so each inference gets only the time still left
@@ -765,7 +792,8 @@ class Core:
                                                   work_dir=work_dir / f"c{i}")
                     t_inf = _account("prep", t_prep)
                     r = vlm.run_assert(port, hf_id, content, max_tokens=max_tokens,
-                                       timeout=_remaining(f"chunk {rng}"))
+                                       timeout=_remaining(f"chunk {rng}"),
+                                       sampling=assert_sampling)
                     _account("infer", t_inf)
                     return {"range": rng, **r}
                 text = vlm.with_context(
@@ -780,7 +808,7 @@ class Core:
                 t_inf = _account("prep", t_prep)
                 a, meta = vlm.run_look(port, hf_id, content, max_tokens=max_tokens,
                                        timeout=_remaining(f"chunk {rng}"),
-                                       sampling=sampling)
+                                       sampling=look_sampling)
                 _account("infer", t_inf)
                 if meta.get("finish_reason") == "length":
                     a += vlm.truncation_marker(meta)

@@ -71,6 +71,8 @@ def _model_lines(core) -> list[dict]:
             "slug": entry["slug"], "hf_id": entry["hf_id"], "state": v["state"],
             "default": v["default"],
             "supports_native_video": entry.get("supports_native_video", True),
+            "reasoning": entry.get("reasoning", False),
+            "thinking_toggle": entry.get("thinking_toggle", False),
             "serving": {
                 "max_model_len": entry.get("max_model_len"),
                 "max_images": entry.get("max_images"),
@@ -103,6 +105,10 @@ def _render_models(core) -> str:
                        f"idle unload after {s['idle_timeout']} s")(m["serving"]),
             resolution.markdown_line(m["input_resolution"]),
         ]
+        if m["thinking_toggle"]:
+            lines.append("- Thinking: optional (default on) — pass `thinking: false` to disable")
+        elif m["reasoning"]:
+            lines.append("- Thinking: always on (reasoning model; cannot be disabled per-call)")
         if m["image_budget_line"]:
             lines.append(m["image_budget_line"])
         if m["strengths"]:

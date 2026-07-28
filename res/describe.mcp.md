@@ -25,7 +25,9 @@ strict boolean plus reasoning and concrete evidence.
 Optional parameters on the query tools: `model` (slug from the guide below; omit for the
 default), `frames` / `fps` (video frame sampling), `native` (send the video itself instead of
 sampled frames; video-capable models only), `context` (background the model cannot see in the
-pixels), `max_tokens`; `watch` adds `chunk_seconds` and `wait`.
+pixels), `max_tokens`, `thinking` (bool; enables/disables chain-of-thought for models marked
+**Thinking: optional** in the model list below; default `true`; no effect on always-on reasoning
+models); `watch` adds `chunk_seconds` and `wait`.
 
 ## Uploading media from your machine
 
@@ -77,7 +79,8 @@ each reuse).
   video frame.
 - **Answer budgets are per kind and truncation is never silent.** Without an explicit
   `max_tokens`: `assert_visual` 1024, `watch` 4096 per chunk, `look` 8192; reasoning models
-  8192 everywhere (thinking counts against the same budget). A capped answer ends with
+  (always-on) and toggle models with thinking enabled both get 8192 everywhere (thinking counts
+  against the same budget). A capped answer ends with
   `[truncated at N tokens]` and carries `truncated: true`; a truncated assert fails with a
   "verdict truncated" reason; `max_tokens_clamped: true` means a large media payload forced
   a smaller budget. Size `max_tokens` to the largest useful answer - it is a runaway bound,

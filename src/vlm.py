@@ -137,10 +137,11 @@ def run_look(port: int, hf_id: str, content: list[dict], *, max_tokens: int,
 
 
 def run_assert(port: int, hf_id: str, content: list[dict], *, max_tokens: int,
-               timeout: float) -> dict:
+               timeout: float, sampling: dict | None = None) -> dict:
     messages = [{"role": "system", "content": ASSERT_SYSTEM},
                 {"role": "user", "content": content}]
-    raw, meta = chat(port, hf_id, messages, max_tokens=max_tokens, timeout=timeout)
+    raw, meta = chat(port, hf_id, messages, max_tokens=max_tokens, timeout=timeout,
+                     sampling=sampling)
     if meta.get("finish_reason") == "length":
         # a clipped verdict is unparseable JSON, not a judgment - fail it distinctly
         return annotate({"pass": False,
