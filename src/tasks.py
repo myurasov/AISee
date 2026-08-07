@@ -884,13 +884,18 @@ class Core:
             self._progress(tid, "running", "synthesizing final answer across chunks")
             t_syn = time.time()
             notes = "\n".join(f'[{c["range"]}] {c["answer"]}' for c in chunks)
+            # the synthesis condenses ALL chunks, so its output scales with chunk count -
+            # budget it like a look (8192 default) instead of the per-chunk watch tier
+            # (a 21-chunk detail question overflows 4096); per-call/config pins still win
+            syn_tokens = resolve_max_tokens("look", p, entry, self.cfg["defaults"],
+                                            thinking=thinking)
             answer, meta = vlm.chat(port, hf_id, [{"role": "user", "content": [{"type": "text", "text":
                 "These are sequential observations of one continuous video. Synthesize them into a "
                 "single coherent answer to the original question. Each observation's [range] prefix "
                 "is its ABSOLUTE span in the full video; treat any clip-local times inside an "
                 "observation as offset by that range's start. Cite absolute times only. "
                 f"Original question: {question}\n\nObservations:\n{notes}"}]}],
-                max_tokens=max_tokens, timeout=_remaining("the final synthesis"),
+                max_tokens=syn_tokens, timeout=_remaining("the final synthesis"),
                 sampling=thinking_kw or None)
             if meta.get("finish_reason") == "length":
                 answer += vlm.truncation_marker(meta)

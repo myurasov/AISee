@@ -78,7 +78,8 @@ each reuse).
   when fine text must survive (dense OCR), prefer a full-res still via `look` over a
   video frame.
 - **Answer budgets are per kind and truncation is never silent.** Without an explicit
-  `max_tokens`: `assert_visual` 1024, `watch` 4096 per chunk, `look` 8192; reasoning models
+  `max_tokens`: `assert_visual` 1024, `watch` 4096 per chunk (its final cross-chunk
+  synthesis gets the `look` budget), `look` 8192; reasoning models
   (always-on) and toggle models with thinking enabled both get 8192 everywhere (thinking counts
   against the same budget). A capped answer ends with
   `[truncated at N tokens]` and carries `truncated: true`; a truncated assert fails with a

@@ -117,8 +117,9 @@ direct answer; models with no `Thinking:` line never think. Thinking calls are s
 spend the same `max_tokens` budget as the answer.
 
 **Answer budgets (`max_tokens`):** per-kind defaults when not passed - `assert` 1024, `watch`
-4096 per chunk, `look` 8192; reasoning models (and toggle models with thinking enabled) 8192
-everywhere (thinking spends the same budget). Truncation is never silent: capped answers end with `[truncated at N tokens]` and set
+4096 per chunk (the final cross-chunk synthesis gets the `look` budget, since its length
+scales with chunk count), `look` 8192; reasoning models (and toggle models with thinking
+enabled) 8192 everywhere (thinking spends the same budget). Truncation is never silent: capped answers end with `[truncated at N tokens]` and set
 `truncated: true` (watch also rolls it up task-level); a truncated assert fails with a
 "verdict truncated" reason - raise `max_tokens` and retry. `max_tokens_clamped: true` means a
 large media payload forced a smaller answer budget. Size the cap to the largest useful

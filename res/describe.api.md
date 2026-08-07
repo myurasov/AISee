@@ -77,7 +77,8 @@ the model list below — enables/disables chain-of-thought reasoning; default `t
 on always-on reasoning models).
 
 Answer budgets (`max_tokens`): when not passed per call, defaults are per kind - `assert` 1024,
-`watch` 4096 per chunk, `look` 8192 (dense OCR must never clip content); reasoning models (always-on)
+`watch` 4096 per chunk (the final cross-chunk synthesis gets the `look` budget, since its
+length scales with chunk count), `look` 8192 (dense OCR must never clip content); reasoning models (always-on)
 and toggle models with thinking enabled both get 8192 for every kind since thinking counts against
 the same budget. Size it to the largest
 useful answer - the cap is your runaway bound, so do not blanket-raise it. Truncation is never
