@@ -198,6 +198,48 @@ automatically to free the GPU. The next query targeting it starts it again; the 
 `--port` and `--host` persist to `~/.aisee/config.toml`. `0.0.0.0` (the default) serves the LAN,
 `127.0.0.1` is local-only. The CLI starts the daemon on demand; `--no-autostart` disables that.
 
+### Persistent installation (start at boot)
+
+`api start` spawns a one-off daemon that dies with the host. For a server that survives
+reboots, run the same entry point under systemd. Model containers already come back on their
+own (`--restart unless-stopped`), so only the API needs a unit. Preferred - a **system unit**
+(requires sudo; picks up the user's `docker` group membership at start):
+
+```ini
+# /etc/systemd/system/aisee-api.service
+[Unit]
+Description=AISee REST API server
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<user>
+ExecStart=/home/<user>/aisee/.venv/bin/python -P -m aisee.server
+WorkingDirectory=/home/<user>/.aisee
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now aisee-api
+```
+
+Without sudo, a **user unit** (`~/.config/systemd/user/aisee-api.service`, same `[Service]`
+minus `User=`, `WantedBy=default.target`) plus `loginctl enable-linger <user>` works - with
+one caveat: the systemd user manager freezes its group list when it starts, so if the user
+was added to the `docker` group after that, the API cannot reach the docker socket until the
+manager restarts (symptom: every model reports `installed` while its container runs; check
+with `systemd-run --user --pipe id`). The system unit does not have this problem.
+
+Once under systemd, `./aisee api stop && ./aisee api start` silently does nothing (stop finds
+no pidfile because systemd owns the process; start sees the healthy API and returns) - restart
+with `systemctl restart aisee-api` (or `systemctl --user restart aisee-api`) instead. Logs move
+to `journalctl -u aisee-api`.
+
 The CLI also works from other machines - `--server http://HOST:PORT` or
 `export AISEE_SERVER=http://HOST:PORT` - media files are uploaded with the request.
 
@@ -369,8 +411,9 @@ or `.venv` - remove those by hand (`docker rmi ...`, `rm -rf ~/aisee`) if you wa
 - "Could not open video stream" server-side: shouldn't happen through AISee (video is re-encoded
   to MJPEG-AVI exactly because serving containers often lack H.264), but raw H.264 sent by hand
   will do this.
-- After updating the source: `uv sync`, then `./aisee api stop && ./aisee api start`. A running
-  daemon keeps executing the old code.
+- After updating the source: `uv sync`, then restart the API - `./aisee api stop && ./aisee api
+  start`, or `systemctl restart aisee-api` on a persistent (systemd) install, where the
+  stop/start pair silently no-ops. A running daemon keeps executing the old code.
 
 ## License
 

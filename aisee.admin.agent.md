@@ -47,9 +47,10 @@ ssh HOST '~/aisee/aisee creds set HF_TOKEN <token>'
 `./aisee install` reports anything missing (docker daemon, NVIDIA Container Toolkit/CDI,
 ffmpeg) with the exact fix commands. Re-run it until it prints `install: ok`.
 
-After updating the source on a host: `uv sync`, then restart the API (`./aisee api stop &&
-./aisee api start`) - a running daemon keeps executing old code. `res/*` (console, describe
-template) is read per request and needs no restart.
+After updating the source on a host: `uv sync`, then restart the API - `./aisee api stop &&
+./aisee api start`, or `systemctl restart aisee-api` on a persistent (systemd) install, where
+the stop/start pair silently no-ops - a running daemon keeps executing old code. `res/*`
+(console, describe template) is read per request and needs no restart.
 
 ## Auth: consumer and admin tokens
 
@@ -86,6 +87,17 @@ token and carries consumer capabilities only - it cannot manage models by design
 `0.0.0.0` (default) serves the LAN; the daemon must run on the GPU host itself. Log:
 `~/.aisee/logs/api.log`. A single-file web console at `/` covers status, queries, tasks,
 models (admin actions need the admin token, entered on its Server tab), and live GPU stats.
+
+For an installation that survives host reboots, run the server under systemd instead of the
+one-off daemon: see "Persistent installation" in README.md for the unit. Prefer the
+**system** unit (`User=<user>`, `ExecStart=<checkout>/.venv/bin/python -P -m aisee.server`,
+`After=docker.service`); a user unit + linger also works but inherits the user manager's
+frozen group list - if the `docker` group was added after that manager started, the API
+cannot see containers (all models report `installed` while their containers run) until the
+manager restarts. Model containers need no unit; they auto-restart via docker's
+`unless-stopped` policy. Under systemd, restart with `systemctl restart aisee-api`
+(`./aisee api stop && ./aisee api start` silently no-ops there: stop finds no pidfile,
+start sees the healthy API); logs via `journalctl -u aisee-api`.
 
 ## Managing models
 
