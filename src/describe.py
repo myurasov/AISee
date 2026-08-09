@@ -47,6 +47,9 @@ _ENDPOINTS = [
                                                 "dimensions, duration, frames, size"),
     ("GET", "/v1/tasks/{id}/media/{i}", "consumer", "download the task's i-th media file "
                                                     "(append /thumb for a JPEG thumbnail)"),
+    ("GET", "/v1/tasks/{id}/artifacts", "consumer", "derived output files (transcripts, RTTM)"),
+    ("GET", "/v1/tasks/{id}/artifacts/{name}", "consumer", "download one artifact, e.g. "
+                                                           "transcript.srt"),
     ("GET", "/v1/blobs/{sha256}", "consumer", "upload-dedup probe: {exists, size}"),
     ("POST", "/v1/blobs", "consumer", "upload media into the content-addressed store "
                                       "-> [{sha256, size}]; reference as sha256:<hash>"),
@@ -65,11 +68,25 @@ def _model_lines(core) -> list[dict]:
     for entry in registry.list_installed():
         cat = catalog.CATALOG.get(entry["slug"], {})
         v = core.model_view(entry)
+        if entry.get("modality", "vision") != "vision":
+            out.append({
+                "slug": entry["slug"], "hf_id": entry["hf_id"], "state": v["state"],
+                "default": v["default"], "modality": v["modality"],
+                "engine": v["engine"], "capabilities": v["capabilities"],
+                "serving": {"gpu_frac": entry.get("gpu_frac"),
+                            "concurrency": entry.get("concurrency", 1),
+                            "idle_timeout": entry.get("idle_timeout")},
+                "strengths": cat.get("strengths", ""),
+                "weaknesses": cat.get("weaknesses", ""),
+                "pitfalls": cat.get("pitfalls", ""), "license": cat.get("license", ""),
+            })
+            continue
         ir = resolution.input_resolution(entry)
         out.append({
             "image_budget_line": resolution.image_budget_line(entry, ir),
             "slug": entry["slug"], "hf_id": entry["hf_id"], "state": v["state"],
-            "default": v["default"],
+            "default": v["default"], "modality": "vision",
+            "capabilities": v["capabilities"],
             "supports_native_video": entry.get("supports_native_video", True),
             "reasoning": entry.get("reasoning", False),
             "thinking_toggle": entry.get("thinking_toggle", False),
@@ -95,6 +112,21 @@ def _render_models(core) -> str:
     lines: list[str] = []
     for m in models:
         flag = " **(default)**" if m["default"] else ""
+        if m.get("modality") == "audio":
+            s = m["serving"]
+            lines += [
+                f"### `{m['slug']}`{flag} - {m['state']}",
+                f"- HF id: `{m['hf_id']}`; audio model ({m['engine']}); "
+                f"capabilities: {', '.join(m['capabilities'])}"
+                + (f"; license: {m['license']}" if m["license"] else ""),
+                f"- Serving: {s['concurrency']} concurrent inference(s); gpu_frac "
+                f"{s['gpu_frac']}; idle unload after {s['idle_timeout']} s",
+            ]
+            for k in ("strengths", "weaknesses", "pitfalls"):
+                if m[k]:
+                    lines.append(f"- **{k.capitalize()}:** {m[k]}")
+            lines.append("")
+            continue
         lines += [
             f"### `{m['slug']}`{flag} - {m['state']}",
             f"- HF id: `{m['hf_id']}`; native video: {'yes' if m['supports_native_video'] else 'no'}"
@@ -136,7 +168,7 @@ def as_json(core) -> dict:
         "auth": {"consumer": "AISEE_API_TOKEN (when set, guards query/read endpoints)",
                  "admin": "AISEE_ADMIN_TOKEN (when set, guards model management; "
                           "accepted everywhere)"},
-        "task_kinds": ["look", "assert", "watch"],
+        "task_kinds": ["look", "assert", "watch", "transcribe", "diarize"],
         "statuses": ["queued", "preparing_media", "model_loading", "running",
                      "done", "failed", "canceled"],
         "models": _model_lines(core),

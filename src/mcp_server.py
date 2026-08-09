@@ -19,14 +19,16 @@ from mcp.server.transport_security import TransportSecuritySettings
 from .client import Client
 
 _INSTRUCTIONS = (
-    "AISee gives you eyes: send image/video files with a question or an expectation and a "
-    "vision-language model on this GPU host answers. Prefer `assert_visual` when you will "
-    "branch on the outcome; `look` for open questions/OCR; `watch` for whole-video analysis. "
-    "Query tools block until the answer is ready - a cold model can take minutes to load, so "
-    "be patient or pass wait=false to `watch` and poll `get_task`. Media entries are either "
-    "file paths on the AISee host, or 'sha256:<hex>' references to media uploaded from your "
-    "machine via POST /v1/blobs on the same server (see the describe tool for the exact "
-    "recipe). Model management is not available over MCP."
+    "AISee gives you eyes and ears: send image/video/audio files and models on this GPU "
+    "host answer. Vision: prefer `assert_visual` when you will branch on the outcome; "
+    "`look` for open questions/OCR; `watch` for whole-video analysis. Audio: `transcribe` "
+    "for speaker-attributed transcripts of recordings (audio files or videos with audio), "
+    "`diarize` for who-spoke-when only. Query tools block until the answer is ready - a "
+    "cold model can take minutes to load, so be patient or pass wait=false (watch/"
+    "transcribe/diarize) and poll `get_task`. Media entries are either file paths on the "
+    "AISee host, or 'sha256:<hex>' references to media uploaded from your machine via "
+    "POST /v1/blobs on the same server (see the describe tool for the exact recipe). "
+    "Model management is not available over MCP."
 )
 
 # stateless: every request is self-contained, so any number of agents can connect and the
@@ -52,9 +54,9 @@ async def _run(fn, *args, **kw):
 
 def _query(kind: str, media: list[str], params: dict, wait: bool = True) -> dict:
     c = _client()
-    # drop unset optionals; thinking=false is a meaningful value (explicit disable)
+    # drop unset optionals; thinking=false / speakers=false are meaningful (explicit disable)
     params = {k: v for k, v in params.items()
-              if v is not None and (v is not False or k == "thinking")}
+              if v is not None and (v is not False or k in ("thinking", "speakers"))}
     tid = c.submit(kind, media, params)
     if not wait:
         return {"task_id": tid, "hint": "poll get_task(task_id) until status is terminal"}
@@ -123,6 +125,39 @@ async def watch(video: str, question: str | None = None, expectation: str | None
                        "model": model, "fps": fps, "chunk_seconds": chunk_seconds,
                        "context": context, "max_tokens": max_tokens,
                        "thinking": thinking}, wait=wait)
+
+
+@mcp.tool()
+async def transcribe(media: str, speakers: bool = True, min_speakers: int | None = None,
+                     max_speakers: int | None = None, num_speakers: int | None = None,
+                     model: str | None = None, wait: bool = True) -> dict:
+    """Speaker-attributed, word-timestamped transcript of an audio file or a video
+    container with audio (uses the host's ASR + diarization models, loading them on
+    first use like any cold start).
+
+    media: a host path or a 'sha256:<hex>' blob ref (see look). speakers: attribute
+    speech to speakers (default true; multi-track recordings use one-track-per-speaker
+    automatically, single-track audio is diarized). min/max/num_speakers: diarization
+    hints when the count is known. Result carries text + timestamped segments; full
+    word timings land in the transcript.json artifact
+    (GET /v1/tasks/{id}/artifacts/transcript.json, also .txt/.srt/.vtt). Long
+    recordings take minutes: pass wait=false and poll get_task."""
+    return await _run(_query, "transcribe", [media],
+                      {"speakers": speakers, "min_speakers": min_speakers,
+                       "max_speakers": max_speakers, "num_speakers": num_speakers,
+                       "model": model}, wait=wait)
+
+
+@mcp.tool()
+async def diarize(media: str, min_speakers: int | None = None,
+                  max_speakers: int | None = None, num_speakers: int | None = None,
+                  model: str | None = None, wait: bool = True) -> dict:
+    """Who spoke when (no transcript): speaker turns with timestamps for an audio
+    file or a video container with audio. Pass min/max/num_speakers hints when the
+    speaker count is roughly known (long multi-party audio tends to over-split)."""
+    return await _run(_query, "diarize", [media],
+                      {"min_speakers": min_speakers, "max_speakers": max_speakers,
+                       "num_speakers": num_speakers, "model": model}, wait=wait)
 
 
 @mcp.tool()

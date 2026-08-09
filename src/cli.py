@@ -176,8 +176,10 @@ def cmd_model(args) -> int:
         if w and w + _cat.ACTIVATION_HEADROOM_GIB > prof["mem_gib"] * entry["gpu_frac"]:
             _p(f"  WARNING: ~{w} GiB of weights will not fit this GPU "
                f"({prof['mem_gib']:.0f} GiB) - the model will fail to load")
+        ctx = (f", context {entry['max_model_len']} tokens" if entry.get("max_model_len")
+               else f" ({'/'.join(entry.get('capabilities', []))} audio model)")
         _p(f"  gpu: {prof['name']} ({prof['mem_gib']:.0f} GiB{', unified' if prof['unified'] else ''}) "
-           f"-> gpu_frac {entry['gpu_frac']}, context {entry['max_model_len']} tokens")
+           f"-> gpu_frac {entry['gpu_frac']}{ctx}")
         _p(f"  image {entry['image']}, port {entry['port']}")
         _p("start it with: aisee model start " + entry["slug"])
         return 0
@@ -298,6 +300,66 @@ def cmd_query(args, kind: str) -> int:
         _p(f"  ({note})")
     if kind == "assert" or (kind == "watch" and "pass" in r):
         return 0 if r.get("pass") else 1
+    return 0
+
+
+def cmd_transcribe(args) -> int:
+    c = _client(args)
+    params: dict = {}
+    if args.no_speakers:
+        params["speakers"] = False
+    for k in ("model", "min_speakers", "max_speakers", "num_speakers"):
+        v = getattr(args, k, None)
+        if v is not None:
+            params[k] = v
+    tid = c.submit("transcribe", args.media, params)
+    if args.no_wait:
+        _p(tid)
+        return 0
+    _p(f"task {tid}")
+    t = c.wait(tid, echo=lambda line: _p(f"  {line}"))
+    if t["status"] != "done":
+        if t["status"] == "failed":
+            _p(f"FAILED: {t['error']['message'] if t.get('error') else 'unknown error'}")
+            return 2
+        _p("canceled")
+        return 3
+    r = t["result"]
+    if args.format == "json":
+        _p(json.dumps(r, indent=2))
+    else:
+        # txt/srt/vtt come from the task's artifacts (already rendered server-side)
+        name = {"text": "transcript.txt", "srt": "transcript.srt",
+                "vtt": "transcript.vtt"}[args.format]
+        _p(c.artifact(t["id"], name))
+    tm = t.get("timings", {})
+    notes = [f"{r.get('duration_s', 0) / 60:.1f} min audio"]
+    if r.get("asr_rtfx"):
+        notes.append(f"ASR {tm.get('asr_s')}s ({r['asr_rtfx']}x realtime)")
+    if tm.get("diarize_s"):
+        notes.append(f"diarization {tm['diarize_s']}s")
+    if r.get("num_speakers"):
+        notes.append(f"{r['num_speakers']} speakers ({r.get('speaker_source')})")
+    if r.get("diarization_warning"):
+        notes.append(f"WARNING: {r['diarization_warning']}")
+    _p(f"  ({'; '.join(notes)})")
+    return 0
+
+
+def cmd_diarize(args) -> int:
+    c = _client(args)
+    params = {k: v for k in ("model", "min_speakers", "max_speakers", "num_speakers")
+              if (v := getattr(args, k, None)) is not None}
+    tid = c.submit("diarize", args.media, params)
+    if args.no_wait:
+        _p(tid)
+        return 0
+    _p(f"task {tid}")
+    t = c.wait(tid, echo=lambda line: _p(f"  {line}"))
+    if t["status"] != "done":
+        _p(f"FAILED: {t['error']['message'] if t.get('error') else t['status']}")
+        return 2
+    _p(json.dumps(t["result"], indent=2))
     return 0
 
 
@@ -443,6 +505,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-wait", action="store_true")
     add_server(p)
     p.set_defaults(fn=lambda a: cmd_query(a, "watch"))
+
+    p = sub.add_parser("transcribe", help="speaker-attributed transcript of audio/video")
+    p.add_argument("media", nargs=1, help="audio file, or a video container with audio")
+    p.add_argument("--model")
+    p.add_argument("--no-speakers", action="store_true", help="skip speaker attribution")
+    p.add_argument("--min-speakers", type=int, help="diarization hint")
+    p.add_argument("--max-speakers", type=int, help="diarization hint")
+    p.add_argument("--num-speakers", type=int, help="exact speaker count, if known")
+    p.add_argument("--format", choices=["text", "json", "srt", "vtt"], default="text")
+    p.add_argument("--no-wait", action="store_true", help="print task id and exit")
+    add_server(p)
+    p.set_defaults(fn=cmd_transcribe)
+
+    p = sub.add_parser("diarize", help="who spoke when (no transcript)")
+    p.add_argument("media", nargs=1, help="audio file, or a video container with audio")
+    p.add_argument("--model")
+    p.add_argument("--min-speakers", type=int)
+    p.add_argument("--max-speakers", type=int)
+    p.add_argument("--num-speakers", type=int)
+    p.add_argument("--no-wait", action="store_true")
+    add_server(p)
+    p.set_defaults(fn=cmd_diarize)
 
     p = sub.add_parser("task", help="inspect the task queue")
     ts = p.add_subparsers(dest="task_cmd", required=True)

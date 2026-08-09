@@ -16,7 +16,8 @@ import time
 import uuid
 from pathlib import Path
 
-from . import blobs, catalog, config, creds, dockerctl, media, paths, registry, textclean, vlm
+from . import (audio, blobs, catalog, config, creds, dockerctl, media, paths, registry,
+               textclean, vlm)
 
 # answer budgets applied when the caller does not pass max_tokens: verdict JSON never
 # needs much; dense-OCR looks must never clip content; watch is per chunk. Reasoning
@@ -290,7 +291,11 @@ class Core:
         paths.ensure_layout()
         self.cfg = config.load()
         self.store = TaskStore(paths.tasks_db())
-        self._load_lock = threading.Lock()      # one model may cold-load at a time
+        # one cold load at a time PER MODALITY: a 5 s audio-model load must not queue
+        # behind a 62 GB VLM pull, but two vLLMs must never allocate simultaneously
+        self._load_locks: dict[str, threading.Lock] = {}
+        self._in_use: dict[str, int] = {}       # helper models busy inside another task
+        self._in_use_lock = threading.Lock()
         self._model_locks: dict[str, threading.Lock] = {}
         self._workers: dict[str, list[threading.Thread]] = {}
         self._cancel: set[str] = set()
@@ -314,9 +319,16 @@ class Core:
         return {
             "slug": slug, "hf_id": entry["hf_id"], "port": entry["port"],
             "state": self.model_state(slug),
+            "modality": entry.get("modality", "vision"),
+            "engine": entry.get("engine", "vllm"),
+            "capabilities": entry.get("capabilities") or list(catalog.VISION_KINDS),
             "idle_timeout": entry.get("idle_timeout"),
             "last_used": self.store.last_used(slug),
-            "default": registry.default_model() == slug,
+            # vision: the global default; audio: default for any of its capabilities
+            "default": (registry.default_model() == slug
+                        if entry.get("modality", "vision") == "vision" else
+                        any(registry.default_for_capability(c) == slug
+                            for c in entry.get("capabilities") or [])),
             "supports_native_video": entry.get("supports_native_video", True),
             "gpu_frac": entry.get("gpu_frac"),
             # size for "prefer the bigger running model" heuristics; None off-catalog
@@ -343,12 +355,17 @@ class Core:
                   and dockerctl.container_state(e["slug"]) == "running"]
         used = sum(float(e.get("gpu_frac") or 0) for e in others)
         need = float(entry.get("gpu_frac") or 0)
-        if used + need > 1.0 + 1e-6:
+        # unified-memory hosts (GB10): the GPU pool IS system RAM - a paper sum of 1.0
+        # starves the OS into an unreachable thrash, so keep a hard reserve
+        budget = (catalog.UNIFIED_CAPACITY_BUDGET if registry.gpu_profile()["unified"]
+                  else 1.0)
+        if used + need > budget + 1e-6:
             resident = ", ".join(f"{e['slug']} (gpu_frac {e['gpu_frac']})" for e in others)
             raise RuntimeError(
                 f"not starting '{entry['slug']}': it needs gpu_frac {need} but running "
-                f"models already reserve {used:.2f} of the GPU ({resident}). Stop one "
-                f"first, or reinstall models with smaller --gpu-frac slices to co-locate.")
+                f"models already reserve {used:.2f} of the {budget:.2f} GPU budget "
+                f"({resident}). Stop one first, or reinstall models with smaller "
+                f"--gpu-frac slices to co-locate.")
 
     def _lock_for(self, slug: str) -> threading.Lock:
         return self._model_locks.setdefault(slug, threading.Lock())
@@ -361,7 +378,7 @@ class Core:
         with self._lock_for(slug):
             if dockerctl.container_state(slug) == "running":
                 try:
-                    dockerctl.wait_ready(entry, timeout=10)
+                    dockerctl.wait_ready(entry, timeout=15)
                     return entry
                 except RuntimeError:
                     pass
@@ -385,16 +402,27 @@ class Core:
                     self._model_loading.pop(slug, None)
             self.check_gpu_capacity(entry)  # fail fast before any container work
             hf_token = creds.resolve("HF_TOKEN")
-            with self._load_lock:  # admission control: one cold load at a time
+            modality = entry.get("modality", "vision")
+            load_lock = self._load_locks.setdefault(modality, threading.Lock())
+            with load_lock:  # admission control: one cold load at a time per modality
                 self._model_loading[slug] = "starting container"
                 try:
                     if progress:
                         progress("model is loading: starting container")
                     if not dockerctl.image_present(entry["image"]):
-                        self._model_loading[slug] = "pulling image"
-                        if progress:
-                            progress("model is loading: pulling serving image")
-                        dockerctl.pull(entry["image"], creds.resolve("NGC_API_KEY"))
+                        engine = entry.get("engine", "vllm")
+                        if engine in dockerctl.ENGINE_BUILD_DIRS:
+                            # audio serving images are built locally, not pulled
+                            self._model_loading[slug] = "building serving image"
+                            if progress:
+                                progress("model is loading: building the serving image "
+                                         "(one-time, can take 10-20 min)")
+                            dockerctl.build_image(entry["image"], engine)
+                        else:
+                            self._model_loading[slug] = "pulling image"
+                            if progress:
+                                progress("model is loading: pulling serving image")
+                            dockerctl.pull(entry["image"], creds.resolve("NGC_API_KEY"))
                     dockerctl.start_model(entry, hf_token=hf_token)
                     self._model_loading[slug] = "applying image patches"
                     dockerctl.apply_image_patches(entry)
@@ -430,12 +458,37 @@ class Core:
     # ---------------- tasks ----------------
 
     def submit(self, kind: str, model: str | None, params: dict) -> str:
-        slug = model or registry.default_model()
-        if not slug:
-            raise ValueError("no model specified and no default model installed")
-        if not registry.get(slug):
+        if kind in catalog.AUDIO_KINDS:
+            cap = "transcribe" if kind == "transcribe" else "diarize"
+            slug = model or registry.default_for_capability(cap)
+            if not slug:
+                raise ValueError(f"no model installed for '{kind}' - install one, e.g. "
+                                 "`aisee model install parakeet-tdt-0.6b-v3` (transcribe) "
+                                 "or `aisee model install pyannote/speaker-diarization-3.1`")
+        else:
+            slug = model or registry.default_model()
+            if not slug:
+                raise ValueError("no model specified and no default model installed")
+        entry = registry.get(slug)
+        if not entry:
             raise ValueError(f"model '{slug}' is not installed")
+        caps = entry.get("capabilities") or list(catalog.VISION_KINDS)
+        if kind not in caps:
+            raise ValueError(f"model '{slug}' does not support '{kind}' "
+                             f"(it supports: {', '.join(caps)})")
         return self.store.create(kind, slug, params)
+
+    def _hold_in_use(self, slug: str) -> None:
+        with self._in_use_lock:
+            self._in_use[slug] = self._in_use.get(slug, 0) + 1
+
+    def _release_in_use(self, slug: str) -> None:
+        with self._in_use_lock:
+            n = self._in_use.get(slug, 0) - 1
+            if n <= 0:
+                self._in_use.pop(slug, None)
+            else:
+                self._in_use[slug] = n
 
     def cancel(self, tid: str) -> bool:
         t = self.store.get(tid)
@@ -505,6 +558,8 @@ class Core:
                     continue
                 if slug in self._model_loading or self.store.open_count(slug) > 0:
                     continue
+                if self._in_use.get(slug):  # helper model busy inside another task
+                    continue
                 last = self.store.last_used(slug)
                 if last is None:
                     self.store.touch_model(slug)  # adopt unknown-running as used-now
@@ -559,6 +614,14 @@ class Core:
 
         work_dir = paths.media_dir() / tid / "derived"
         media_files = p.get("media", [])
+        if kind in catalog.AUDIO_KINDS:
+            timeout = float(d["request_timeout"])
+            if kind == "transcribe":
+                self._transcribe(tid, entry, p, work_dir, timeout=timeout)
+            else:
+                self._diarize(tid, entry, p, work_dir, timeout=timeout)
+            self.store.touch_model(slug)
+            return
         native = bool(p.get("native", False)) and entry.get("supports_native_video", True)
         frames = int(p.get("frames") or d["frames"])
         fps = float(p["fps"]) if p.get("fps") else None
@@ -904,4 +967,205 @@ class Core:
             self.store.update(tid, timing={"synthesis_s": round(time.time() - t_syn, 1)})
         self.store.update(tid, status="done", result=out, timing={"finished_at": time.time()})
         self.store.clear_checkpoint(tid)
+        self._progress(tid, "done", "")
+
+    # ---------------- audio tasks ----------------
+
+    def _prep_audio_tracks(self, tid: str, p: dict, work_dir) -> tuple[str, list[tuple[dict, Path]]]:
+        """Probe + extract every audio stream of the (single) input to 16 kHz mono WAV."""
+        media_files = p.get("media", [])
+        if len(media_files) != 1:
+            raise RuntimeError("transcribe/diarize take exactly one media file "
+                               "(an audio file, or a video container with audio)")
+        path = media_files[0]
+        self.store.update(tid, status="preparing_media")
+        self._progress(tid, "preparing_media", "probing audio tracks")
+        tracks = audio.probe_tracks(path)
+        if not tracks:
+            raise RuntimeError(f"no audio track in {Path(path).name}")
+        wavs = []
+        for t in tracks:
+            self._progress(tid, "preparing_media",
+                           f"extracting audio track {t['index'] + 1}/{len(tracks)}")
+            wavs.append((t, audio.extract_track(path, t["index"],
+                                                work_dir / f"track{t['index']}.wav")))
+        return path, wavs
+
+    def _transcribe(self, tid: str, entry: dict, p: dict, work_dir, *,
+                    timeout: float) -> None:
+        """ASR (+ optional speaker attribution) with multi-track support.
+
+        Multi-track containers (Zoom/OBS per-participant recordings) are transcribed
+        per track and merged by time: each track IS one speaker, no diarizer needed.
+        Single-track audio is diarized (default on) and words get speakers by
+        max-overlap. Artifacts (json/txt/srt/vtt) land in the task's artifacts dir."""
+        deadline = time.time() + timeout
+
+        def _remaining(what: str) -> float:
+            rem = deadline - time.time()
+            if rem <= 1:
+                raise RuntimeError(f"transcribe exceeded request_timeout "
+                                   f"({int(timeout)} s) before {what}")
+            return rem
+
+        path, wavs = self._prep_audio_tracks(tid, p, work_dir)
+        if self._canceled(tid):
+            return
+
+        # duplicate-track trap: N tracks that are mixdown copies of the same audio
+        duplicate_tracks = False
+        unique: list[tuple[dict, Path]] = [wavs[0]]
+        for t, w in wavs[1:]:
+            if any(audio.tracks_duplicate(w, uw) for _, uw in unique):
+                duplicate_tracks = True
+            else:
+                unique.append((t, w))
+
+        audio_s = max(audio.wav_duration(w) for _, w in unique)
+        self.store.update(tid, status="running",
+                          timing={"audio_s": round(audio_s, 1)})
+        want_speakers = bool(p.get("speakers", True))
+
+        # ASR per unique track (each is one speaker when there are several)
+        asr_wall = 0.0
+        track_results: list[tuple[dict, dict]] = []
+        for i, (t, w) in enumerate(unique):
+            self._progress(tid, "running",
+                           f"transcribing ({audio_s / 60:.1f} min of audio)" if len(unique) == 1
+                           else f"transcribing track {i + 1}/{len(unique)}")
+            r = audio.asr_transcribe(entry["port"], w, timeout=_remaining("transcription"))
+            asr_wall += r.get("wall_s") or 0.0
+            track_results.append((t, r))
+            if self._canceled(tid):
+                return
+        self.store.update(tid, timing={"asr_s": round(asr_wall, 1)})
+
+        result: dict = {
+            "duration_s": round(audio_s, 2),
+            "asr_model": entry["slug"],
+            "attention": track_results[0][1].get("attention"),
+            "asr_rtfx": round(audio_s / asr_wall, 1) if asr_wall > 0 else None,
+        }
+        if len(wavs) > 1:
+            result["tracks"] = [{"index": t["index"], "title": t.get("title"),
+                                 "codec": t.get("codec")} for t, _ in wavs]
+        if duplicate_tracks:
+            result["duplicate_tracks"] = True
+
+        diar_error = None
+        if len(unique) > 1:
+            # track = speaker: perfect attribution from the container itself
+            per_track = []
+            for i, (t, r) in enumerate(track_results):
+                label = (t.get("title") or f"track_{t['index'] + 1}").strip()
+                per_track.append((label, r.get("words") or []))
+            words = audio.merge_track_words(per_track)
+            segments = audio.words_to_segments(words)
+            result["speaker_source"] = "tracks"
+            result["num_speakers"] = len(per_track)
+        else:
+            r = track_results[0][1]
+            words = r.get("words") or []
+            segments = r.get("segments") or []
+            result["speaker_source"] = "none"
+            if want_speakers:
+                diar_slug = registry.default_for_capability("diarize")
+                if not diar_slug:
+                    diar_error = ("no diarization model installed - transcript has no "
+                                  "speaker labels (install pyannote/speaker-diarization-3.1)")
+                elif diar_slug == entry["slug"]:
+                    diar_error = "diarization model cannot transcribe"
+                else:
+                    try:
+                        diar_entry = self.ensure_diarizer(tid, diar_slug)
+                        self._progress(tid, "running", "diarizing speakers")
+                        self._hold_in_use(diar_slug)
+                        try:
+                            t0 = time.time()
+                            dia = audio.diarize(
+                                diar_entry["port"], unique[0][1],
+                                timeout=_remaining("diarization"),
+                                min_speakers=p.get("min_speakers"),
+                                max_speakers=p.get("max_speakers"),
+                                num_speakers=p.get("num_speakers"))
+                        finally:
+                            self._release_in_use(diar_slug)
+                        self.store.update(tid, timing={"diarize_s": round(time.time() - t0, 1)})
+                        self.store.touch_model(diar_slug)
+                        if words:
+                            words = audio.assign_speakers(words, dia.get("turns") or [])
+                            segments = audio.words_to_segments(words)
+                        result["speaker_source"] = "diarization"
+                        result["num_speakers"] = dia.get("num_speakers")
+                        result["speakers"] = dia.get("speakers")
+                        result["diarize_rtfx"] = dia.get("rtfx")
+                        result["diarization_model"] = diar_slug
+                        # pyannote over-splits long recordings; surface odd counts
+                        if (not p.get("max_speakers") and not p.get("num_speakers")
+                                and (dia.get("num_speakers") or 0) > 10):
+                            result["suspicious_speaker_count"] = True
+                    except RuntimeError as e:
+                        diar_error = f"diarization failed: {e}"
+            if self._canceled(tid):
+                return
+        if diar_error:
+            result["diarization_warning"] = diar_error
+
+        result["segments"] = segments
+        result["text"] = " ".join(s["text"] for s in segments).strip()
+        result["language"] = track_results[0][1].get("language")
+        result["word_count"] = len(words)
+        self._progress(tid, "running", "writing transcript artifacts")
+        art_dir = paths.media_dir() / tid / "artifacts"
+        result["artifacts"] = audio.write_artifacts(art_dir, result, words)
+        self.store.update(tid, status="done", result=result,
+                          timing={"finished_at": time.time()})
+        self._progress(tid, "done", "")
+
+    def ensure_diarizer(self, tid: str, diar_slug: str) -> dict:
+        """Cold-start the helper diarization model with task-visible progress."""
+        if self.model_state(diar_slug) != "running":
+            self._progress(tid, "running", "loading the diarization model")
+        return self.ensure_running(
+            diar_slug, progress=lambda note: self._progress(
+                tid, "running", f"diarization model: {note}"))
+
+    def _diarize(self, tid: str, entry: dict, p: dict, work_dir, *,
+                 timeout: float) -> None:
+        """Standalone diarization: who spoke when (no transcript)."""
+        deadline = time.time() + timeout
+        path, wavs = self._prep_audio_tracks(tid, p, work_dir)
+        if self._canceled(tid):
+            return
+        note = None
+        if len(wavs) > 1:
+            note = f"diarized audio track 1 of {len(wavs)} (pass a single-track file for others)"
+        track, wav = wavs[0]
+        audio_s = audio.wav_duration(wav)
+        self.store.update(tid, status="running", timing={"audio_s": round(audio_s, 1)})
+        self._progress(tid, "running", f"diarizing ({audio_s / 60:.1f} min of audio)")
+        rem = deadline - time.time()
+        if rem <= 1:
+            raise RuntimeError(f"diarize exceeded request_timeout ({int(timeout)} s)")
+        t0 = time.time()
+        dia = audio.diarize(entry["port"], wav, timeout=rem,
+                            min_speakers=p.get("min_speakers"),
+                            max_speakers=p.get("max_speakers"),
+                            num_speakers=p.get("num_speakers"))
+        self.store.update(tid, timing={"diarize_s": round(time.time() - t0, 1)})
+        if self._canceled(tid):
+            return
+        result = {"duration_s": round(audio_s, 2), "model": entry["slug"],
+                  "num_speakers": dia.get("num_speakers"), "speakers": dia.get("speakers"),
+                  "turns": dia.get("turns"), "rtfx": dia.get("rtfx")}
+        if note:
+            result["note"] = note
+        if (not p.get("max_speakers") and not p.get("num_speakers")
+                and (dia.get("num_speakers") or 0) > 10):
+            result["suspicious_speaker_count"] = True
+        art_dir = paths.media_dir() / tid / "artifacts"
+        result["artifacts"] = audio.write_diarization_artifacts(
+            art_dir, result, uri=Path(path).stem)
+        self.store.update(tid, status="done", result=result,
+                          timing={"finished_at": time.time()})
         self._progress(tid, "done", "")

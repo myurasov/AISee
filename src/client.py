@@ -199,6 +199,12 @@ class Client:
         qs = ("?" + "&".join(q)) if q else ""
         return self._req("GET", f"/v1/tasks{qs}").json()
 
+    def artifacts(self, tid: str) -> list[dict]:
+        return self._req("GET", f"/v1/tasks/{tid}/artifacts").json()
+
+    def artifact(self, tid: str, name: str) -> str:
+        return self._req("GET", f"/v1/tasks/{tid}/artifacts/{name}").text
+
     def cancel(self, tid: str) -> dict:
         return self._req("DELETE", f"/v1/tasks/{tid}").json()
 

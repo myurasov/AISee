@@ -18,10 +18,15 @@ import subprocess
 from pathlib import Path
 
 VIDEO_EXT = {".mov", ".mp4", ".webm", ".mkv", ".avi", ".gif"}
+AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma", ".mka"}
 
 
 def is_video(path: str | Path) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXT
+
+
+def is_audio(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in AUDIO_EXT
 
 
 def require_ffmpeg() -> None:
@@ -170,12 +175,15 @@ def probe_info(path: str | Path) -> dict:
     if frames is None and dur and fps:
         frames = round(dur * fps)
     video = is_video(path)
+    audio = is_audio(path)
+    n_audio = sum(1 for s in d.get("streams", []) if s.get("codec_type") == "audio")
     return {
-        "kind": "video" if video else "image",
+        "kind": "video" if video else ("audio" if audio else "image"),
         "width": vs.get("width"), "height": vs.get("height"),
-        "duration_s": round(dur, 2) if (video and dur) else None,
-        "frames": frames if video else 1,
+        "duration_s": round(dur, 2) if ((video or audio) and dur) else None,
+        "frames": frames if video else (None if audio else 1),
         "fps": fps if video else None,
+        "audio_tracks": n_audio,
         "bytes": Path(path).stat().st_size,
     }
 

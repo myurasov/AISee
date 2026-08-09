@@ -331,14 +331,16 @@ def create_app() -> FastAPI:
             params["media"] = resolved
 
         kind = params.pop("kind", None)
-        if kind not in ("look", "assert", "watch"):
-            raise HTTPException(400, "kind must be look | assert | watch")
+        if kind not in ("look", "assert", "watch", "transcribe", "diarize"):
+            raise HTTPException(400, "kind must be look | assert | watch | transcribe | diarize")
         if kind == "look" and not params.get("question"):
             raise HTTPException(400, "look requires 'question'")
         if kind == "assert" and not params.get("expectation"):
             raise HTTPException(400, "assert requires 'expectation'")
         if kind == "watch" and (bool(params.get("question")) == bool(params.get("expectation"))):
             raise HTTPException(400, "watch requires exactly one of question / expectation")
+        if kind in ("transcribe", "diarize") and len(params.get("media") or []) != 1:
+            raise HTTPException(400, f"{kind} takes exactly one media file")
         model = params.pop("model", None)
         try:
             tid = core.submit(kind, model, params)
@@ -425,6 +427,29 @@ def create_app() -> FastAPI:
             except (RuntimeError, OSError, subprocess.CalledProcessError):
                 raise HTTPException(404, "cannot thumbnail this media")
         return FileResponse(thumb, media_type="image/jpeg")
+
+    def _artifacts_dir(tid: str) -> Path:
+        if not core.store.get(tid):
+            raise HTTPException(404, "no such task")
+        return paths.media_dir() / tid / "artifacts"
+
+    @app.get("/v1/tasks/{tid}/artifacts")
+    def task_artifacts(tid: str):
+        """Derived output files of a task (transcripts, RTTM, ...) with sizes."""
+        d = _artifacts_dir(tid)
+        if not d.is_dir():
+            return []
+        return [{"name": f.name, "size": f.stat().st_size}
+                for f in sorted(d.iterdir()) if f.is_file()]
+
+    @app.get("/v1/tasks/{tid}/artifacts/{name}")
+    def task_artifact(tid: str, name: str):
+        """Download one artifact by name (e.g. transcript.srt)."""
+        d = _artifacts_dir(tid)
+        p = (d / os.path.basename(name)).resolve()
+        if not p.is_file() or d.resolve() not in p.parents:
+            raise HTTPException(404, "no such artifact (expired?)")
+        return FileResponse(p, filename=p.name, content_disposition_type="inline")
 
     @app.delete("/v1/tasks/{tid}")
     def cancel_task(tid: str):

@@ -33,6 +33,10 @@ DEFAULTS: dict = {
         "task_ttl_hours": 24, # finished tasks + their media are GC'd after this
         "task_keep_max": 1000, # also keep at most this many finished tasks regardless of age; 0 = unlimited
         "blob_ttl_hours": 24, # content-addressed upload cache TTL; reuse refreshes it
+        # per-capability audio defaults; empty = the single installed provider is used.
+        # Set automatically when the first model with that capability is installed.
+        "default_transcribe_model": "",
+        "default_diarize_model": "",
         # chain-of-thought default for models with a thinking toggle (thinking_toggle=true
         # in the model TOML; none in the current catalog - hybrid-template models only):
         # per-call `thinking` wins. Always-on reasoning models think regardless of this.
