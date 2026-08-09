@@ -106,7 +106,9 @@
   details.cfgm { margin: .35rem 0; }
   details.cfgm summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   details.cfgm table { margin-bottom: .6rem; }
-  .kindopts { display: flex; flex-wrap: wrap; gap: .25rem .9rem; padding: .2rem 0; }
+  .kindopts { display: flex; flex-direction: column; gap: .35rem; padding: .2rem 0; }
+  .modeloff { opacity: .45; }
+  .modeloff select { pointer-events: none; }
   .kindopts label { display: inline-flex; align-items: center; gap: .3rem; margin: 0;
                     color: var(--fg); cursor: pointer; }
   .kindopts input { accent-color: var(--accent); }
@@ -140,21 +142,25 @@
 <div id="frame">
 
 <div class="tab" id="tab-query">
-  <label>action</label>
-  <div id="kindOpts" class="kindopts">
-    <label><input type="radio" name="kind" value="look" checked> look</label>
-    <label><input type="radio" name="kind" value="assert"> assert</label>
-    <label><input type="radio" name="kind" value="watch"> watch</label>
-    <label><input type="radio" name="kind" value="transcribe"> transcribe</label>
-    <label><input type="radio" name="kind" value="transcribe_diarize"> transcribe+diarize</label>
-    <label><input type="radio" name="kind" value="diarize"> diarize</label>
+  <div class="row">
+    <div style="flex: 0 0 auto; min-width: 12rem">
+      <label>action</label>
+      <div id="kindOpts" class="kindopts">
+        <label><input type="radio" name="kind" value="look" checked> look</label>
+        <label><input type="radio" name="kind" value="assert"> assert</label>
+        <label><input type="radio" name="kind" value="watch"> watch</label>
+        <label><input type="radio" name="kind" value="transcribe"> transcribe</label>
+        <label><input type="radio" name="kind" value="transcribe_diarize"> transcribe+diarize</label>
+        <label><input type="radio" name="kind" value="diarize"> diarize</label>
+      </div>
+    </div>
+    <div>
+      <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
+      <div id="modelAsrBox"><label for="modelAsr" title="which installed ASR model transcribes">transcription model</label><select id="modelAsr"><option value="">(default)</option></select></div>
+      <div id="modelDiarBox"><label for="modelDiar" title="which installed diarization model attributes speakers">diarization model</label><select id="modelDiar"><option value="">(default)</option></select></div>
+    </div>
   </div>
   <div id="kindHint" class="muted" style="margin-top:.25rem"></div>
-  <div class="row" style="margin-top:.35rem">
-    <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
-    <div id="modelAsrBox" style="display:none"><label for="modelAsr" title="which installed ASR model transcribes">transcription model</label><select id="modelAsr"><option value="">(default)</option></select></div>
-    <div id="modelDiarBox" style="display:none"><label for="modelDiar" title="which installed diarization model attributes speakers">diarization model</label><select id="modelDiar"><option value="">(default)</option></select></div>
-  </div>
   <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images/video/audio)</label>
   <div id="drop">
     <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
@@ -1023,9 +1029,10 @@ function kindChanged() {
   $("kindHint").textContent = KIND_HINTS[k];
   $("prompt").style.display = isAudioKind(k) ? "none" : "";
   $("promptLabel").style.display = isAudioKind(k) ? "none" : "";
-  $("modelVlmBox").style.display = isAudioKind(k) ? "none" : "";
-  $("modelAsrBox").style.display = (k === "transcribe" || k === "transcribe_diarize") ? "" : "none";
-  $("modelDiarBox").style.display = (k === "transcribe_diarize" || k === "diarize") ? "" : "none";
+  // all three selectors stay visible; the ones irrelevant to the action are dimmed
+  $("modelVlmBox").classList.toggle("modeloff", isAudioKind(k));
+  $("modelAsrBox").classList.toggle("modeloff", !(k === "transcribe" || k === "transcribe_diarize"));
+  $("modelDiarBox").classList.toggle("modeloff", !(k === "transcribe_diarize" || k === "diarize"));
 }
 for (const r of document.querySelectorAll('#kindOpts input'))
   r.addEventListener("change", kindChanged);
