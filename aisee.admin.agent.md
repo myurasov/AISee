@@ -129,7 +129,11 @@ inference is not on CUDA (read `model logs <slug>` for the FATAL line - never se
 CPU fallback); pyannote weights are HF-gated - the HF_TOKEN account must accept the license
 forms on speaker-diarization-3.1, segmentation-3.0, AND wespeaker-voxceleb-resnet34-LM. The
 first model installed per capability becomes `defaults.default_transcribe_model` /
-`default_diarize_model`.
+`default_diarize_model`. Audio containers run with a hard RAM cap (mem_limit in the model
+TOML; ASR 40g - long-form timestamp alignment peaks ~16 GB on a 79-min file) and a high
+oom-score-adj, so under memory pressure THEY die (task fails cleanly, container restarts)
+rather than the host or the VLM. On unified-memory hosts do not schedule hour-scale
+transcriptions while a big vision model is resident - stop it or let it idle-unload first.
 
 ## Troubleshooting
 

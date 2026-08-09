@@ -197,7 +197,10 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   recordings are diarized; the speaker count can over-split on long multi-party audio - pass
   hints, and treat `suspicious_speaker_count: true` as a cue to re-run with `--max-speakers`.
   Word-level timings and rendered transcripts (`transcript.txt/.srt/.vtt`, `transcript.json`
-  with words) download from `GET /v1/tasks/{id}/artifacts/<name>`.
+  with words) download from `GET /v1/tasks/{id}/artifacts/<name>`. On unified-memory hosts,
+  transcribing recordings of tens of minutes while a large vision model is resident can fail
+  with "ASR engine connection failed" (the memory pool ran out; the host stays healthy) -
+  retry once the vision model idle-unloads, or ask the operator to stop it first.
 
 ## Limitations
 

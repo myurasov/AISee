@@ -92,7 +92,11 @@ speakers; default `true`), `min_speakers` / `max_speakers` / `num_speakers` (dia
 pass them when the count is roughly known; long multi-party audio tends to over-split). A
 suspicious diarization (>10 speakers, unhinted) is flagged `suspicious_speaker_count: true`.
 Expect roughly realtime/30 or faster for transcription on this class of host (a 1 h recording
-in ~2-5 min); diarization adds a similar order.
+in ~2-5 min); diarization adds a similar order. On unified-memory hosts, transcribing LONG
+recordings (tens of minutes) while a large vision model is resident can exceed the memory
+pool: the audio engine is then killed and the task fails with a clear "engine connection
+failed" error while the host stays healthy - retry after the vision model idle-unloads (or
+stop it). Short/medium recordings co-reside fine.
 
 Answer budgets (`max_tokens`): when not passed per call, defaults are per kind - `assert` 1024,
 `watch` 4096 per chunk (the final cross-chunk synthesis gets the `look` budget, since its
