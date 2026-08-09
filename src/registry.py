@@ -122,6 +122,27 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
     cfg = config.load()
     existing = get(slug) or {}
     profile = gpu_profile()
+    engine = cat.get("engine", "vllm")
+    if engine != "vllm":
+        entry = {
+            "slug": slug,
+            "hf_id": hf_id,
+            "image": image or cat["image"],
+            "engine": engine,
+            "modality": cat.get("modality", "audio"),
+            "capabilities": list(cat.get("capabilities", [])),
+            "port": port or existing.get("port") or _free_port(),
+            "gpu_frac": gpu_frac if gpu_frac is not None else cat.get("gpu_frac", 0.06),
+            "supports_native_video": False,
+            "load_timeout": cat.get("load_timeout", 5400),
+            "concurrency": concurrency or cat.get("concurrency", 1),
+            "idle_timeout": idle_timeout if idle_timeout is not None
+                            else existing.get("idle_timeout", cfg["defaults"]["idle_timeout"]),
+        }
+        paths.ensure_layout()
+        entry_path(slug).write_text(_dump_entry(entry))
+        _adopt_capability_defaults(entry, cfg)
+        return entry
     frac = gpu_frac if gpu_frac is not None else cat.get("gpu_frac", profile["gpu_frac"])
     args = list(extra_args if extra_args is not None else cat.get("extra_args", []))
     # CUDA-graph capture is unstable/slow on unified-memory (GB10-class) systems, so they
@@ -149,23 +170,48 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
     }
     paths.ensure_layout()
     entry_path(slug).write_text(_dump_entry(entry))
-    # first installed model becomes the default
+    # first installed VISION model becomes the default (audio models never do)
     if not cfg["defaults"].get("default_model"):
         config.set_value("defaults", "default_model", slug)
     return entry
 
 
+def _adopt_capability_defaults(entry: dict, cfg: dict) -> None:
+    """First model installed for a capability becomes that capability's default."""
+    for cap in entry.get("capabilities", []):
+        key = f"default_{cap}_model"
+        if not cfg["defaults"].get(key):
+            config.set_value("defaults", key, entry["slug"])
+
+
 def remove(slug: str) -> bool:
     p = entry_path(slug)
     if p.exists():
+        entry = get(slug) or {}
         p.unlink()
         cfg = config.load()
         if cfg["defaults"].get("default_model") == slug:
-            remaining = [e["slug"] for e in list_installed()]
+            remaining = [e["slug"] for e in list_installed()
+                         if e.get("modality", "vision") == "vision"]
             config.set_value("defaults", "default_model", remaining[0] if remaining else "")
+        for cap in entry.get("capabilities", []):
+            key = f"default_{cap}_model"
+            if cfg["defaults"].get(key) == slug:
+                remaining = [e["slug"] for e in list_installed()
+                             if cap in (e.get("capabilities") or [])]
+                config.set_value("defaults", key, remaining[0] if remaining else "")
         return True
     return False
 
 
 def default_model() -> str | None:
     return config.load()["defaults"].get("default_model") or None
+
+
+def default_for_capability(cap: str) -> str | None:
+    """Configured default for a capability, else the single installed provider."""
+    v = config.load()["defaults"].get(f"default_{cap}_model")
+    if v and get(v):
+        return v
+    providers = [e["slug"] for e in list_installed() if cap in (e.get("capabilities") or [])]
+    return providers[0] if providers else None

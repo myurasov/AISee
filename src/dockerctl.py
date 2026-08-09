@@ -1,7 +1,11 @@
 # Copyright (c) 2026 Mikhail Yurasov <me@yurasov.me>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Model containers: docker lifecycle for vLLM serving instances (one container per model)."""
+"""Model containers: docker lifecycle, one container per model.
+
+Engines: "vllm" (vision models, OpenAI-compatible) and the audio serving apps
+("nemo-asr", "pyannote") built from res/serving/<dir>/ into local aisee/* images.
+"""
 
 import base64
 import json
@@ -84,8 +88,29 @@ def image_present(image: str) -> bool:
     return bool(r.stdout.strip())
 
 
+# engine -> serving-app directory under res/serving/ (images built locally on the host)
+ENGINE_BUILD_DIRS = {"nemo-asr": "audio-nemo", "pyannote": "audio-pyannote"}
+
+
+def build_image(image: str, engine: str) -> None:
+    """Build a local serving image from res/serving/<dir>/ (audio engines)."""
+    from pathlib import Path
+    ctx = Path(__file__).resolve().parent.parent / "res" / "serving" / ENGINE_BUILD_DIRS[engine]
+    if not ctx.is_dir():
+        raise RuntimeError(f"serving-app directory missing: {ctx}")
+    _run(["build", "-t", image, str(ctx)], timeout=5400)
+
+
+def health_url(entry: dict) -> str:
+    """The readiness probe endpoint for this entry's engine."""
+    path = "/v1/models" if entry.get("engine", "vllm") == "vllm" else "/health"
+    return f"http://127.0.0.1:{entry['port']}{path}"
+
+
 def start_model(entry: dict, hf_token: str | None = None) -> None:
     """(Re)create and start the container. Non-blocking: readiness is wait_ready()."""
+    if entry.get("engine", "vllm") != "vllm":
+        return _start_audio_model(entry, hf_token=hf_token)
     name = container_name(entry["slug"])
     port = int(entry["port"])
     serve = [
@@ -114,6 +139,31 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
     _run(args)
 
 
+def _start_audio_model(entry: dict, hf_token: str | None = None) -> None:
+    """Audio serving container: small FastAPI app baked into a locally built image.
+
+    GPU-gated at startup (the app exits nonzero when inference is not actually on
+    CUDA), so wait_ready surfaces a CPU fallback loudly instead of serving it."""
+    name = container_name(entry["slug"])
+    port = int(entry["port"])
+    _run(["rm", "-f", name], check=False)
+    args = [
+        "run", "-d", "--name", name, "--restart", "unless-stopped",
+        "--gpus", "all", "--ipc=host",
+        # hard RAM cap: on unified-memory hosts a leaking container would otherwise
+        # thrash the whole OS; hitting the cap kills the container visibly instead
+        "--memory", "16g", "--memory-swap", "16g",
+        "-e", "HF_HOME=/hf-cache",
+        "-v", f"{paths.hf_cache()}:/hf-cache",
+        "-p", f"{port}:{port}",
+    ]
+    if hf_token:
+        args += ["-e", f"HF_TOKEN={hf_token}", "-e", f"HUGGING_FACE_HUB_TOKEN={hf_token}"]
+    args += [entry["image"], "python", "/app/app.py",
+             "--port", str(port), "--model", entry["hf_id"]]
+    _run(args)
+
+
 def apply_image_patches(entry: dict, wait_s: int = 150) -> bool:
     """Apply the instrumentator patch (nvcr vLLM images) and restart so it takes effect."""
     if not entry["image"].startswith("nvcr.io/nvidia/vllm"):
@@ -136,12 +186,21 @@ def stop_model(slug: str) -> None:
     _run(["rm", "-f", container_name(slug)], check=False)
 
 
+def restart_count(slug: str) -> int:
+    r = _run(["inspect", "-f", "{{.RestartCount}}", container_name(slug)], check=False)
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return 0
+
+
 def wait_ready(entry: dict, timeout: int | None = None, progress=None) -> None:
-    """Poll the vLLM endpoint until it serves /v1/models; raise with a log tail on failure."""
+    """Poll the engine's health endpoint until it serves; raise with a log tail on failure."""
     timeout = timeout or int(entry.get("load_timeout", 1800))
-    url = f"http://127.0.0.1:{entry['port']}/v1/models"
+    url = health_url(entry)
     deadline = time.time() + timeout
     n = 0
+    restarts0 = restart_count(entry["slug"])
     while time.time() < deadline:
         try:
             r = httpx.get(url, timeout=5)
@@ -152,6 +211,11 @@ def wait_ready(entry: dict, timeout: int | None = None, progress=None) -> None:
         if container_state(entry["slug"]) != "running":
             raise RuntimeError(
                 f"model container exited during load; last log lines:\n{logs_tail(entry['slug'])}")
+        if restart_count(entry["slug"]) > restarts0 + 1:
+            # restart policy is masking a crash loop (e.g. a failed GPU gate) - fail
+            # fast with the reason instead of burning the whole load timeout
+            raise RuntimeError(
+                f"model container is crash-looping; last log lines:\n{logs_tail(entry['slug'])}")
         n += 1
         if progress and n % 4 == 0:
             progress(f"model is loading ({int(time.time() - (deadline - timeout))}s elapsed)")

@@ -11,7 +11,7 @@ DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 
 # Serving defaults assume the main mode of operation: ONE model resident per GPU, and are
 # computed from the detected GPU at install time (registry.gpu_profile / fit_max_model_len):
-# gpu_frac is ~1.0 on discrete GPUs and 0.90 on unified-memory systems (GB10 class, where
+# gpu_frac is ~1.0 on discrete GPUs and 0.80 on unified-memory systems (GB10 class, where
 # the GPU pool is also system RAM); max_model_len is the largest standard context whose
 # KV cache fits next to the weights (catalog entries carry weights_gib / kv_gib_128k
 # estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
@@ -30,7 +30,12 @@ DEFAULT_VIDEO_FRAMES = 24
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
 CONTEXT_CANDIDATES = (131072, 65536, 32768, 16384, 8192)
 ACTIVATION_HEADROOM_GIB = 4               # runtime overhead on top of weights + KV
-GPU_FRAC_UNIFIED = 0.90   # unified memory (GB10): leave headroom for system processes
+# unified memory (GB10): the GPU pool IS system RAM, so vLLM's slice must leave room
+# for the OS, AISee itself, and the small audio models (~8 GB) - 0.90 plus audio
+# starved the OS into an ssh-killing thrash on a 120 GiB GB10; 0.80 still fits every
+# catalog model at its full auto-sized context
+GPU_FRAC_UNIFIED = 0.80
+UNIFIED_CAPACITY_BUDGET = 0.92  # resident gpu_frac sum cap on unified hosts (OS reserve)
 GPU_FRAC_DISCRETE = 0.97  # dedicated VRAM: literal 1.0 fails vLLM's free-memory check
                           #   (driver/ECC overhead holds a few hundred MiB at startup)
 
@@ -197,9 +202,55 @@ CATALOG: dict[str, dict] = {
         "weaknesses": "Stills-only: reads a video clip as a single frame.",
         "pitfalls": "Needs --trust-remote-code and --enforce-eager.",
     },
+    # ---- audio models (engine != vllm; modality "audio") ----
+    # Serving images are built locally on the host from res/serving/<engine dir>/
+    # the first time the model starts. gpu_frac values are honest small fractions so
+    # the capacity check allows co-residency next to a resident VLM.
+    "parakeet-tdt-0-6b-v3": {
+        "hf_id": "nvidia/parakeet-tdt-0.6b-v3",
+        "image": "aisee/audio-nemo:1",
+        "engine": "nemo-asr",
+        "modality": "audio",
+        "capabilities": ["transcribe"],
+        "gpu_frac": 0.06,   # ~5 GB resident (transducer: no KV cache)
+        "concurrency": 1,   # one GPU job at a time (unified-memory discipline)
+        "load_timeout": 5400,  # first start may build the serving image on the host
+        "license": "CC-BY-4.0",
+        "strengths": "Recommended ASR default. 25 languages incl. Russian/Ukrainian; native "
+                     "word/segment timestamps; 12-87x realtime on GB10; zero hallucination "
+                     "loops on crowded/degraded meeting audio where Whisper variants looped.",
+        "weaknesses": "No speaker labels by itself (pair with the diarization model); "
+                      "language is auto-detected per file, not per segment.",
+        "pitfalls": "Inputs longer than ~24 min automatically switch the model to local "
+                    "attention (handled by the serving app). First start builds the serving "
+                    "image (~10-20 min one-time).",
+    },
+    "pyannote-diarization-3-1": {
+        "hf_id": "pyannote/speaker-diarization-3.1",
+        "image": "aisee/audio-pyannote:1",
+        "engine": "pyannote",
+        "modality": "audio",
+        "capabilities": ["diarize"],
+        "gpu_frac": 0.04,   # ~3 GB resident
+        "concurrency": 1,
+        "load_timeout": 5400,
+        "license": "MIT (weights HF-gated by a contact form)",
+        "strengths": "Recommended diarization default. Unbounded speaker count (found 9 on "
+                     "an ~8-speaker meeting); ~25x realtime on GB10.",
+        "weaknesses": "Over-splits long multi-party recordings (pass min/max speaker hints "
+                      "when known); fails toward visible over-counting, not silent merging.",
+        "pitfalls": "HF token must have accepted the licenses on THREE gated repos "
+                    "(speaker-diarization-3.1, segmentation-3.0, wespeaker-voxceleb). "
+                    "First start builds the serving image (~10-20 min one-time).",
+    },
 }
 
 RECOMMENDED_DEFAULT = "qwen3-vl-30b-a3b-instruct"
+
+# capability -> task kinds it serves (vision models carry no capabilities field and
+# implicitly serve look/assert/watch)
+VISION_KINDS = ("look", "assert", "watch")
+AUDIO_KINDS = ("transcribe", "diarize")
 
 
 def slugify(model_name: str) -> str:
