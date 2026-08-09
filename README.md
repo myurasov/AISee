@@ -37,7 +37,7 @@ There are five kinds of queries:
   file, or a video container's audio); `diarize: true` (CLI `--diarize`) adds per-lane
   speaker attribution. A lane is one audio track or one channel of a stereo/multi-channel
   track (stereo often encodes two separate feeds); AISee never interprets or merges lanes -
-  that is the consumer's job - and identical lanes are detected and processed once.
+  that is the consumer's job - and bit-identical lanes (equal decoded PCM) are detected and processed once.
   Rendered per-lane transcripts (`.txt/.srt/.vtt` + full JSON) are downloadable artifacts.
 - `diarize` - who spoke when: speaker turns with timestamps per lane, no transcript.
 

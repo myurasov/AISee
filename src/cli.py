@@ -308,7 +308,7 @@ def cmd_transcribe(args) -> int:
     params: dict = {}
     if args.diarize:
         params["diarize"] = True
-    for k in ("model", "min_speakers", "max_speakers", "num_speakers"):
+    for k in ("model", "diarize_model", "min_speakers", "max_speakers", "num_speakers"):
         v = getattr(args, k, None)
         if v is not None:
             params[k] = v
@@ -517,6 +517,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model")
     p.add_argument("--diarize", action="store_true",
                    help="also diarize each lane (speaker-attributed segments)")
+    p.add_argument("--diarize-model", help="diarization model slug (default: the capability default)")
     p.add_argument("--min-speakers", type=int, help="diarization hint (per lane)")
     p.add_argument("--max-speakers", type=int, help="diarization hint (per lane)")
     p.add_argument("--num-speakers", type=int, help="exact speaker count, if known (per lane)")

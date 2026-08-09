@@ -130,7 +130,8 @@ async def watch(video: str, question: str | None = None, expectation: str | None
 @mcp.tool()
 async def transcribe(media: str, diarize: bool = False, min_speakers: int | None = None,
                      max_speakers: int | None = None, num_speakers: int | None = None,
-                     model: str | None = None, wait: bool = True) -> dict:
+                     model: str | None = None, diarize_model: str | None = None,
+                     wait: bool = True) -> dict:
     """Word-timestamped transcript of EVERY audio track/channel of an audio file or a
     video container; diarize=true additionally attributes speakers per lane.
 
@@ -147,7 +148,7 @@ async def transcribe(media: str, diarize: bool = False, min_speakers: int | None
     return await _run(_query, "transcribe", [media],
                       {"diarize": diarize, "min_speakers": min_speakers,
                        "max_speakers": max_speakers, "num_speakers": num_speakers,
-                       "model": model}, wait=wait)
+                       "model": model, "diarize_model": diarize_model}, wait=wait)
 
 
 @mcp.tool()

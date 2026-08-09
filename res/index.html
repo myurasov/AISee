@@ -106,6 +106,10 @@
   details.cfgm { margin: .35rem 0; }
   details.cfgm summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   details.cfgm table { margin-bottom: .6rem; }
+  .kindopts { display: flex; flex-wrap: wrap; gap: .25rem .9rem; padding: .2rem 0; }
+  .kindopts label { display: inline-flex; align-items: center; gap: .3rem; margin: 0;
+                    color: var(--fg); cursor: pointer; }
+  .kindopts input { accent-color: var(--accent); }
   #drop { border: 2px dashed var(--drop-border); background: var(--softer); padding: 1.1rem 1rem; text-align: center; }
   #drop.over { border-color: var(--accent); background: var(--accent-soft); }
   #drop input { display: none; }
@@ -136,21 +140,21 @@
 <div id="frame">
 
 <div class="tab" id="tab-query">
-  <div class="row">
-    <div>
-      <label for="kind">kind</label>
-      <select id="kind">
-        <option value="look">look - stills analysis (images)</option>
-        <option value="assert">assert - pass/fail check (stills or video)</option>
-        <option value="watch">watch - video analysis (one video)</option>
-        <option value="transcribe">transcribe - transcript only (audio file or audio track in a video file)</option>
-        <option value="transcribe_diarize">transcribe+diarize - transcript with speakers (audio file or audio track in a video file)</option>
-        <option value="diarize">diarize - speaker attribution (audio file or audio track in a video file)</option>
-      </select>
-    </div>
-    <div><label for="model" title="which installed model answers; the default is the safe all-rounder">model</label><select id="model"><option value="">(default)</option></select></div>
+  <label>action</label>
+  <div id="kindOpts" class="kindopts">
+    <label><input type="radio" name="kind" value="look" checked> look</label>
+    <label><input type="radio" name="kind" value="assert"> assert</label>
+    <label><input type="radio" name="kind" value="watch"> watch</label>
+    <label><input type="radio" name="kind" value="transcribe"> transcribe</label>
+    <label><input type="radio" name="kind" value="transcribe_diarize"> transcribe+diarize</label>
+    <label><input type="radio" name="kind" value="diarize"> diarize</label>
   </div>
   <div id="kindHint" class="muted" style="margin-top:.25rem"></div>
+  <div class="row" style="margin-top:.35rem">
+    <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
+    <div id="modelAsrBox" style="display:none"><label for="modelAsr" title="which installed ASR model transcribes">transcription model</label><select id="modelAsr"><option value="">(default)</option></select></div>
+    <div id="modelDiarBox" style="display:none"><label for="modelDiar" title="which installed diarization model attributes speakers">diarization model</label><select id="modelDiar"><option value="">(default)</option></select></div>
+  </div>
   <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images/video/audio)</label>
   <div id="drop">
     <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
@@ -567,9 +571,10 @@ function renderStat(h, models, force = false) {
 // while the user has not picked a model, default the query dropdown to the
 // currently running model (largest weights when several are running)
 function pickRunningModel(models) {
-  const sel = $("model");
+  const sel = $("modelVlm");
   if (sel.value !== "") return;
-  const running = models.filter(m => m.state === "running")
+  const running = models.filter(m => m.state === "running"
+      && (m.capabilities || ["look"]).includes("look"))
     .sort((a, b) => (b.weights_gib || 0) - (a.weights_gib || 0));
   if (running.length && sel.querySelector(`option[value="${running[0].slug}"]`))
     sel.value = running[0].slug;
@@ -593,16 +598,19 @@ async function connect() {
     $("ver").textContent = "v" + h.version;
     $("health").textContent = "connected";
     renderStat(h, models, true);
-    const sel = $("model");
-    const prev = sel.value;
-    sel.innerHTML = '<option value="">(default)</option>';
-    for (const m of models) {
-      const o = document.createElement("option");
-      o.value = m.slug;
-      o.textContent = m.slug + (m.default ? " *" : "") + " - " + m.state;
-      sel.appendChild(o);
+    for (const [id, cap] of [["modelVlm", "look"], ["modelAsr", "transcribe"], ["modelDiar", "diarize"]]) {
+      const sel = $(id);
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">(default)</option>';
+      for (const m of models) {
+        if (!(m.capabilities || ["look", "assert", "watch"]).includes(cap)) continue;
+        const o = document.createElement("option");
+        o.value = m.slug;
+        o.textContent = m.slug + (m.default ? " *" : "") + " - " + m.state;
+        sel.appendChild(o);
+      }
+      sel.value = prev;
     }
-    sel.value = prev;
     pickRunningModel(models);
     await refreshTasks(true);
   } catch (e) {
@@ -1002,15 +1010,25 @@ const KIND_HINTS = {
 };
 
 function isAudioKind(k) { return k === "transcribe" || k === "transcribe_diarize" || k === "diarize"; }
+function kindValue() { const r = document.querySelector('#kindOpts input:checked'); return r ? r.value : "look"; }
+function modelForKind(k) {
+  if (k === "diarize") return $("modelDiar").value;
+  if (isAudioKind(k)) return $("modelAsr").value;
+  return $("modelVlm").value;
+}
 
 function kindChanged() {
-  const k = $("kind").value;
+  const k = kindValue();
   $("promptLabel").textContent = k === "assert" ? "expectation" : "question";
   $("kindHint").textContent = KIND_HINTS[k];
   $("prompt").style.display = isAudioKind(k) ? "none" : "";
   $("promptLabel").style.display = isAudioKind(k) ? "none" : "";
+  $("modelVlmBox").style.display = isAudioKind(k) ? "none" : "";
+  $("modelAsrBox").style.display = (k === "transcribe" || k === "transcribe_diarize") ? "" : "none";
+  $("modelDiarBox").style.display = (k === "transcribe_diarize" || k === "diarize") ? "" : "none";
 }
-$("kind").addEventListener("change", kindChanged);
+for (const r of document.querySelectorAll('#kindOpts input'))
+  r.addEventListener("change", kindChanged);
 kindChanged();
 
 // SHA-256 for upload dedup. crypto.subtle needs a secure context (https/localhost), so a
@@ -1092,7 +1110,7 @@ function uploadTask(fd) {
 }
 
 $("go").addEventListener("click", async () => {
-  const kind = $("kind").value;
+  const kind = kindValue();
   const files = $("files").files;
   if (!files.length) { $("status").textContent = "pick at least one media file"; return; }
   if (!isAudioKind(kind) && !$("prompt").value.trim()) { $("status").textContent = "enter a " + $("promptLabel").textContent; return; }
@@ -1101,7 +1119,9 @@ $("go").addEventListener("click", async () => {
   // watch accepts question or expectation; this console submits the prompt as a question
   if (!isAudioKind(kind))
     params[kind === "assert" ? "expectation" : "question"] = $("prompt").value.trim();
-  if ($("model").value) params.model = $("model").value;
+  if (modelForKind(kind)) params.model = modelForKind(kind);
+  if (kind === "transcribe_diarize" && $("modelDiar").value)
+    params.diarize_model = $("modelDiar").value;
   if ($("context").value.trim()) params.context = $("context").value.trim();
   if ($("fps").value) params.fps = parseFloat($("fps").value);
   if ($("frames").value) params.frames = parseInt($("frames").value, 10);

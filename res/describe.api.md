@@ -73,7 +73,7 @@ Task kinds and their `result` shapes:
   CHANNEL of a stereo/multi-channel track (stereo often encodes two separate feeds), always
   processed as independent mono. AISee does NOT interpret or merge lanes (author mic vs
   system audio vs per-participant is the caller's business); the only cross-lane logic is
-  factual: lanes with identical audio are marked `duplicate_of` and not transcribed twice.
+  factual: BIT-identical lanes (equal decoded PCM - dual-mono channels, copied tracks) are marked `duplicate_of` and not transcribed twice; merely similar lanes are always processed.
   Result: `{"tracks": [{label, stream, channel, text, segments: [{start, end, speaker?,
   text}], word_count, rtfx, num_speakers?, speakers?}], "num_tracks", "asr_rtfx",
   "diarized", "artifacts"}`; single-lane results also carry flat
@@ -93,7 +93,8 @@ frames, if the model supports it), `chunk_seconds` (watch), `context` (extra bac
 model should assume), `max_tokens`, `thinking` (bool; for models marked **Thinking: optional** in
 the model list below — enables/disables chain-of-thought reasoning; default `true`; has no effect
 on always-on reasoning models). Audio kinds: `diarize` (transcribe: also attribute speakers per lane;
-default `false`), `min_speakers` / `max_speakers` / `num_speakers` (per-lane diarization hints -
+default `false`), `diarize_model` (diarizer slug; default: the capability default),
+`min_speakers` / `max_speakers` / `num_speakers` (per-lane diarization hints -
 pass them when the count is roughly known; long multi-party audio tends to over-split). A
 suspicious diarization (>10 speakers, unhinted) is flagged `suspicious_speaker_count: true`.
 Expect roughly realtime/30 or faster for transcription on this class of host (a 1 h recording

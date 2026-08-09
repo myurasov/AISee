@@ -32,13 +32,13 @@ pixels), `max_tokens`, `thinking` (bool; enables/disables chain-of-thought for m
 **Thinking: optional** in the model list below; default `true`; no effect on always-on reasoning
 models); `watch` adds `chunk_seconds` and `wait`.
 
-Audio tools: `transcribe(media, diarize=false, min/max/num_speakers?, model?, wait?)` and
+Audio tools: `transcribe(media, diarize=false, min/max/num_speakers?, model?, diarize_model?, wait?)` and
 `diarize(media, min/max/num_speakers?, model?, wait?)`. Every audio track - and every
 channel of a stereo/multi-channel track (stereo often encodes two separate feeds) - is an
 independent mono "lane"; the result's `tracks` list has one entry per lane. AISee never
 interprets or merges lanes (that is YOUR job as the consumer: decide what mic/system/
-per-participant lanes mean); lanes with identical audio are marked `duplicate_of` instead
-of being processed twice. Segment timestamps are absolute seconds in the recording. Pass
+per-participant lanes mean); BIT-identical lanes (equal decoded PCM) are marked
+`duplicate_of` instead of being processed twice; similar-but-distinct lanes always process. Segment timestamps are absolute seconds in the recording. Pass
 speaker-count hints when roughly known (applied per lane; long multi-party audio tends to
 over-split; an unhinted count above 10 is flagged `suspicious_speaker_count`). Full word
 timings and rendered per-lane transcript files are HTTP artifacts:

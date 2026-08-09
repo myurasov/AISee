@@ -95,7 +95,7 @@ cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--nat
 video itself, video-capable models only), `--max-tokens N` (answer budget),
 `--no-thinking` (skip chain-of-thought on thinking-toggle models), `--no-wait` (print task
 id, poll later), `--server URL`, `--token T`. Transcribe flags: `--diarize` (add per-lane
-speaker attribution), `--min-speakers/--max-speakers/--num-speakers` (per-lane diarization
+speaker attribution), `--diarize-model` (diarizer slug), `--min-speakers/--max-speakers/--num-speakers` (per-lane diarization
 hints - pass them when the count is roughly known), `--format text|json|srt|vtt`.
 
 ## Using the REST API
@@ -195,8 +195,8 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
 - **You own the lane semantics.** Every audio track - and every channel of a stereo track
   (stereo often encodes two separate feeds) - comes back as an independent transcribed lane
   in `tracks`; AISee never decides what a lane means (author mic, system audio,
-  per-participant) or merges them - interpret and combine lanes yourself. Identical lanes
-  are marked `duplicate_of` and processed once. Diarization can over-split on long
+  per-participant) or merges them - interpret and combine lanes yourself. Bit-identical lanes (equal decoded
+  PCM) are marked `duplicate_of` and processed once; similar lanes never merge. Diarization can over-split on long
   multi-party audio - pass hints, and treat `suspicious_speaker_count: true` as a cue to
   re-run with `--max-speakers`.
   Word-level timings and rendered transcripts (`transcript.txt/.srt/.vtt`, `transcript.json`
