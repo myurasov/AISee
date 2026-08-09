@@ -133,6 +133,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
             "capabilities": list(cat.get("capabilities", [])),
             "port": port or existing.get("port") or _free_port(),
             "gpu_frac": gpu_frac if gpu_frac is not None else cat.get("gpu_frac", 0.06),
+            "mem_limit": cat.get("mem_limit", "16g"),
             "supports_native_video": False,
             "load_timeout": cat.get("load_timeout", 5400),
             "concurrency": concurrency or cat.get("concurrency", 1),

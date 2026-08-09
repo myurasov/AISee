@@ -1092,17 +1092,24 @@ class Core:
                             self._release_in_use(diar_slug)
                         self.store.update(tid, timing={"diarize_s": round(time.time() - t0, 1)})
                         self.store.touch_model(diar_slug)
+                        turns, n_merged = audio.merge_sliver_speakers(dia.get("turns") or [])
                         if words:
-                            words = audio.assign_speakers(words, dia.get("turns") or [])
+                            words = audio.assign_speakers(words, turns)
                             segments = audio.words_to_segments(words)
+                        talk: dict[str, float] = {}
+                        for tn in turns:
+                            talk[tn["speaker"]] = round(
+                                talk.get(tn["speaker"], 0.0) + tn["end"] - tn["start"], 1)
                         result["speaker_source"] = "diarization"
-                        result["num_speakers"] = dia.get("num_speakers")
-                        result["speakers"] = dia.get("speakers")
+                        result["num_speakers"] = len(talk)
+                        result["speakers"] = talk
+                        if n_merged:
+                            result["sliver_speakers_merged"] = n_merged
                         result["diarize_rtfx"] = dia.get("rtfx")
                         result["diarization_model"] = diar_slug
                         # pyannote over-splits long recordings; surface odd counts
                         if (not p.get("max_speakers") and not p.get("num_speakers")
-                                and (dia.get("num_speakers") or 0) > 10):
+                                and len(talk) > 10):
                             result["suspicious_speaker_count"] = True
                     except RuntimeError as e:
                         diar_error = f"diarization failed: {e}"
@@ -1155,13 +1162,20 @@ class Core:
         self.store.update(tid, timing={"diarize_s": round(time.time() - t0, 1)})
         if self._canceled(tid):
             return
+        turns, n_merged = audio.merge_sliver_speakers(dia.get("turns") or [])
+        talk: dict[str, float] = {}
+        for tn in turns:
+            talk[tn["speaker"]] = round(talk.get(tn["speaker"], 0.0)
+                                        + tn["end"] - tn["start"], 1)
         result = {"duration_s": round(audio_s, 2), "model": entry["slug"],
-                  "num_speakers": dia.get("num_speakers"), "speakers": dia.get("speakers"),
-                  "turns": dia.get("turns"), "rtfx": dia.get("rtfx")}
+                  "num_speakers": len(talk), "speakers": talk,
+                  "turns": turns, "rtfx": dia.get("rtfx")}
+        if n_merged:
+            result["sliver_speakers_merged"] = n_merged
         if note:
             result["note"] = note
         if (not p.get("max_speakers") and not p.get("num_speakers")
-                and (dia.get("num_speakers") or 0) > 10):
+                and len(talk) > 10):
             result["suspicious_speaker_count"] = True
         art_dir = paths.media_dir() / tid / "artifacts"
         result["artifacts"] = audio.write_diarization_artifacts(

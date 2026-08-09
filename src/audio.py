@@ -111,10 +111,16 @@ def tracks_duplicate(wav_a: Path, wav_b: Path) -> bool:
 # ---------------- engine clients (localhost containers) ----------------
 
 def asr_transcribe(port: int, wav: Path, timeout: float) -> dict:
-    with open(wav, "rb") as f:
-        r = httpx.post(f"http://127.0.0.1:{port}/v1/audio/transcriptions",
-                       files={"file": (wav.name, f, "audio/wav")},
-                       data={"timestamps": "true"}, timeout=timeout)
+    try:
+        with open(wav, "rb") as f:
+            r = httpx.post(f"http://127.0.0.1:{port}/v1/audio/transcriptions",
+                           files={"file": (wav.name, f, "audio/wav")},
+                           data={"timestamps": "true"}, timeout=timeout)
+    except httpx.HTTPError as e:
+        raise RuntimeError(
+            f"ASR engine connection failed mid-transcription ({e}); the container "
+            "may have been killed (memory cap?) - check `aisee model logs` and "
+            "`docker inspect` OOMKilled") from e
     if r.status_code != 200:
         raise RuntimeError(f"ASR engine HTTP {r.status_code}: {r.text[:500]}")
     return r.json()
@@ -139,6 +145,29 @@ def diarize(port: int, wav: Path, timeout: float, min_speakers: int | None = Non
 
 
 # ---------------- word->speaker merge + segment building ----------------
+
+def merge_sliver_speakers(turns: list[dict], min_talk_s: float = 5.0
+                          ) -> tuple[list[dict], int]:
+    """pyannote over-splits: speakers with almost no total talk are cluster shards,
+    not people. Reassign their turns to the temporally nearest real speaker (a real
+    participant says at least a few sentences). Returns (turns, merged_count)."""
+    talk: dict[str, float] = {}
+    for t in turns:
+        talk[t["speaker"]] = talk.get(t["speaker"], 0.0) + t["end"] - t["start"]
+    keep = {s for s, v in talk.items() if v >= min_talk_s}
+    if not keep or len(keep) == len(talk):
+        return turns, 0
+    real = sorted((t for t in turns if t["speaker"] in keep), key=lambda t: t["start"])
+    out = []
+    for t in turns:
+        if t["speaker"] in keep:
+            out.append(t)
+            continue
+        mid = (t["start"] + t["end"]) / 2
+        nearest = min(real, key=lambda r: min(abs(r["start"] - mid), abs(r["end"] - mid)))
+        out.append({**t, "speaker": nearest["speaker"]})
+    return sorted(out, key=lambda t: t["start"]), len(talk) - len(keep)
+
 
 def assign_speakers(words: list[dict], turns: list[dict]) -> list[dict]:
     """Label each ASR word with the diarization turn covering its midpoint

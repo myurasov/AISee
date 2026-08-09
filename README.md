@@ -136,7 +136,7 @@ GB10 (2026-07 / 2026-08). Installing by slug applies the serving flags each one 
 
 Serving defaults assume the **main mode of operation: a single resident model per GPU**, and
 are computed from the detected GPU at `model install` time: `gpu_frac` is **1.0 on discrete
-GPUs** and **0.80 on unified-memory systems** (GB10/Grace class, where the GPU pool is also
+GPUs** and **0.75 on unified-memory systems** (GB10/Grace class, where the GPU pool is also
 system RAM - the reserve keeps the OS and the small audio models alive; resident models'
 fractions are additionally capped at a 0.92 sum there), and the context window is the largest standard size (up to 128k) whose KV cache
 fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified) serves the

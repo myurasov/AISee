@@ -146,13 +146,16 @@ def _start_audio_model(entry: dict, hf_token: str | None = None) -> None:
     CUDA), so wait_ready surfaces a CPU fallback loudly instead of serving it."""
     name = container_name(entry["slug"])
     port = int(entry["port"])
+    mem = str(entry.get("mem_limit") or "16g")
     _run(["rm", "-f", name], check=False)
     args = [
         "run", "-d", "--name", name, "--restart", "unless-stopped",
         "--gpus", "all", "--ipc=host",
-        # hard RAM cap: on unified-memory hosts a leaking container would otherwise
-        # thrash the whole OS; hitting the cap kills the container visibly instead
-        "--memory", "16g", "--memory-swap", "16g",
+        # hard RAM cap: on unified-memory hosts a leaking/oversized job would otherwise
+        # thrash the whole OS; hitting the cap kills the container visibly instead.
+        # oom-score-adj makes audio containers the global OOM killer's first pick, so
+        # host pressure never takes down sshd or the resident VLM
+        "--memory", mem, "--memory-swap", mem, "--oom-score-adj", "500",
         "-e", "HF_HOME=/hf-cache",
         "-v", f"{paths.hf_cache()}:/hf-cache",
         "-p", f"{port}:{port}",

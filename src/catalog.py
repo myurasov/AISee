@@ -11,7 +11,7 @@ DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 
 # Serving defaults assume the main mode of operation: ONE model resident per GPU, and are
 # computed from the detected GPU at install time (registry.gpu_profile / fit_max_model_len):
-# gpu_frac is ~1.0 on discrete GPUs and 0.80 on unified-memory systems (GB10 class, where
+# gpu_frac is ~1.0 on discrete GPUs and 0.75 on unified-memory systems (GB10 class, where
 # the GPU pool is also system RAM); max_model_len is the largest standard context whose
 # KV cache fits next to the weights (catalog entries carry weights_gib / kv_gib_128k
 # estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
@@ -32,9 +32,10 @@ CONTEXT_CANDIDATES = (131072, 65536, 32768, 16384, 8192)
 ACTIVATION_HEADROOM_GIB = 4               # runtime overhead on top of weights + KV
 # unified memory (GB10): the GPU pool IS system RAM, so vLLM's slice must leave room
 # for the OS, AISee itself, and the small audio models (~8 GB) - 0.90 plus audio
-# starved the OS into an ssh-killing thrash on a 120 GiB GB10; 0.80 still fits every
-# catalog model at its full auto-sized context
-GPU_FRAC_UNIFIED = 0.80
+# starved the OS into an ssh-killing thrash on a 120 GiB GB10; even 0.80 left only
+# ~4 GB available with the audio models co-resident. 0.75 still fits every catalog
+# model at its full auto-sized context (largest needs 79 GiB at 128k)
+GPU_FRAC_UNIFIED = 0.75
 UNIFIED_CAPACITY_BUDGET = 0.92  # resident gpu_frac sum cap on unified hosts (OS reserve)
 GPU_FRAC_DISCRETE = 0.97  # dedicated VRAM: literal 1.0 fails vLLM's free-memory check
                           #   (driver/ECC overhead holds a few hundred MiB at startup)
@@ -213,6 +214,9 @@ CATALOG: dict[str, dict] = {
         "modality": "audio",
         "capabilities": ["transcribe"],
         "gpu_frac": 0.06,   # ~5 GB resident (transducer: no KV cache)
+        # long-form ASR peaks high in HOST RAM: timestamp alignment on a 79-min file
+        # hit ~16 GB anon rss (measured); the cap is the contained-failure bound
+        "mem_limit": "40g",
         "concurrency": 1,   # one GPU job at a time (unified-memory discipline)
         "load_timeout": 5400,  # first start may build the serving image on the host
         "license": "CC-BY-4.0",
@@ -232,6 +236,7 @@ CATALOG: dict[str, dict] = {
         "modality": "audio",
         "capabilities": ["diarize"],
         "gpu_frac": 0.04,   # ~3 GB resident
+        "mem_limit": "16g",
         "concurrency": 1,
         "load_timeout": 5400,
         "license": "MIT (weights HF-gated by a contact form)",
