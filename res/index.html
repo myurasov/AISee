@@ -143,6 +143,8 @@
         <option value="look">look - single-shot question answering</option>
         <option value="assert">assert - pass/fail an expectation</option>
         <option value="watch">watch - timestamp-aware analysis of a video</option>
+        <option value="transcribe">transcribe - speaker-attributed transcript (audio/video)</option>
+        <option value="diarize">diarize - who spoke when</option>
       </select>
     </div>
     <div><label for="model" title="which installed model answers; the default is the safe all-rounder">model</label><select id="model"><option value="">(default)</option></select></div>
@@ -150,7 +152,7 @@
   <div id="kindHint" class="muted" style="margin-top:.25rem"></div>
   <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images, or a video)</label>
   <div id="drop">
-    <input type="file" id="files" multiple accept="image/*,video/*">
+    <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
     <div id="dropHint" class="muted">drag &amp; drop files here, or click to browse</div>
   </div>
   <label for="prompt" id="promptLabel">question</label>
@@ -988,12 +990,20 @@ const KIND_HINTS = {
           "Use when you will act on the verdict.",
   watch: "analyzes a whole video chunk by chunk (use for clips longer than ~1 min). A question " +
          "returns per-chunk findings + a synthesized answer; an expectation returns pass/fail " +
-         "plus the time ranges where it broke."
+         "plus the time ranges where it broke.",
+  transcribe: "speaker-attributed, word-timestamped transcript of an audio file or a video's " +
+              "audio track(s); no question needed. Artifacts: transcript.json/.txt/.srt/.vtt.",
+  diarize: "who spoke when: speaker turns with timestamps, no transcript; no question needed."
 };
 
+function isAudioKind(k) { return k === "transcribe" || k === "diarize"; }
+
 function kindChanged() {
-  $("promptLabel").textContent = $("kind").value === "assert" ? "expectation" : "question";
-  $("kindHint").textContent = KIND_HINTS[$("kind").value];
+  const k = $("kind").value;
+  $("promptLabel").textContent = k === "assert" ? "expectation" : "question";
+  $("kindHint").textContent = KIND_HINTS[k];
+  $("prompt").style.display = isAudioKind(k) ? "none" : "";
+  $("promptLabel").style.display = isAudioKind(k) ? "none" : "";
 }
 $("kind").addEventListener("change", kindChanged);
 kindChanged();
@@ -1080,10 +1090,11 @@ $("go").addEventListener("click", async () => {
   const kind = $("kind").value;
   const files = $("files").files;
   if (!files.length) { $("status").textContent = "pick at least one media file"; return; }
-  if (!$("prompt").value.trim()) { $("status").textContent = "enter a " + $("promptLabel").textContent; return; }
+  if (!isAudioKind(kind) && !$("prompt").value.trim()) { $("status").textContent = "enter a " + $("promptLabel").textContent; return; }
   const params = { kind };
   // watch accepts question or expectation; this console submits the prompt as a question
-  params[kind === "assert" ? "expectation" : "question"] = $("prompt").value.trim();
+  if (!isAudioKind(kind))
+    params[kind === "assert" ? "expectation" : "question"] = $("prompt").value.trim();
   if ($("model").value) params.model = $("model").value;
   if ($("context").value.trim()) params.context = $("context").value.trim();
   if ($("fps").value) params.fps = parseFloat($("fps").value);

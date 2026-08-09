@@ -1,8 +1,9 @@
 # AISee v{{version}} - MCP tool guide
 
-**AISee is a tool that gives AI agents eyes.** You are connected to it over MCP: the tools
-below send image/video files to a vision-language model (VLM) running on the AISee host and
-return its answers. This guide covers only what you can do from here; the underlying REST API
+**AISee is a tool that gives AI agents eyes and ears.** You are connected to it over MCP: the
+tools below send image/video/audio files to models running on the AISee host (a vision-language
+model for look/assert/watch; ASR + diarization models for transcribe/diarize) and return their
+answers. This guide covers only what you can do from here; the underlying REST API
 and host administration are out of scope for an MCP client.
 
 ## Tools
@@ -12,6 +13,8 @@ and host administration are out of scope for an MCP client.
 | `look(media, question, ...)` | OCR, descriptions, "where is X", open questions | `{answer}` |
 | `assert_visual(media, expectation, ...)` | machine-checkable verdicts (tests, gates) | `{pass, reason, evidence}` |
 | `watch(video, question OR expectation, ...)` | whole-video analysis; videos longer than ~1 min | per-chunk results + synthesized `answer`, or `{pass, failing_ranges}` |
+| `transcribe(media, ...)` | speaker-attributed transcript of a recording (audio file, or video with audio) | `{text, segments, num_speakers, speakers, artifacts, ...}` |
+| `diarize(media, ...)` | who spoke when (no transcript) | `{turns, num_speakers, speakers}` |
 | `list_models()` | what is installed and its live state | model list |
 | `list_tasks(status?, model?)` | recent/queued tasks | task list |
 | `get_task(task_id)` | poll one task: status, progress, timings (incl. `total_s` wall-clock once finished), result | task |
@@ -28,6 +31,18 @@ sampled frames; video-capable models only), `context` (background the model cann
 pixels), `max_tokens`, `thinking` (bool; enables/disables chain-of-thought for models marked
 **Thinking: optional** in the model list below; default `true`; no effect on always-on reasoning
 models); `watch` adds `chunk_seconds` and `wait`.
+
+Audio tools: `transcribe(media, speakers=true, min/max/num_speakers?, model?, wait?)` and
+`diarize(media, min/max/num_speakers?, model?, wait?)`. Segment timestamps are absolute
+seconds in the recording. Pass speaker-count hints when roughly known (long multi-party
+audio tends to over-split; an unhinted count above 10 is flagged
+`suspicious_speaker_count`). A multi-track recording (Zoom/OBS per-participant tracks) is
+transcribed per track and merged - each track is one speaker labeled from its track title
+(`speaker_source: "tracks"`); duplicate/mixdown tracks are detected and skipped. Full word
+timings and rendered transcript files are HTTP artifacts:
+`GET {{api_base}}/v1/tasks/{id}/artifacts/transcript.json` (also `.txt`, `.srt`, `.vtt`).
+Long recordings take minutes (expect ~realtime/30 or faster for ASR) - pass `wait=false`
+and poll `get_task`.
 
 ## Uploading media from your machine
 

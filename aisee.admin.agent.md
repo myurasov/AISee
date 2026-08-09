@@ -11,7 +11,7 @@ triggers: ["install aisee", "set up aisee", "aisee admin", "manage aisee models"
 
 # AISee admin agent (for AI agents that operate an AISee host)
 
-AISee is a tool that gives AI agents eyes; this role runs the host that provides them. You
+AISee is a tool that gives AI agents eyes and ears; this role runs the host that provides them. You
 install AISee, manage models and the API daemon, and hand consumers a URL plus (optionally) a
 consumer token. Admin actions are the modifying ones: model install/uninstall/start/stop.
 Everything a consumer can do, you can do too - the admin token is accepted everywhere.
@@ -120,6 +120,16 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
 
 Consult `GET /v1/describe` (or `README.md`) for the catalog with per-model
 strengths/weaknesses/pitfalls and the current serving configuration.
+
+Audio models (`parakeet-tdt-0.6b-v3` for transcribe, `pyannote/speaker-diarization-3.1` for
+diarize) share the exact same lifecycle. Differences to know: their serving images are built
+locally on the host from `res/serving/` on first start (~10-20 min one-time; progress shows
+"building serving image"); their containers GPU-gate at startup and exit nonzero when
+inference is not on CUDA (read `model logs <slug>` for the FATAL line - never serve a silent
+CPU fallback); pyannote weights are HF-gated - the HF_TOKEN account must accept the license
+forms on speaker-diarization-3.1, segmentation-3.0, AND wespeaker-voxceleb-resnet34-LM. The
+first model installed per capability becomes `defaults.default_transcribe_model` /
+`default_diarize_model`.
 
 ## Troubleshooting
 

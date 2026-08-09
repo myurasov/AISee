@@ -1,31 +1,37 @@
 ---
 name: aisee-consumer
 description: >
-  Use AISee to see: verify screenshots and videos, read text off screens, and judge whether a
-  UI looks right. AISee serves vision-language models on a GPU host and exposes them through a
-  CLI, a REST API, and an MCP server. Adopt this agent whenever a task requires looking at an
-  image or a video file: visual verification in e2e tests, OCR, UI checks, or describing what
-  happens in a recording. This is the CONSUMER role: querying only; for installing AISee or
-  managing models, see aisee.admin.agent.md.
+  Use AISee to see and hear: verify screenshots and videos, read text off screens, judge
+  whether a UI looks right, and transcribe recordings with speaker attribution. AISee serves
+  vision-language and audio (ASR + diarization) models on a GPU host and exposes them through
+  a CLI, a REST API, and an MCP server. Adopt this agent whenever a task requires looking at
+  an image or a video file (visual verification in e2e tests, OCR, UI checks, describing a
+  recording) or turning a meeting recording into a transcript. This is the CONSUMER role:
+  querying only; for installing AISee or managing models, see aisee.admin.agent.md.
 triggers: ["look at this screenshot", "verify visually", "check the UI", "watch this video",
-           "what does the screen show", "visual QA", "aisee"]
+           "what does the screen show", "visual QA", "transcribe this recording",
+           "who said what", "aisee"]
 ---
 
 # AISee consumer agent (for AI agents that query AISee)
 
-AISee is a tool that gives AI agents eyes. You send it image or video files plus a question or
-an expectation; a vision-language model (VLM) running on a GPU host answers. Everything is
+AISee is a tool that gives AI agents eyes and ears. You send it image or video files plus a
+question or an expectation and a vision-language model (VLM) running on a GPU host answers; or
+you send it a recording (audio file, or video with audio) and its ASR + diarization models
+return a speaker-attributed transcript. Everything is
 asynchronous: you submit a task, poll it, and read the result. As a consumer you query and
 inspect - you do not manage models or the server (those are admin actions and, if the host is
 configured with an admin token, will answer 403 to you).
 
-## The three query kinds - pick the right one
+## The five query kinds - pick the right one
 
 | Kind | Input | Returns | Use when |
 |---|---|---|---|
 | `look` | media + question | free text | OCR, descriptions, "where is X", open questions |
 | `assert` | media + expectation | `{pass, reason, evidence}` | you need a machine-checkable verdict (tests, gates) |
 | `watch` | one video + question or expectation | per-chunk results + synthesis / failing time ranges | videos longer than ~1 minute, or time-localized checks |
+| `transcribe` | one recording (audio, or video with audio) | `{text, segments[start,end,speaker,text], num_speakers, artifacts}` | meeting transcripts, "what was said", speaker attribution |
+| `diarize` | one recording | `{turns[start,end,speaker], num_speakers}` | who spoke when, without a transcript |
 
 Prefer `assert` over `look` whenever you will branch on the outcome: it returns a strict
 boolean plus the model's reasoning and concrete evidence, and the CLI exit code follows the
@@ -49,7 +55,7 @@ Three equivalent ways in, all backed by the same REST API:
 2. **REST** - plain HTTP; send `Authorization: Bearer <consumer token>` when auth is on.
 3. **MCP** - the API server speaks MCP (streamable HTTP) at `http://HOST:PORT/mcp`; nothing
    to install. It exposes exactly these consumer capabilities as tools (`look`,
-   `assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
+   `assert_visual`, `watch`, `transcribe`, `diarize`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
    `describe`, `health`). Register it in your harness, e.g.:
 
    ```json
@@ -78,6 +84,9 @@ aisee assert shot.png -e "the Start button is visible and enabled"     # exit co
 aisee assert run.mp4 -e "the app reaches the main menu" --native
 aisee watch run.mp4 -q "describe what the user does" --fps 2
 aisee watch run.mp4 -e "the frame counter increases monotonically" --fps 8
+aisee transcribe meeting.mp4                       # speaker-labeled transcript (text)
+aisee transcribe meeting.mp4 --format srt --max-speakers 5
+aisee diarize meeting.wav --min-speakers 2
 aisee status | model list | task list | task show <id>
 ```
 
@@ -85,7 +94,9 @@ Useful flags: `--model <slug>` (else the default model), `--context "<background
 cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--native` (send the
 video itself, video-capable models only), `--max-tokens N` (answer budget),
 `--no-thinking` (skip chain-of-thought on thinking-toggle models), `--no-wait` (print task
-id, poll later), `--server URL`, `--token T`.
+id, poll later), `--server URL`, `--token T`. Transcribe flags: `--no-speakers` (skip
+speaker attribution), `--min-speakers/--max-speakers/--num-speakers` (diarization hints -
+pass them when the count is roughly known), `--format text|json|srt|vtt`.
 
 ## Using the REST API
 
@@ -98,9 +109,12 @@ Submit and poll:
 
 ```
 POST /v1/tasks     multipart: files=<media>..., params=<JSON string>
-                   params: {"kind":"look|assert|watch", "question"|"expectation":"...",
+                   params: {"kind":"look|assert|watch|transcribe|diarize",
+                            "question"|"expectation":"..." (vision kinds only),
                             "model":"<slug>?", "fps"?, "frames"?, "native"?, "chunk_seconds"?,
-                            "context"?, "max_tokens"?, "thinking"?}
+                            "context"?, "max_tokens"?, "thinking"?,
+                            "speakers"? (transcribe), "min_speakers"?, "max_speakers"?,
+                            "num_speakers"?}
   -> {"id": "..."}
 GET  /v1/tasks/{id}   poll every 2-5 s until status is done | failed | canceled
 ```
@@ -175,10 +189,20 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   weaknesses, and pitfalls.
 - **Trust but verify verdicts.** `assert` returns `evidence`; when a verdict is surprising,
   read `reason`/`evidence` and consider a follow-up `look` before acting on it.
+- **Transcription is fast but not instant.** Expect ~realtime/30 or better for ASR plus a
+  similar order for diarization (a 1 h meeting in a few minutes), after any cold model load.
+  Segment/word timestamps are absolute seconds in the recording. Multi-track recordings
+  (Zoom/OBS per-participant tracks) get perfect per-track attribution automatically
+  (`speaker_source: "tracks"`); duplicate/mixdown tracks are detected and skipped. Single-track
+  recordings are diarized; the speaker count can over-split on long multi-party audio - pass
+  hints, and treat `suspicious_speaker_count: true` as a cue to re-run with `--max-speakers`.
+  Word-level timings and rendered transcripts (`transcript.txt/.srt/.vtt`, `transcript.json`
+  with words) download from `GET /v1/tasks/{id}/artifacts/<name>`.
 
 ## Limitations
 
-- File-based media only (images, video files) - no live streams, no URLs; upload the bytes.
+- File-based media only (images, video, audio files) - no live streams, no URLs; upload the
+  bytes. Audio kinds are batch-only: no live captions yet.
 - Results depend on a VLM: it can be wrong, especially on tiny text, precise counts, and exact
   numbers. Design checks so a false verdict is caught (negative controls, evidence review).
 - A model that is not installed cannot be queried; `GET /v1/catalog` shows what could be

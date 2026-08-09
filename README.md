@@ -21,11 +21,11 @@
 
 ## What Is AISee?
 
-AISee is a tool that gives AI agents eyes. It serves vision-language models in docker containers
-on a GPU host and answers questions about images and video files, over a CLI, a REST API, or an
-MCP server.
+AISee is a tool that gives AI agents eyes and ears. It serves vision-language and audio (ASR +
+diarization) models in docker containers on a GPU host and answers questions about images, video,
+and audio files, over a CLI, a REST API, or an MCP server.
 
-There are three kinds of queries:
+There are five kinds of queries:
 
 - `look` - free-form question, returns text. OCR, descriptions, "where is the button".
 - `assert` - an expectation to verify, returns `{pass, reason, evidence}`. Meant for visual
@@ -33,6 +33,11 @@ There are three kinds of queries:
 - `watch` - whole-video analysis, chunk by chunk, at a chosen fps. Given an expectation it
   returns per-chunk verdicts and `failing_ranges` (the time spans where it broke); given a
   question it returns per-chunk notes and a synthesized answer for the whole video.
+- `transcribe` - speaker-attributed, word-timestamped transcript of a recording (an audio file,
+  or a video container's audio). Multi-track recordings (Zoom/OBS per-participant tracks) get
+  perfect per-track speaker attribution automatically; single-track audio is diarized. Rendered
+  transcripts (`.txt/.srt/.vtt` + full JSON) are downloadable task artifacts.
+- `diarize` - who spoke when: speaker turns with timestamps, no transcript.
 
 The CLI is a thin client of the REST API, so there is a single code path: anything the CLI does
 can be done with curl, and both feed the same task queue. All queries are asynchronous - you get
@@ -89,6 +94,9 @@ More examples:
 ./aisee assert run.mp4 -e "the app launches into the main menu" --native
 ./aisee watch run.mp4 -e "the frame counter increases monotonically" --fps 8
 ./aisee watch run.mp4 -q "describe what the user does" --fps 2
+./aisee transcribe meeting.mp4                      # speaker-labeled transcript
+./aisee transcribe meeting.mp4 --format srt --max-speakers 5
+./aisee diarize meeting.wav
 ./aisee status
 ```
 
@@ -110,8 +118,8 @@ drops the entry; weights stay in the shared cache.
 
 ### Built-In Catalog
 
-The built-in catalog covers seven models measured on a DGX Spark GB10 (2026-07). Installing by
-slug applies the serving flags each one needs:
+The built-in catalog covers eight vision models and two audio models, measured on a DGX Spark
+GB10 (2026-07 / 2026-08). Installing by slug applies the serving flags each one needs:
 
 | Slug | Context | Notes |
 |---|---|---|
@@ -123,11 +131,14 @@ slug applies the serving flags each one needs:
 | `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
 | `cosmos3-super` | 64k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 128k on GB10, 64k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
 | `ui-tars-1-5-7b` | 128k | GUI-agent model (action generation later); stills only |
+| `parakeet-tdt-0.6b-v3` | audio | ASR default: 25 languages incl. Russian, word timestamps, 12-87x realtime, no hallucination loops |
+| `pyannote/speaker-diarization-3.1` | audio | diarization default: unbounded speaker count, ~25x realtime (HF-gated: accept 3 repo licenses) |
 
 Serving defaults assume the **main mode of operation: a single resident model per GPU**, and
 are computed from the detected GPU at `model install` time: `gpu_frac` is **1.0 on discrete
-GPUs** and **0.90 on unified-memory systems** (GB10/Grace class, where the GPU pool is also
-system RAM), and the context window is the largest standard size (up to 128k) whose KV cache
+GPUs** and **0.80 on unified-memory systems** (GB10/Grace class, where the GPU pool is also
+system RAM - the reserve keeps the OS and the small audio models alive; resident models'
+fractions are additionally capped at a 0.92 sum there), and the context window is the largest standard size (up to 128k) whose KV cache
 fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified) serves the
 whole catalog at 128k; a **96 GB** discrete card serves everything at 128k except the dense 32B
 (64k - its 128k KV cache alone is ~34 GiB); a **48 GB** card fits the 7-17 GiB models at 128k
@@ -140,6 +151,20 @@ chunks are processed in parallel. Context length is the
 expensive knob - vLLM reserves KV-cache memory for the full `max_model_len` inside the model's
 `gpu_frac` slice, so raising it costs GPU memory even for short requests; override with
 `--max-model-len` / `--gpu-frac` at install.
+
+**Audio models** are first-class citizens of the same lifecycle: install/remove/start/stop/
+logs/default, the same registry TOMLs, idle-timeout unload, and auto-load on first use all work
+identically. They differ in serving: instead of vLLM they run small FastAPI apps in locally
+built images (`aisee/audio-nemo`, `aisee/audio-pyannote`; built automatically from
+`res/serving/` on the first start, ~10-20 min one-time), sized honestly (`gpu_frac`
+0.06/0.04, ~8 GB total) so they co-reside comfortably next to a vision model. Both containers
+GPU-gate at startup: if inference is not actually running on CUDA (the classic ARM64 failure
+mode is a silent CPU fallback), the container exits loudly instead of serving 30-120x slower.
+The first model installed for a capability becomes that capability's default
+(`defaults.default_transcribe_model` / `default_diarize_model` in config.toml). The pyannote
+weights are HF-gated: the host's HF_TOKEN account must have accepted the license forms on
+`pyannote/speaker-diarization-3.1`, `pyannote/segmentation-3.0`, and
+`pyannote/wespeaker-voxceleb-resnet34-LM`.
 
 ### Other Models
 
@@ -254,6 +279,7 @@ Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 | `GET /v1/gpu` | consumer | live GPU utilization/memory/power/temperature |
 | `GET /v1/models` | consumer | registry with state, port, idle_timeout, last_used, default |
 | `GET /v1/catalog` | consumer | built-in catalog with installed flags |
+| `GET /v1/tasks/{id}/artifacts` | consumer | derived outputs (transcripts, RTTM); `/{name}` downloads one |
 | `GET /v1/config` | consumer | effective global configuration (api + defaults) |
 | `POST /v1/tasks` | consumer | submit, returns `{id}`. Multipart: `files` + `params` (JSON string); or plain JSON with `media_paths` for files already on the host |
 | `GET /v1/tasks` | consumer | list, filters `?status=` `?model=` |
@@ -316,7 +342,8 @@ credentials to go open again.
 The API server also speaks MCP (Model Context Protocol, streamable HTTP) at
 `http://HOST:PORT/mcp` - nothing to install on the client, point an agent harness (Claude
 Code, Cursor, etc.) at the URL. It exposes AISee as native tools: `look`, `assert_visual`,
-`watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`, `describe`, `health`. It is
+`watch`, `transcribe`, `diarize`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
+`describe`, `health`. It is
 a thin adapter over the same REST API and intentionally carries **consumer capabilities
 only** - model management is not reachable over MCP.
 

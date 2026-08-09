@@ -1,6 +1,6 @@
 # AISee v{{version}} - API guide for AI agents
 
-**AISee is a tool that gives AI agents eyes.** Send it images or video files with a question (`look`), an expectation to verify (`assert`), or a whole video to analyze chunk by chunk (`watch`); it runs a vision-language model on this host and returns the answer. Everything is asynchronous: you submit a task and poll it.
+**AISee is a tool that gives AI agents eyes and ears.** Send it images or video files with a question (`look`), an expectation to verify (`assert`), or a whole video to analyze chunk by chunk (`watch`); it runs a vision-language model on this host and returns the answer. Send it a recording (an audio file, or a video with audio) to `transcribe` (speaker-attributed, word-timestamped transcript) or `diarize` (who spoke when). Everything is asynchronous: you submit a task and poll it.
 
 ## Endpoints
 
@@ -18,6 +18,8 @@
 | DELETE | `/v1/tasks/{id}` | consumer | cancel a task |
 | GET | `/v1/tasks/{id}/media` | consumer | the task's media files with facts: kind, dimensions, duration, frames, size |
 | GET | `/v1/tasks/{id}/media/{i}` | consumer | download the task's i-th media file; append `/thumb` for a JPEG thumbnail |
+| GET | `/v1/tasks/{id}/artifacts` | consumer | derived output files (transcripts, RTTM) with sizes |
+| GET | `/v1/tasks/{id}/artifacts/{name}` | consumer | download one artifact, e.g. `transcript.srt` |
 | GET | `/v1/blobs/{sha256}` | consumer | dedup probe: {exists, size} for already-uploaded content |
 | POST | `/v1/blobs` | consumer | upload media into the content store -> [{sha256, size}] |
 | POST | `/v1/models` | admin | install a model: {"name": catalog slug or HF id} |
@@ -42,8 +44,8 @@ inspect, but not install/start/stop models - ask the host operator for those.
 
 This API is also exposed as an MCP server (streamable HTTP) at `/mcp` on the same
 host/port, guarded by the consumer token, with consumer capabilities only: tools `look`,
-`assert_visual`, `watch`, `list_models`, `list_tasks`, `get_task`, `cancel_task`,
-`describe`, `health`. MCP tool media paths are resolved on this host (no upload);
+`assert_visual`, `watch`, `transcribe`, `diarize`, `list_models`, `list_tasks`, `get_task`,
+`cancel_task`, `describe`, `health`. MCP tool media paths are resolved on this host (no upload);
 `GET /v1/describe?flavor=mcp` returns the MCP-specific guide.
 
 ## Task lifecycle (how to use this API)
@@ -66,15 +68,31 @@ Task kinds and their `result` shapes:
 - `watch` - chunked whole-video analysis. With `expectation`: per-chunk verdicts +
   `{"pass": bool, "failing_ranges": [...]}` (timestamps where it broke). With `question`:
   per-chunk findings + a synthesized `answer` over the whole video.
+- `transcribe` - speaker-attributed transcript of ONE audio file or video container. Result:
+  `{"text", "segments": [{start, end, speaker, text}], "num_speakers", "speakers": {label:
+  talk_seconds}, "speaker_source": "diarization"|"tracks"|"none", "word_count", "asr_rtfx",
+  "artifacts": [...]}` - timestamps are absolute seconds in the recording. Full word timings
+  plus rendered `transcript.txt/.srt/.vtt` are artifacts (`GET /v1/tasks/{id}/artifacts/...`).
+  A multi-track recording (e.g. Zoom/OBS per-participant tracks) is transcribed per track and
+  merged - each track is one speaker, labeled from track titles (`speaker_source: "tracks"`);
+  duplicate/mixdown tracks are detected (`duplicate_tracks: true`) and not double-transcribed.
+- `diarize` - who spoke when, no transcript. Result: `{"turns": [{start, end, speaker}],
+  "num_speakers", "speakers", "rtfx"}` + `diarization.rttm` artifact.
 
 Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON string, files in
-`files`): `kind` (look|assert|watch), `model` (slug; omit for the default), `question` or
+`files`): `kind` (look|assert|watch|transcribe|diarize), `model` (slug; omit for the default),
+`question` or
 `expectation`, `fps` (video sampling rate: 1 for overviews, 8-15 to hunt flicker/glitches),
 `frames` (even-sampled frame count when fps is not set), `native` (send video natively instead of
 frames, if the model supports it), `chunk_seconds` (watch), `context` (extra background text the
 model should assume), `max_tokens`, `thinking` (bool; for models marked **Thinking: optional** in
 the model list below — enables/disables chain-of-thought reasoning; default `true`; has no effect
-on always-on reasoning models).
+on always-on reasoning models). Audio kinds: `speakers` (transcribe: attribute speech to
+speakers; default `true`), `min_speakers` / `max_speakers` / `num_speakers` (diarization hints -
+pass them when the count is roughly known; long multi-party audio tends to over-split). A
+suspicious diarization (>10 speakers, unhinted) is flagged `suspicious_speaker_count: true`.
+Expect roughly realtime/30 or faster for transcription on this class of host (a 1 h recording
+in ~2-5 min); diarization adds a similar order.
 
 Answer budgets (`max_tokens`): when not passed per call, defaults are per kind - `assert` 1024,
 `watch` 4096 per chunk (the final cross-chunk synthesis gets the `look` budget, since its
