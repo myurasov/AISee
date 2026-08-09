@@ -9,16 +9,15 @@ Design notes (see res/add-audio-implementation-report.md in the project):
   per-participant, ...). Every audio stream - and every CHANNEL of a multi-channel
   stream, since stereo is often two encoded tracks - is one independent mono
   "lane"; each lane gets its own transcript (and diarization when asked). Combining
-  lanes is the consumer's job. The only cross-lane logic is factual: lanes with
-  identical audio (dual-mono, mixdown copies) are detected by correlation and not
-  transcribed twice.
+  lanes is the consumer's job. The only cross-lane logic is factual: BIT-IDENTICAL
+  lanes (dual-mono channels, copied tracks - equal PCM hashes after extraction) are
+  not transcribed twice; merely similar lanes are always processed independently.
 - Serving containers receive 16 kHz mono WAV over multipart HTTP (localhost), so
   they never need access to host paths or the task media dir.
 - Segment/word timestamps are absolute positions in the recording.
 """
 
 import json
-import struct
 import subprocess
 from pathlib import Path
 
@@ -85,51 +84,25 @@ def wav_duration(path: str | Path) -> float:
         return w.getnframes() / float(w.getframerate())
 
 
-# ---------------- duplicate-track detection ----------------
+# ---------------- duplicate-lane detection ----------------
 
-def _wav_window(path: str | Path, start_s: float, dur_s: float) -> list[float]:
-    """PCM samples of one window as floats (16 kHz mono s16le wav from extract_track)."""
+def pcm_sha256(wav: str | Path) -> str:
+    """SHA-256 of the decoded PCM frames (WAV header excluded).
+
+    Lanes extracted through the same deterministic decode/resample pipeline hash
+    equal exactly when the source audio is bit-identical (dual-mono channels, copied
+    tracks) - so dedup skips work ONLY on provable duplicates, never on merely
+    similar lanes (verified: correlated-but-distinct lanes hash differently)."""
+    import hashlib
     import wave
-    with wave.open(str(path), "rb") as w:
-        sr = w.getframerate()
-        w.setpos(min(int(start_s * sr), w.getnframes()))
-        raw = w.readframes(int(dur_s * sr))
-    n = len(raw) // 2
-    return list(struct.unpack(f"<{n}h", raw[:n * 2]))
-
-
-def _pearson(a: list[float], b: list[float]) -> float:
-    n = min(len(a), len(b))
-    if n < 100:
-        return 0.0
-    a, b = a[:n], b[:n]
-    ma, mb = sum(a) / n, sum(b) / n
-    cov = va = vb = 0.0
-    for x, y in zip(a, b):
-        dx, dy = x - ma, y - mb
-        cov += dx * dy
-        va += dx * dx
-        vb += dy * dy
-    if va <= 0 or vb <= 0:
-        return 1.0 if va == vb else 0.0  # two silent windows are "identical"
-    return cov / (va ** 0.5 * vb ** 0.5)
-
-
-def tracks_duplicate(wav_a: Path, wav_b: Path) -> bool:
-    """True when two extracted tracks carry the same audio (mixdown copies).
-
-    Zero-lag correlation on three sampled windows: real per-participant tracks
-    contain different voices, so their correlation is low even when they overlap."""
-    dur = min(wav_duration(wav_a), wav_duration(wav_b))
-    if dur <= 0:
-        return True
-    win = min(5.0, dur)
-    scores = []
-    for frac in (0.1, 0.5, 0.85):
-        start = max(0.0, min(dur - win, dur * frac))
-        scores.append(_pearson(_wav_window(wav_a, start, win),
-                               _wav_window(wav_b, start, win)))
-    return min(scores) > 0.9
+    h = hashlib.sha256()
+    with wave.open(str(wav), "rb") as w:
+        while True:
+            chunk = w.readframes(1 << 16)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
 
 
 # ---------------- engine clients (localhost containers) ----------------

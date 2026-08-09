@@ -989,13 +989,15 @@ class Core:
             self._progress(tid, "preparing_media",
                            f"extracting audio lane {i + 1}/{len(lanes)} ({ln['label']})")
             wavs.append((ln, audio.extract_lane(path, ln, work_dir / f"lane{i}.wav")))
-        # factual dedup only (no interpretation): identical lanes are not processed twice
-        for i, (ln, w) in enumerate(wavs):
-            if ln.get("duplicate_of"):
-                continue
-            for lj, wj in wavs[i + 1:]:
-                if not lj.get("duplicate_of") and audio.tracks_duplicate(w, wj):
-                    lj["duplicate_of"] = ln["label"]
+        # factual dedup only (no interpretation): BIT-identical lanes (equal PCM
+        # hashes) are not processed twice; similar-but-distinct lanes never merge
+        first_by_hash: dict[str, str] = {}
+        for ln, w in wavs:
+            digest = audio.pcm_sha256(w)
+            if digest in first_by_hash:
+                ln["duplicate_of"] = first_by_hash[digest]
+            else:
+                first_by_hash[digest] = ln["label"]
         return path, wavs
 
     def _diarize_lane(self, p: dict, wav, diar_entry: dict, *, remaining) -> dict:
@@ -1057,7 +1059,11 @@ class Core:
         diar_entry = None
         diar_error = None
         if want_diarize:
-            diar_slug = registry.default_for_capability("diarize")
+            diar_slug = p.get("diarize_model") or registry.default_for_capability("diarize")
+            if diar_slug and "diarize" not in ((registry.get(diar_slug) or {})
+                                               .get("capabilities") or []):
+                raise RuntimeError(f"diarize_model '{diar_slug}' is not an installed "
+                                   "diarization model")
             if not diar_slug:
                 diar_error = ("no diarization model installed - transcript has no "
                               "speaker labels (install pyannote/speaker-diarization-3.1)")
