@@ -30,8 +30,8 @@ configured with an admin token, will answer 403 to you).
 | `look` | media + question | free text | OCR, descriptions, "where is X", open questions |
 | `assert` | media + expectation | `{pass, reason, evidence}` | you need a machine-checkable verdict (tests, gates) |
 | `watch` | one video + question or expectation | per-chunk results + synthesis / failing time ranges | videos longer than ~1 minute, or time-localized checks |
-| `transcribe` | one recording (audio, or video with audio) | `{text, segments[start,end,speaker,text], num_speakers, artifacts}` | meeting transcripts, "what was said", speaker attribution |
-| `diarize` | one recording | `{turns[start,end,speaker], num_speakers}` | who spoke when, without a transcript |
+| `transcribe` | one recording (audio, or video with audio) | per-lane `{tracks: [{label, text, segments, ...}]}`; `diarize: true` adds per-lane speakers | meeting transcripts, "what was said" |
+| `diarize` | one recording | per-lane `{tracks: [{label, turns, num_speakers}]}` | who spoke when, without a transcript |
 
 Prefer `assert` over `look` whenever you will branch on the outcome: it returns a strict
 boolean plus the model's reasoning and concrete evidence, and the CLI exit code follows the
@@ -84,8 +84,8 @@ aisee assert shot.png -e "the Start button is visible and enabled"     # exit co
 aisee assert run.mp4 -e "the app reaches the main menu" --native
 aisee watch run.mp4 -q "describe what the user does" --fps 2
 aisee watch run.mp4 -e "the frame counter increases monotonically" --fps 8
-aisee transcribe meeting.mp4                       # speaker-labeled transcript (text)
-aisee transcribe meeting.mp4 --format srt --max-speakers 5
+aisee transcribe meeting.mp4                       # transcript only, every audio lane
+aisee transcribe meeting.mp4 --diarize --max-speakers 5   # + per-lane speaker attribution
 aisee diarize meeting.wav --min-speakers 2
 aisee status | model list | task list | task show <id>
 ```
@@ -94,9 +94,9 @@ Useful flags: `--model <slug>` (else the default model), `--context "<background
 cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--native` (send the
 video itself, video-capable models only), `--max-tokens N` (answer budget),
 `--no-thinking` (skip chain-of-thought on thinking-toggle models), `--no-wait` (print task
-id, poll later), `--server URL`, `--token T`. Transcribe flags: `--no-speakers` (skip
-speaker attribution), `--min-speakers/--max-speakers/--num-speakers` (diarization hints -
-pass them when the count is roughly known), `--format text|json|srt|vtt`.
+id, poll later), `--server URL`, `--token T`. Transcribe flags: `--diarize` (add per-lane
+speaker attribution), `--min-speakers/--max-speakers/--num-speakers` (per-lane diarization
+hints - pass them when the count is roughly known), `--format text|json|srt|vtt`.
 
 ## Using the REST API
 
@@ -113,7 +113,7 @@ POST /v1/tasks     multipart: files=<media>..., params=<JSON string>
                             "question"|"expectation":"..." (vision kinds only),
                             "model":"<slug>?", "fps"?, "frames"?, "native"?, "chunk_seconds"?,
                             "context"?, "max_tokens"?, "thinking"?,
-                            "speakers"? (transcribe), "min_speakers"?, "max_speakers"?,
+                            "diarize"? (transcribe), "min_speakers"?, "max_speakers"?,
                             "num_speakers"?}
   -> {"id": "..."}
 GET  /v1/tasks/{id}   poll every 2-5 s until status is done | failed | canceled
@@ -191,11 +191,14 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   read `reason`/`evidence` and consider a follow-up `look` before acting on it.
 - **Transcription is fast but not instant.** Expect ~realtime/30 or better for ASR plus a
   similar order for diarization (a 1 h meeting in a few minutes), after any cold model load.
-  Segment/word timestamps are absolute seconds in the recording. Multi-track recordings
-  (Zoom/OBS per-participant tracks) get perfect per-track attribution automatically
-  (`speaker_source: "tracks"`); duplicate/mixdown tracks are detected and skipped. Single-track
-  recordings are diarized; the speaker count can over-split on long multi-party audio - pass
-  hints, and treat `suspicious_speaker_count: true` as a cue to re-run with `--max-speakers`.
+  Segment/word timestamps are absolute seconds in the recording.
+- **You own the lane semantics.** Every audio track - and every channel of a stereo track
+  (stereo often encodes two separate feeds) - comes back as an independent transcribed lane
+  in `tracks`; AISee never decides what a lane means (author mic, system audio,
+  per-participant) or merges them - interpret and combine lanes yourself. Identical lanes
+  are marked `duplicate_of` and processed once. Diarization can over-split on long
+  multi-party audio - pass hints, and treat `suspicious_speaker_count: true` as a cue to
+  re-run with `--max-speakers`.
   Word-level timings and rendered transcripts (`transcript.txt/.srt/.vtt`, `transcript.json`
   with words) download from `GET /v1/tasks/{id}/artifacts/<name>`. On unified-memory hosts,
   transcribing recordings of tens of minutes while a large vision model is resident can fail

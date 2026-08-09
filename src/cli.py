@@ -306,8 +306,8 @@ def cmd_query(args, kind: str) -> int:
 def cmd_transcribe(args) -> int:
     c = _client(args)
     params: dict = {}
-    if args.no_speakers:
-        params["speakers"] = False
+    if args.diarize:
+        params["diarize"] = True
     for k in ("model", "min_speakers", "max_speakers", "num_speakers"):
         v = getattr(args, k, None)
         if v is not None:
@@ -328,18 +328,23 @@ def cmd_transcribe(args) -> int:
     if args.format == "json":
         _p(json.dumps(r, indent=2))
     else:
-        # txt/srt/vtt come from the task's artifacts (already rendered server-side)
-        name = {"text": "transcript.txt", "srt": "transcript.srt",
-                "vtt": "transcript.vtt"}[args.format]
-        _p(c.artifact(t["id"], name))
+        # txt/srt/vtt come from the task's artifacts (already rendered server-side);
+        # multi-lane recordings have one rendered file per lane
+        ext = {"text": ".txt", "srt": ".srt", "vtt": ".vtt"}[args.format]
+        names = [a for a in r.get("artifacts", []) if a.endswith(ext)]
+        for name in names:
+            if len(names) > 1:
+                _p(f"===== {name} =====")
+            _p(c.artifact(t["id"], name))
     tm = t.get("timings", {})
-    notes = [f"{r.get('duration_s', 0) / 60:.1f} min audio"]
+    notes = [f"{r.get('duration_s', 0) / 60:.1f} min audio",
+             f"{r.get('num_tracks', 1)} lane(s)"]
     if r.get("asr_rtfx"):
         notes.append(f"ASR {tm.get('asr_s')}s ({r['asr_rtfx']}x realtime)")
     if tm.get("diarize_s"):
         notes.append(f"diarization {tm['diarize_s']}s")
     if r.get("num_speakers"):
-        notes.append(f"{r['num_speakers']} speakers ({r.get('speaker_source')})")
+        notes.append(f"{r['num_speakers']} speakers")
     if r.get("diarization_warning"):
         notes.append(f"WARNING: {r['diarization_warning']}")
     _p(f"  ({'; '.join(notes)})")
@@ -506,13 +511,15 @@ def build_parser() -> argparse.ArgumentParser:
     add_server(p)
     p.set_defaults(fn=lambda a: cmd_query(a, "watch"))
 
-    p = sub.add_parser("transcribe", help="speaker-attributed transcript of audio/video")
+    p = sub.add_parser("transcribe", help="transcript of every audio track/channel; "
+                                          "--diarize adds speaker attribution")
     p.add_argument("media", nargs=1, help="audio file, or a video container with audio")
     p.add_argument("--model")
-    p.add_argument("--no-speakers", action="store_true", help="skip speaker attribution")
-    p.add_argument("--min-speakers", type=int, help="diarization hint")
-    p.add_argument("--max-speakers", type=int, help="diarization hint")
-    p.add_argument("--num-speakers", type=int, help="exact speaker count, if known")
+    p.add_argument("--diarize", action="store_true",
+                   help="also diarize each lane (speaker-attributed segments)")
+    p.add_argument("--min-speakers", type=int, help="diarization hint (per lane)")
+    p.add_argument("--max-speakers", type=int, help="diarization hint (per lane)")
+    p.add_argument("--num-speakers", type=int, help="exact speaker count, if known (per lane)")
     p.add_argument("--format", choices=["text", "json", "srt", "vtt"], default="text")
     p.add_argument("--no-wait", action="store_true", help="print task id and exit")
     add_server(p)

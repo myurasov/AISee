@@ -1,6 +1,6 @@
 # AISee v{{version}} - API guide for AI agents
 
-**AISee is a tool that gives AI agents eyes and ears.** Send it images or video files with a question (`look`), an expectation to verify (`assert`), or a whole video to analyze chunk by chunk (`watch`); it runs a vision-language model on this host and returns the answer. Send it a recording (an audio file, or a video with audio) to `transcribe` (speaker-attributed, word-timestamped transcript) or `diarize` (who spoke when). Everything is asynchronous: you submit a task and poll it.
+**AISee is a tool that gives AI agents eyes and ears.** Send it images or video files with a question (`look`), an expectation to verify (`assert`), or a whole video to analyze chunk by chunk (`watch`); it runs a vision-language model on this host and returns the answer. Send it a recording (an audio file, or a video with audio) to `transcribe` (word-timestamped transcript of every audio track/channel; optional per-lane diarization) or `diarize` (who spoke when). Everything is asynchronous: you submit a task and poll it.
 
 ## Endpoints
 
@@ -68,16 +68,21 @@ Task kinds and their `result` shapes:
 - `watch` - chunked whole-video analysis. With `expectation`: per-chunk verdicts +
   `{"pass": bool, "failing_ranges": [...]}` (timestamps where it broke). With `question`:
   per-chunk findings + a synthesized `answer` over the whole video.
-- `transcribe` - speaker-attributed transcript of ONE audio file or video container. Result:
-  `{"text", "segments": [{start, end, speaker, text}], "num_speakers", "speakers": {label:
-  talk_seconds}, "speaker_source": "diarization"|"tracks"|"none", "word_count", "asr_rtfx",
-  "artifacts": [...]}` - timestamps are absolute seconds in the recording. Full word timings
-  plus rendered `transcript.txt/.srt/.vtt` are artifacts (`GET /v1/tasks/{id}/artifacts/...`).
-  A multi-track recording (e.g. Zoom/OBS per-participant tracks) is transcribed per track and
-  merged - each track is one speaker, labeled from track titles (`speaker_source: "tracks"`);
-  duplicate/mixdown tracks are detected (`duplicate_tracks: true`) and not double-transcribed.
-- `diarize` - who spoke when, no transcript. Result: `{"turns": [{start, end, speaker}],
-  "num_speakers", "speakers", "rtfx"}` + `diarization.rttm` artifact.
+- `transcribe` - word-timestamped transcript of EVERY audio lane of ONE file; with
+  `diarize: true` each lane is also speaker-attributed. A lane is one audio track, or one
+  CHANNEL of a stereo/multi-channel track (stereo often encodes two separate feeds), always
+  processed as independent mono. AISee does NOT interpret or merge lanes (author mic vs
+  system audio vs per-participant is the caller's business); the only cross-lane logic is
+  factual: lanes with identical audio are marked `duplicate_of` and not transcribed twice.
+  Result: `{"tracks": [{label, stream, channel, text, segments: [{start, end, speaker?,
+  text}], word_count, rtfx, num_speakers?, speakers?}], "num_tracks", "asr_rtfx",
+  "diarized", "artifacts"}`; single-lane results also carry flat
+  text/segments/num_speakers for convenience. Timestamps are absolute seconds in the
+  recording. Full word timings plus rendered per-lane `transcript[-<lane>].txt/.srt/.vtt`
+  are artifacts (`GET /v1/tasks/{id}/artifacts/...`).
+- `diarize` - who spoke when, no transcript, per lane. Result: `{"tracks": [{label, turns:
+  [{start, end, speaker}], num_speakers, speakers, rtfx}], ...}` (single-lane also flat) +
+  per-lane `diarization[-<lane>].rttm` artifacts.
 
 Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON string, files in
 `files`): `kind` (look|assert|watch|transcribe|diarize), `model` (slug; omit for the default),
@@ -87,8 +92,8 @@ Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON stri
 frames, if the model supports it), `chunk_seconds` (watch), `context` (extra background text the
 model should assume), `max_tokens`, `thinking` (bool; for models marked **Thinking: optional** in
 the model list below — enables/disables chain-of-thought reasoning; default `true`; has no effect
-on always-on reasoning models). Audio kinds: `speakers` (transcribe: attribute speech to
-speakers; default `true`), `min_speakers` / `max_speakers` / `num_speakers` (diarization hints -
+on always-on reasoning models). Audio kinds: `diarize` (transcribe: also attribute speakers per lane;
+default `false`), `min_speakers` / `max_speakers` / `num_speakers` (per-lane diarization hints -
 pass them when the count is roughly known; long multi-party audio tends to over-split). A
 suspicious diarization (>10 speakers, unhinted) is flagged `suspicious_speaker_count: true`.
 Expect roughly realtime/30 or faster for transcription on this class of host (a 1 h recording

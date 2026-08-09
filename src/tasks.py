@@ -971,8 +971,9 @@ class Core:
 
     # ---------------- audio tasks ----------------
 
-    def _prep_audio_tracks(self, tid: str, p: dict, work_dir) -> tuple[str, list[tuple[dict, Path]]]:
-        """Probe + extract every audio stream of the (single) input to 16 kHz mono WAV."""
+    def _prep_audio_lanes(self, tid: str, p: dict, work_dir) -> tuple[str, list[tuple[dict, Path]]]:
+        """Probe + extract every audio lane (track x channel) to 16 kHz mono WAV,
+        then mark lanes that carry identical audio (dual-mono, mixdown copies)."""
         media_files = p.get("media", [])
         if len(media_files) != 1:
             raise RuntimeError("transcribe/diarize take exactly one media file "
@@ -980,25 +981,62 @@ class Core:
         path = media_files[0]
         self.store.update(tid, status="preparing_media")
         self._progress(tid, "preparing_media", "probing audio tracks")
-        tracks = audio.probe_tracks(path)
-        if not tracks:
+        lanes = audio.probe_lanes(path)
+        if not lanes:
             raise RuntimeError(f"no audio track in {Path(path).name}")
-        wavs = []
-        for t in tracks:
+        wavs: list[tuple[dict, Path]] = []
+        for i, ln in enumerate(lanes):
             self._progress(tid, "preparing_media",
-                           f"extracting audio track {t['index'] + 1}/{len(tracks)}")
-            wavs.append((t, audio.extract_track(path, t["index"],
-                                                work_dir / f"track{t['index']}.wav")))
+                           f"extracting audio lane {i + 1}/{len(lanes)} ({ln['label']})")
+            wavs.append((ln, audio.extract_lane(path, ln, work_dir / f"lane{i}.wav")))
+        # factual dedup only (no interpretation): identical lanes are not processed twice
+        for i, (ln, w) in enumerate(wavs):
+            if ln.get("duplicate_of"):
+                continue
+            for lj, wj in wavs[i + 1:]:
+                if not lj.get("duplicate_of") and audio.tracks_duplicate(w, wj):
+                    lj["duplicate_of"] = ln["label"]
         return path, wavs
+
+    def _diarize_lane(self, p: dict, wav, diar_entry: dict, *, remaining) -> dict:
+        """One lane through the diarizer, with sliver-cluster cleanup. Returns the
+        lane's diarization fields (num_speakers, speakers, turns, rtfx, ...)."""
+        diar_slug = diar_entry["slug"]
+        self._hold_in_use(diar_slug)
+        try:
+            t0 = time.time()
+            dia = audio.diarize(diar_entry["port"], wav,
+                                timeout=remaining("diarization"),
+                                min_speakers=p.get("min_speakers"),
+                                max_speakers=p.get("max_speakers"),
+                                num_speakers=p.get("num_speakers"))
+            wall = time.time() - t0
+        finally:
+            self._release_in_use(diar_slug)
+        self.store.touch_model(diar_slug)
+        turns, n_merged = audio.merge_sliver_speakers(dia.get("turns") or [])
+        talk: dict[str, float] = {}
+        for tn in turns:
+            talk[tn["speaker"]] = round(talk.get(tn["speaker"], 0.0)
+                                        + tn["end"] - tn["start"], 1)
+        out = {"num_speakers": len(talk), "speakers": talk, "turns": turns,
+               "diarize_rtfx": dia.get("rtfx"), "diarize_wall_s": round(wall, 1)}
+        if n_merged:
+            out["sliver_speakers_merged"] = n_merged
+        if (not p.get("max_speakers") and not p.get("num_speakers")
+                and len(talk) > 10):
+            out["suspicious_speaker_count"] = True
+        return out
 
     def _transcribe(self, tid: str, entry: dict, p: dict, work_dir, *,
                     timeout: float) -> None:
-        """ASR (+ optional speaker attribution) with multi-track support.
+        """Per-lane ASR; with diarize=true, per-lane diarization too.
 
-        Multi-track containers (Zoom/OBS per-participant recordings) are transcribed
-        per track and merged by time: each track IS one speaker, no diarizer needed.
-        Single-track audio is diarized (default on) and words get speakers by
-        max-overlap. Artifacts (json/txt/srt/vtt) land in the task's artifacts dir."""
+        Every audio track - and every channel of a multi-channel track - is an
+        independent mono lane with its own transcript (and speakers). AISee never
+        interprets what the lanes mean or merges across them; identical lanes
+        (dual-mono / mixdown copies) are the only cross-lane logic, and they are
+        simply not processed twice (marked duplicate_of)."""
         deadline = time.time() + timeout
 
         def _remaining(what: str) -> float:
@@ -1008,123 +1046,97 @@ class Core:
                                    f"({int(timeout)} s) before {what}")
             return rem
 
-        path, wavs = self._prep_audio_tracks(tid, p, work_dir)
+        want_diarize = bool(p.get("diarize", False))
+        path, wavs = self._prep_audio_lanes(tid, p, work_dir)
         if self._canceled(tid):
             return
+        live = [(ln, w) for ln, w in wavs if not ln.get("duplicate_of")]
+        audio_s = max(audio.wav_duration(w) for _, w in live)
+        self.store.update(tid, status="running", timing={"audio_s": round(audio_s, 1)})
 
-        # duplicate-track trap: N tracks that are mixdown copies of the same audio
-        duplicate_tracks = False
-        unique: list[tuple[dict, Path]] = [wavs[0]]
-        for t, w in wavs[1:]:
-            if any(audio.tracks_duplicate(w, uw) for _, uw in unique):
-                duplicate_tracks = True
+        diar_entry = None
+        diar_error = None
+        if want_diarize:
+            diar_slug = registry.default_for_capability("diarize")
+            if not diar_slug:
+                diar_error = ("no diarization model installed - transcript has no "
+                              "speaker labels (install pyannote/speaker-diarization-3.1)")
+            elif diar_slug == entry["slug"]:
+                diar_error = "diarization model cannot transcribe"
             else:
-                unique.append((t, w))
+                diar_entry = self.ensure_diarizer(tid, diar_slug)
 
-        audio_s = max(audio.wav_duration(w) for _, w in unique)
-        self.store.update(tid, status="running",
-                          timing={"audio_s": round(audio_s, 1)})
-        want_speakers = bool(p.get("speakers", True))
-
-        # ASR per unique track (each is one speaker when there are several)
-        asr_wall = 0.0
-        track_results: list[tuple[dict, dict]] = []
-        for i, (t, w) in enumerate(unique):
+        asr_wall = diar_wall = 0.0
+        lanes_out: list[dict] = []
+        words_by_lane: dict[str, list[dict]] = {}
+        for i, (ln, w) in enumerate(wavs):
+            lane: dict = {k: ln[k] for k in
+                          ("label", "stream", "channel", "title", "language") if k in ln}
+            if ln.get("duplicate_of"):
+                lane["duplicate_of"] = ln["duplicate_of"]
+                lanes_out.append(lane)
+                continue
+            note = f" lane {i + 1}/{len(wavs)} ({ln['label']})" if len(wavs) > 1 else ""
             self._progress(tid, "running",
-                           f"transcribing ({audio_s / 60:.1f} min of audio)" if len(unique) == 1
-                           else f"transcribing track {i + 1}/{len(unique)}")
+                           f"transcribing{note} ({audio_s / 60:.1f} min of audio)")
             r = audio.asr_transcribe(entry["port"], w, timeout=_remaining("transcription"))
             asr_wall += r.get("wall_s") or 0.0
-            track_results.append((t, r))
+            words = r.get("words") or []
+            segments = r.get("segments") or []
+            lane["language"] = r.get("language") or lane.get("language")
+            lane["attention"] = r.get("attention")
+            lane["rtfx"] = r.get("rtfx")
             if self._canceled(tid):
                 return
-        self.store.update(tid, timing={"asr_s": round(asr_wall, 1)})
+            if diar_entry is not None:
+                try:
+                    self._progress(tid, "running", f"diarizing{note}")
+                    d = self._diarize_lane(p, w, diar_entry, remaining=_remaining)
+                    diar_wall += d.pop("diarize_wall_s", 0.0)
+                    if words:
+                        words = audio.assign_speakers(words, d["turns"])
+                        segments = audio.words_to_segments(words)
+                    lane.update({k: v for k, v in d.items() if k != "turns"})
+                except RuntimeError as e:
+                    diar_error = f"diarization failed on lane {ln['label']}: {e}"
+                    diar_entry = None  # do not retry on remaining lanes
+            lane["segments"] = segments
+            lane["text"] = " ".join(s["text"] for s in segments).strip()
+            lane["word_count"] = len(words)
+            words_by_lane[ln["label"]] = words
+            lanes_out.append(lane)
+            if self._canceled(tid):
+                return
+        self.store.update(tid, timing={"asr_s": round(asr_wall, 1),
+                                       **({"diarize_s": round(diar_wall, 1)}
+                                          if diar_wall else {})})
 
         result: dict = {
             "duration_s": round(audio_s, 2),
             "asr_model": entry["slug"],
-            "attention": track_results[0][1].get("attention"),
-            "asr_rtfx": round(audio_s / asr_wall, 1) if asr_wall > 0 else None,
+            "diarized": bool(want_diarize and not diar_error),
+            "num_tracks": len(wavs),
+            "tracks": lanes_out,
+            "asr_rtfx": round(audio_s * len(live) / asr_wall, 1) if asr_wall > 0 else None,
         }
-        if len(wavs) > 1:
-            result["tracks"] = [{"index": t["index"], "title": t.get("title"),
-                                 "codec": t.get("codec")} for t, _ in wavs]
-        if duplicate_tracks:
+        if want_diarize and diar_entry is not None:
+            result["diarization_model"] = diar_entry["slug"]
+        if any(ln.get("duplicate_of") for ln in lanes_out):
             result["duplicate_tracks"] = True
-
-        diar_error = None
-        if len(unique) > 1:
-            # track = speaker: perfect attribution from the container itself
-            per_track = []
-            for i, (t, r) in enumerate(track_results):
-                label = (t.get("title") or f"track_{t['index'] + 1}").strip()
-                per_track.append((label, r.get("words") or []))
-            words = audio.merge_track_words(per_track)
-            segments = audio.words_to_segments(words)
-            result["speaker_source"] = "tracks"
-            result["num_speakers"] = len(per_track)
-        else:
-            r = track_results[0][1]
-            words = r.get("words") or []
-            segments = r.get("segments") or []
-            result["speaker_source"] = "none"
-            if want_speakers:
-                diar_slug = registry.default_for_capability("diarize")
-                if not diar_slug:
-                    diar_error = ("no diarization model installed - transcript has no "
-                                  "speaker labels (install pyannote/speaker-diarization-3.1)")
-                elif diar_slug == entry["slug"]:
-                    diar_error = "diarization model cannot transcribe"
-                else:
-                    try:
-                        diar_entry = self.ensure_diarizer(tid, diar_slug)
-                        self._progress(tid, "running", "diarizing speakers")
-                        self._hold_in_use(diar_slug)
-                        try:
-                            t0 = time.time()
-                            dia = audio.diarize(
-                                diar_entry["port"], unique[0][1],
-                                timeout=_remaining("diarization"),
-                                min_speakers=p.get("min_speakers"),
-                                max_speakers=p.get("max_speakers"),
-                                num_speakers=p.get("num_speakers"))
-                        finally:
-                            self._release_in_use(diar_slug)
-                        self.store.update(tid, timing={"diarize_s": round(time.time() - t0, 1)})
-                        self.store.touch_model(diar_slug)
-                        turns, n_merged = audio.merge_sliver_speakers(dia.get("turns") or [])
-                        if words:
-                            words = audio.assign_speakers(words, turns)
-                            segments = audio.words_to_segments(words)
-                        talk: dict[str, float] = {}
-                        for tn in turns:
-                            talk[tn["speaker"]] = round(
-                                talk.get(tn["speaker"], 0.0) + tn["end"] - tn["start"], 1)
-                        result["speaker_source"] = "diarization"
-                        result["num_speakers"] = len(talk)
-                        result["speakers"] = talk
-                        if n_merged:
-                            result["sliver_speakers_merged"] = n_merged
-                        result["diarize_rtfx"] = dia.get("rtfx")
-                        result["diarization_model"] = diar_slug
-                        # pyannote over-splits long recordings; surface odd counts
-                        if (not p.get("max_speakers") and not p.get("num_speakers")
-                                and len(talk) > 10):
-                            result["suspicious_speaker_count"] = True
-                    except RuntimeError as e:
-                        diar_error = f"diarization failed: {e}"
-            if self._canceled(tid):
-                return
         if diar_error:
             result["diarization_warning"] = diar_error
-
-        result["segments"] = segments
-        result["text"] = " ".join(s["text"] for s in segments).strip()
-        result["language"] = track_results[0][1].get("language")
-        result["word_count"] = len(words)
+        if len(live) == 1:
+            # single-lane convenience: flat fields, same shape consumers already use
+            lone = next(ln for ln in lanes_out if not ln.get("duplicate_of"))
+            for k in ("text", "segments", "word_count", "language", "attention",
+                      "num_speakers", "speakers", "sliver_speakers_merged",
+                      "suspicious_speaker_count", "diarize_rtfx"):
+                if k in lone:
+                    result[k] = lone[k]
+            result["speaker_source"] = ("diarization" if result["diarized"] else "none")
         self._progress(tid, "running", "writing transcript artifacts")
         art_dir = paths.media_dir() / tid / "artifacts"
-        result["artifacts"] = audio.write_artifacts(art_dir, result, words)
+        result["artifacts"] = audio.write_artifacts(art_dir, result, words_by_lane)
         self.store.update(tid, status="done", result=result,
                           timing={"finished_at": time.time()})
         self._progress(tid, "done", "")
@@ -1139,44 +1151,53 @@ class Core:
 
     def _diarize(self, tid: str, entry: dict, p: dict, work_dir, *,
                  timeout: float) -> None:
-        """Standalone diarization: who spoke when (no transcript)."""
+        """Standalone diarization: who spoke when, per lane (no transcript)."""
         deadline = time.time() + timeout
-        path, wavs = self._prep_audio_tracks(tid, p, work_dir)
+
+        def _remaining(what: str) -> float:
+            rem = deadline - time.time()
+            if rem <= 1:
+                raise RuntimeError(f"diarize exceeded request_timeout "
+                                   f"({int(timeout)} s) before {what}")
+            return rem
+
+        path, wavs = self._prep_audio_lanes(tid, p, work_dir)
         if self._canceled(tid):
             return
-        note = None
-        if len(wavs) > 1:
-            note = f"diarized audio track 1 of {len(wavs)} (pass a single-track file for others)"
-        track, wav = wavs[0]
-        audio_s = audio.wav_duration(wav)
+        live = [(ln, w) for ln, w in wavs if not ln.get("duplicate_of")]
+        audio_s = max(audio.wav_duration(w) for _, w in live)
         self.store.update(tid, status="running", timing={"audio_s": round(audio_s, 1)})
-        self._progress(tid, "running", f"diarizing ({audio_s / 60:.1f} min of audio)")
-        rem = deadline - time.time()
-        if rem <= 1:
-            raise RuntimeError(f"diarize exceeded request_timeout ({int(timeout)} s)")
-        t0 = time.time()
-        dia = audio.diarize(entry["port"], wav, timeout=rem,
-                            min_speakers=p.get("min_speakers"),
-                            max_speakers=p.get("max_speakers"),
-                            num_speakers=p.get("num_speakers"))
-        self.store.update(tid, timing={"diarize_s": round(time.time() - t0, 1)})
-        if self._canceled(tid):
-            return
-        turns, n_merged = audio.merge_sliver_speakers(dia.get("turns") or [])
-        talk: dict[str, float] = {}
-        for tn in turns:
-            talk[tn["speaker"]] = round(talk.get(tn["speaker"], 0.0)
-                                        + tn["end"] - tn["start"], 1)
-        result = {"duration_s": round(audio_s, 2), "model": entry["slug"],
-                  "num_speakers": len(talk), "speakers": talk,
-                  "turns": turns, "rtfx": dia.get("rtfx")}
-        if n_merged:
-            result["sliver_speakers_merged"] = n_merged
-        if note:
-            result["note"] = note
-        if (not p.get("max_speakers") and not p.get("num_speakers")
-                and len(talk) > 10):
-            result["suspicious_speaker_count"] = True
+        diar_wall = 0.0
+        lanes_out: list[dict] = []
+        for i, (ln, w) in enumerate(wavs):
+            lane: dict = {k: ln[k] for k in
+                          ("label", "stream", "channel", "title") if k in ln}
+            if ln.get("duplicate_of"):
+                lane["duplicate_of"] = ln["duplicate_of"]
+                lanes_out.append(lane)
+                continue
+            note = f" lane {i + 1}/{len(wavs)} ({ln['label']})" if len(wavs) > 1 else ""
+            self._progress(tid, "running",
+                           f"diarizing{note} ({audio_s / 60:.1f} min of audio)")
+            d = self._diarize_lane(p, w, entry, remaining=_remaining)
+            diar_wall += d.pop("diarize_wall_s", 0.0)
+            d["rtfx"] = d.pop("diarize_rtfx", None)
+            lane.update(d)
+            lanes_out.append(lane)
+            if self._canceled(tid):
+                return
+        self.store.update(tid, timing={"diarize_s": round(diar_wall, 1)})
+        result: dict = {"duration_s": round(audio_s, 2), "model": entry["slug"],
+                        "num_tracks": len(wavs), "tracks": lanes_out}
+        if any(ln.get("duplicate_of") for ln in lanes_out):
+            result["duplicate_tracks"] = True
+        if len(live) == 1:
+            # single-lane convenience: flat fields, same shape consumers already use
+            lone = next(ln for ln in lanes_out if not ln.get("duplicate_of"))
+            for k in ("num_speakers", "speakers", "turns", "rtfx",
+                      "sliver_speakers_merged", "suspicious_speaker_count"):
+                if k in lone:
+                    result[k] = lone[k]
         art_dir = paths.media_dir() / tid / "artifacts"
         result["artifacts"] = audio.write_diarization_artifacts(
             art_dir, result, uri=Path(path).stem)

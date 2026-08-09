@@ -143,7 +143,8 @@
         <option value="look">look - stills analysis (images)</option>
         <option value="assert">assert - pass/fail check (stills or video)</option>
         <option value="watch">watch - video analysis (one video)</option>
-        <option value="transcribe">transcribe - transcript (audio file or audio track in a video file)</option>
+        <option value="transcribe">transcribe - transcript only (audio file or audio track in a video file)</option>
+        <option value="transcribe_diarize">transcribe+diarize - transcript with speakers (audio file or audio track in a video file)</option>
         <option value="diarize">diarize - speaker attribution (audio file or audio track in a video file)</option>
       </select>
     </div>
@@ -991,12 +992,16 @@ const KIND_HINTS = {
   watch: "analyzes a whole video chunk by chunk (use for clips longer than ~1 min). A question " +
          "returns per-chunk findings + a synthesized answer; an expectation returns pass/fail " +
          "plus the time ranges where it broke.",
-  transcribe: "speaker-attributed, word-timestamped transcript of an audio file or a video's " +
-              "audio track(s); no question needed. Artifacts: transcript.json/.txt/.srt/.vtt.",
-  diarize: "who spoke when: speaker turns with timestamps, no transcript; no question needed."
+  transcribe: "word-timestamped transcript of EVERY audio track/channel (each is an independent " +
+              "lane; stereo counts as two); no speaker attribution, no question needed. " +
+              "Artifacts: transcript.json + per-lane .txt/.srt/.vtt.",
+  transcribe_diarize: "transcript of every track/channel lane PLUS per-lane speaker attribution " +
+              "(diarization); no question needed.",
+  diarize: "who spoke when: speaker turns with timestamps per track/channel lane, no transcript; " +
+           "no question needed."
 };
 
-function isAudioKind(k) { return k === "transcribe" || k === "diarize"; }
+function isAudioKind(k) { return k === "transcribe" || k === "transcribe_diarize" || k === "diarize"; }
 
 function kindChanged() {
   const k = $("kind").value;
@@ -1091,7 +1096,8 @@ $("go").addEventListener("click", async () => {
   const files = $("files").files;
   if (!files.length) { $("status").textContent = "pick at least one media file"; return; }
   if (!isAudioKind(kind) && !$("prompt").value.trim()) { $("status").textContent = "enter a " + $("promptLabel").textContent; return; }
-  const params = { kind };
+  const params = { kind: kind === "transcribe_diarize" ? "transcribe" : kind };
+  if (kind === "transcribe_diarize") params.diarize = true;
   // watch accepts question or expectation; this console submits the prompt as a question
   if (!isAudioKind(kind))
     params[kind === "assert" ? "expectation" : "question"] = $("prompt").value.trim();

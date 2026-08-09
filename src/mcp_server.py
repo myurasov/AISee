@@ -54,9 +54,9 @@ async def _run(fn, *args, **kw):
 
 def _query(kind: str, media: list[str], params: dict, wait: bool = True) -> dict:
     c = _client()
-    # drop unset optionals; thinking=false / speakers=false are meaningful (explicit disable)
+    # drop unset optionals; thinking=false is a meaningful value (explicit disable)
     params = {k: v for k, v in params.items()
-              if v is not None and (v is not False or k in ("thinking", "speakers"))}
+              if v is not None and (v is not False or k == "thinking")}
     tid = c.submit(kind, media, params)
     if not wait:
         return {"task_id": tid, "hint": "poll get_task(task_id) until status is terminal"}
@@ -128,22 +128,24 @@ async def watch(video: str, question: str | None = None, expectation: str | None
 
 
 @mcp.tool()
-async def transcribe(media: str, speakers: bool = True, min_speakers: int | None = None,
+async def transcribe(media: str, diarize: bool = False, min_speakers: int | None = None,
                      max_speakers: int | None = None, num_speakers: int | None = None,
                      model: str | None = None, wait: bool = True) -> dict:
-    """Speaker-attributed, word-timestamped transcript of an audio file or a video
-    container with audio (uses the host's ASR + diarization models, loading them on
-    first use like any cold start).
+    """Word-timestamped transcript of EVERY audio track/channel of an audio file or a
+    video container; diarize=true additionally attributes speakers per lane.
 
-    media: a host path or a 'sha256:<hex>' blob ref (see look). speakers: attribute
-    speech to speakers (default true; multi-track recordings use one-track-per-speaker
-    automatically, single-track audio is diarized). min/max/num_speakers: diarization
-    hints when the count is known. Result carries text + timestamped segments; full
-    word timings land in the transcript.json artifact
-    (GET /v1/tasks/{id}/artifacts/transcript.json, also .txt/.srt/.vtt). Long
-    recordings take minutes: pass wait=false and poll get_task."""
+    Each audio track - and each channel of a stereo/multi-channel track (stereo often
+    encodes two separate feeds) - is transcribed as an independent mono lane; the
+    result's `tracks` list has one entry per lane (label, text, segments). AISee does
+    NOT interpret or merge lanes - that is the caller's job; lanes with identical
+    audio are detected and marked duplicate_of instead of transcribed twice.
+    Single-lane results also carry flat text/segments for convenience.
+    media: a host path or a 'sha256:<hex>' blob ref (see look). min/max/num_speakers:
+    per-lane diarization hints when the count is known. Full word timings land in the
+    transcript.json artifact (GET /v1/tasks/{id}/artifacts/..., also per-lane
+    .txt/.srt/.vtt). Long recordings take minutes: pass wait=false and poll get_task."""
     return await _run(_query, "transcribe", [media],
-                      {"speakers": speakers, "min_speakers": min_speakers,
+                      {"diarize": diarize, "min_speakers": min_speakers,
                        "max_speakers": max_speakers, "num_speakers": num_speakers,
                        "model": model}, wait=wait)
 
@@ -152,9 +154,10 @@ async def transcribe(media: str, speakers: bool = True, min_speakers: int | None
 async def diarize(media: str, min_speakers: int | None = None,
                   max_speakers: int | None = None, num_speakers: int | None = None,
                   model: str | None = None, wait: bool = True) -> dict:
-    """Who spoke when (no transcript): speaker turns with timestamps for an audio
-    file or a video container with audio. Pass min/max/num_speakers hints when the
-    speaker count is roughly known (long multi-party audio tends to over-split)."""
+    """Who spoke when (no transcript): speaker turns with timestamps, for EVERY audio
+    track/channel lane of the file (see transcribe for the lane model). Pass
+    min/max/num_speakers hints when the count is roughly known (long multi-party
+    audio tends to over-split)."""
     return await _run(_query, "diarize", [media],
                       {"min_speakers": min_speakers, "max_speakers": max_speakers,
                        "num_speakers": num_speakers, "model": model}, wait=wait)

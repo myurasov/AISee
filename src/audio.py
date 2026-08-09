@@ -1,16 +1,19 @@
 # Copyright (c) 2026 Mikhail Yurasov <me@yurasov.me>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Audio pipeline: track probing/extraction (audio files and video containers),
-multi-track handling, ASR/diarization engine clients, word->speaker merge, and
-transcript artifacts (json/txt/srt/vtt).
+"""Audio pipeline: lane probing/extraction (audio files and video containers),
+ASR/diarization engine clients, word->speaker merge, and transcript artifacts.
 
 Design notes (see res/add-audio-implementation-report.md in the project):
+- AISee does NOT interpret what tracks/channels mean (author mic, system audio,
+  per-participant, ...). Every audio stream - and every CHANNEL of a multi-channel
+  stream, since stereo is often two encoded tracks - is one independent mono
+  "lane"; each lane gets its own transcript (and diarization when asked). Combining
+  lanes is the consumer's job. The only cross-lane logic is factual: lanes with
+  identical audio (dual-mono, mixdown copies) are detected by correlation and not
+  transcribed twice.
 - Serving containers receive 16 kHz mono WAV over multipart HTTP (localhost), so
   they never need access to host paths or the task media dir.
-- A multi-track container (Zoom/OBS per-participant recordings) is transcribed
-  per track: each track IS one speaker, which beats any diarizer. Duplicate
-  tracks (mixdown copies) are detected by waveform correlation first.
 - Segment/word timestamps are absolute positions in the recording.
 """
 
@@ -24,34 +27,55 @@ import httpx
 
 # ---------------- probing + extraction ----------------
 
-def probe_tracks(path: str | Path) -> list[dict]:
-    """All audio streams in the file: index (within audio streams), codec, title tag."""
+def probe_lanes(path: str | Path) -> list[dict]:
+    """Independent mono lanes of the file: one per (audio stream, channel).
+
+    A mono stream is one lane; a C-channel stream is C lanes (stereo often encodes
+    two tracks). Lane labels come from the track title tag when present, else
+    audio<i>, with -L/-R (or -c<k>) suffixes for split channels."""
     out = subprocess.check_output(
         ["ffprobe", "-v", "error", "-print_format", "json", "-show_streams",
          "-select_streams", "a", str(path)], stderr=subprocess.DEVNULL)
     streams = json.loads(out).get("streams", [])
-    tracks = []
+    lanes = []
     for i, s in enumerate(streams):
         tags = s.get("tags") or {}
-        tracks.append({
-            "index": i,
-            "codec": s.get("codec_name"),
-            "channels": s.get("channels"),
-            "sample_rate": s.get("sample_rate"),
-            "title": tags.get("title") or tags.get("handler_name") or None,
-            "language": tags.get("language"),
-        })
-    return tracks
+        title = tags.get("title") or None
+        base = (title or f"audio{i}").strip()
+        ch = int(s.get("channels") or 1)
+        for k in range(max(ch, 1)):
+            if ch <= 1:
+                label = base
+            elif ch == 2:
+                label = f"{base}-{'LR'[k]}"
+            else:
+                label = f"{base}-c{k}"
+            lanes.append({
+                "label": label,
+                "stream": i,
+                "channel": k if ch > 1 else None,
+                "stream_channels": ch,
+                "codec": s.get("codec_name"),
+                "title": title,
+                "language": tags.get("language"),
+            })
+    return lanes
 
 
-def extract_track(path: str | Path, track_index: int, out_wav: Path) -> Path:
-    """One audio stream -> 16 kHz mono PCM WAV (the format both engines consume)."""
+def extract_lane(path: str | Path, lane: dict, out_wav: Path) -> Path:
+    """One lane -> 16 kHz mono PCM WAV (the format both engines consume)."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(path),
-                    "-map", f"0:a:{track_index}", "-vn", "-ac", "1", "-ar", "16000",
-                    "-c:a", "pcm_s16le", str(out_wav)], check=True)
+    cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", str(path),
+           "-map", f"0:a:{lane['stream']}", "-vn"]
+    if lane.get("channel") is not None:
+        # pick one channel of a multi-channel stream instead of downmixing
+        cmd += ["-af", f"pan=mono|c0=c{lane['channel']}"]
+    else:
+        cmd += ["-ac", "1"]
+    cmd += ["-ar", "16000", "-c:a", "pcm_s16le", str(out_wav)]
+    subprocess.run(cmd, check=True)
     if not out_wav.exists() or out_wav.stat().st_size <= 44:
-        raise RuntimeError(f"ffmpeg extracted no audio from track {track_index} of {path}")
+        raise RuntimeError(f"ffmpeg extracted no audio for lane {lane['label']} of {path}")
     return out_wav
 
 
@@ -212,15 +236,6 @@ def words_to_segments(words: list[dict], gap_s: float = 1.5,
     return segs
 
 
-def merge_track_words(per_track: list[tuple[str, list[dict]]]) -> list[dict]:
-    """Interleave per-track word streams by time; each track is one speaker."""
-    words = []
-    for speaker, ws in per_track:
-        for w in ws:
-            words.append({**w, "speaker": speaker})
-    return sorted(words, key=lambda w: (w["start"], w["end"]))
-
-
 # ---------------- artifacts ----------------
 
 def _fmt_ts(t: float, vtt: bool = False) -> str:
@@ -230,18 +245,18 @@ def _fmt_ts(t: float, vtt: bool = False) -> str:
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d}{sep}{int((s % 1) * 1000):03d}"
 
 
-def write_artifacts(out_dir: Path, result: dict, words: list[dict]) -> list[str]:
-    """transcript.json (full: result + words), .txt (speaker-labeled), .srt, .vtt.
-    Returns the artifact filenames."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    segs = result.get("segments") or []
-    (out_dir / "transcript.json").write_text(
-        json.dumps({**result, "words": words}, indent=1))
+def safe_label(label: str) -> str:
+    import re
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", label)[:60] or "lane"
+
+
+def _write_rendered(out_dir: Path, suffix: str, segs: list[dict]) -> list[str]:
+    """transcript<suffix>.txt/.srt/.vtt for one lane's segments."""
     lines = []
     for s in segs:
         who = f"{s['speaker']}: " if s.get("speaker") else ""
         lines.append(f"[{_fmt_ts(s['start'], vtt=True)}] {who}{s['text']}")
-    (out_dir / "transcript.txt").write_text("\n".join(lines) + "\n")
+    (out_dir / f"transcript{suffix}.txt").write_text("\n".join(lines) + "\n")
     srt, vtt = [], ["WEBVTT", ""]
     for i, s in enumerate(segs, 1):
         who = f"{s['speaker']}: " if s.get("speaker") else ""
@@ -249,16 +264,43 @@ def write_artifacts(out_dir: Path, result: dict, words: list[dict]) -> list[str]
                 who + s["text"], ""]
         vtt += [f"{_fmt_ts(s['start'], vtt=True)} --> {_fmt_ts(s['end'], vtt=True)}",
                 who + s["text"], ""]
-    (out_dir / "transcript.srt").write_text("\n".join(srt))
-    (out_dir / "transcript.vtt").write_text("\n".join(vtt))
-    return ["transcript.json", "transcript.txt", "transcript.srt", "transcript.vtt"]
+    (out_dir / f"transcript{suffix}.srt").write_text("\n".join(srt))
+    (out_dir / f"transcript{suffix}.vtt").write_text("\n".join(vtt))
+    return [f"transcript{suffix}.txt", f"transcript{suffix}.srt", f"transcript{suffix}.vtt"]
+
+
+def write_artifacts(out_dir: Path, result: dict,
+                    words_by_lane: dict[str, list[dict]]) -> list[str]:
+    """transcript.json (full result + per-lane words) plus rendered txt/srt/vtt.
+    Single lane keeps the plain names; multiple lanes get transcript-<label>.*."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    single = len(words_by_lane) == 1
+    (out_dir / "transcript.json").write_text(json.dumps(
+        {**result, "words": (next(iter(words_by_lane.values())) if single
+                             else words_by_lane)}, indent=1))
+    names = ["transcript.json"]
+    lanes = result.get("tracks") or []
+    for lane in lanes:
+        if lane.get("duplicate_of"):
+            continue
+        suffix = "" if single else f"-{safe_label(lane['label'])}"
+        names += _write_rendered(out_dir, suffix, lane.get("segments") or [])
+    return names
 
 
 def write_diarization_artifacts(out_dir: Path, result: dict, uri: str) -> list[str]:
-    """diarization.json + standard RTTM."""
+    """diarization.json + standard RTTM (per lane when there are several)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "diarization.json").write_text(json.dumps(result, indent=1))
-    rttm = [f"SPEAKER {uri} 1 {t['start']:.3f} {t['end'] - t['start']:.3f} "
-            f"<NA> <NA> {t['speaker']} <NA> <NA>" for t in result.get("turns", [])]
-    (out_dir / "diarization.rttm").write_text("\n".join(rttm) + "\n")
-    return ["diarization.json", "diarization.rttm"]
+    names = ["diarization.json"]
+    lanes = result.get("tracks") or []
+    single = len([ln for ln in lanes if not ln.get("duplicate_of")]) == 1
+    for lane in lanes:
+        if lane.get("duplicate_of"):
+            continue
+        suffix = "" if single else f"-{safe_label(lane['label'])}"
+        rttm = [f"SPEAKER {uri} 1 {t['start']:.3f} {t['end'] - t['start']:.3f} "
+                f"<NA> <NA> {t['speaker']} <NA> <NA>" for t in lane.get("turns") or []]
+        (out_dir / f"diarization{suffix}.rttm").write_text("\n".join(rttm) + "\n")
+        names.append(f"diarization{suffix}.rttm")
+    return names

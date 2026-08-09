@@ -33,11 +33,13 @@ There are five kinds of queries:
 - `watch` - whole-video analysis, chunk by chunk, at a chosen fps. Given an expectation it
   returns per-chunk verdicts and `failing_ranges` (the time spans where it broke); given a
   question it returns per-chunk notes and a synthesized answer for the whole video.
-- `transcribe` - speaker-attributed, word-timestamped transcript of a recording (an audio file,
-  or a video container's audio). Multi-track recordings (Zoom/OBS per-participant tracks) get
-  perfect per-track speaker attribution automatically; single-track audio is diarized. Rendered
-  transcripts (`.txt/.srt/.vtt` + full JSON) are downloadable task artifacts.
-- `diarize` - who spoke when: speaker turns with timestamps, no transcript.
+- `transcribe` - word-timestamped transcript of EVERY audio lane of a recording (an audio
+  file, or a video container's audio); `diarize: true` (CLI `--diarize`) adds per-lane
+  speaker attribution. A lane is one audio track or one channel of a stereo/multi-channel
+  track (stereo often encodes two separate feeds); AISee never interprets or merges lanes -
+  that is the consumer's job - and identical lanes are detected and processed once.
+  Rendered per-lane transcripts (`.txt/.srt/.vtt` + full JSON) are downloadable artifacts.
+- `diarize` - who spoke when: speaker turns with timestamps per lane, no transcript.
 
 The CLI is a thin client of the REST API, so there is a single code path: anything the CLI does
 can be done with curl, and both feed the same task queue. All queries are asynchronous - you get
@@ -94,8 +96,8 @@ More examples:
 ./aisee assert run.mp4 -e "the app launches into the main menu" --native
 ./aisee watch run.mp4 -e "the frame counter increases monotonically" --fps 8
 ./aisee watch run.mp4 -q "describe what the user does" --fps 2
-./aisee transcribe meeting.mp4                      # speaker-labeled transcript
-./aisee transcribe meeting.mp4 --format srt --max-speakers 5
+./aisee transcribe meeting.mp4                      # transcript only (every audio lane)
+./aisee transcribe meeting.mp4 --diarize --max-speakers 5   # + speakers per lane
 ./aisee diarize meeting.wav
 ./aisee status
 ```
