@@ -896,28 +896,31 @@ function updateAutoHints() {
   const vf = m ? m.video_frames : 24;
   const mi = m ? m.max_images : 16;
   const fpsIn = parseFloat($("fps").value) || null;
+  const M = "<b>" + slug + "</b>";
   let msg;
   if (k === "watch") {
     const fps = fpsIn || (m ? m.fps : (cfgDefaults.fps || 1));
     const chunk = parseFloat($("chunk").value) || Math.max(1, Math.round(vf / fps));
-    msg = "Effective: " + slug + " watches the video in <b>" + chunk + " s chunks</b> at " +
-          "<b>" + fps + " fps</b> (" + Math.round(chunk * fps) + " of its " + vf +
-          "-frame budget per chunk), then synthesizes one answer.";
+    msg = M + " watches the video in <b>" + chunk + " s</b> chunks at <b>" + fps +
+          " fps</b>, then synthesizes one answer - chunks are sized so each one fills " +
+          "the model's <b>" + vf + "</b>-frame budget (" + Math.round(chunk * fps) +
+          " frames here), keeping full detail over any length.";
   } else if ($("native").value === "video") {
-    msg = "Effective: the whole clip goes to " + slug + ", which reads <b>" + vf +
-          " frames</b> spread evenly across it (its per-request video budget" +
-          (fpsIn ? "; re-encoded at " + fpsIn + " fps first" : "") +
-          ") - fine up to a few minutes, use watch beyond that.";
+    msg = "The whole clip goes to " + M + ", which reads <b>" + vf + "</b> frames " +
+          "spread evenly across it" +
+          (fpsIn ? " (re-encoded at <b>" + fpsIn + " fps</b> first)" : "") +
+          " - that is its fixed per-request video budget, so the longer the clip, the " +
+          "coarser the time detail (watch avoids this by chunking).";
   } else {
     const nIn = parseInt($("frames").value, 10) || null;
-    msg = "Effective: " + (fpsIn
-          ? "still frames sampled at <b>" + fpsIn + "/s</b> (capped at " + mi + " images, "
-            + slug + "'s per-request budget)"
-          : "<b>" + (nIn || cfgDefaults.frames || 16) + " still frames</b> spread evenly " +
-            "across the clip (cap " + mi + ", " + slug + "'s per-request budget)") +
-          " go to " + slug + " as individual images.";
+    msg = (fpsIn
+          ? "Still frames sampled at <b>" + fpsIn + "/s</b>"
+          : "<b>" + (nIn || cfgDefaults.frames || 16) + "</b> still frames spread evenly " +
+            "across the clip") +
+          " go to " + M + " as individual images - at most <b>" + mi + "</b> per " +
+          "request, because each image costs part of the model's context window.";
   }
-  $("samplingHint").innerHTML = msg;
+  $("samplingHint").innerHTML = "<i>" + msg + "</i>";
   $("fps").placeholder = "auto";
   $("frames").placeholder = "auto";
   $("chunk").placeholder = "auto";
