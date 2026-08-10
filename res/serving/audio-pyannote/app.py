@@ -14,6 +14,7 @@ process instead of serving degraded.
 """
 
 import argparse
+import gc
 import math
 import os
 import struct
@@ -147,6 +148,10 @@ def _diarize(path: str, min_speakers: int | None = None,
     talk = Counter()
     for t in turns:
         talk[t["speaker"]] += t["end"] - t["start"]
+    # unified memory: drop references, collect, then trim so blocks return to the system
+    del dia, waveform, data
+    gc.collect()
+    torch.cuda.empty_cache()
     return {"turns": turns, "num_speakers": len(talk),
             "speakers": {k: round(v, 1) for k, v in talk.items()},
             "duration_s": round(dur, 2), "wall_s": round(wall, 2),

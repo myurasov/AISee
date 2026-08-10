@@ -10,6 +10,7 @@ host's wait_ready surfaces the failure loudly instead of a silent CPU fallback.
 """
 
 import argparse
+import gc
 import math
 import os
 import struct
@@ -98,10 +99,27 @@ def _transcribe(path: str, timestamps: bool = True) -> dict:
         segments.append({"start": round(float(s["start"]), 3),
                          "end": round(float(s["end"]), 3),
                          "text": s.get("segment", s.get("text", ""))})
-    return {"text": r.text or "", "words": words, "segments": segments,
+    text = r.text or ""
+    # unified-memory hosts: NeMo hypotheses reference big CUDA tensors (long-form runs
+    # held ~39 GB and starved co-resident models) - drop every reference, replace the
+    # model's own last-batch reference with a 2 s flush, collect, then trim
+    del r, out, ts
+    if dur > 60:
+        with _lock:
+            MODEL.transcribe([_FLUSH_WAV], timestamps=timestamps)
+    gc.collect()
+    torch.cuda.empty_cache()
+    return {"text": text, "words": words, "segments": segments,
             "duration_s": round(dur, 2), "wall_s": round(wall, 2),
             "rtfx": round(dur / wall, 1) if wall > 0 else None,
             "attention": _attn_mode, "model": args.model}
+
+
+# a tiny wav kept around: transcribing it replaces NeMo's internal reference to the
+# LAST job's hypotheses (which pins that job's CUDA tensors until the next call), so
+# long-form jobs do not park tens of GB between requests
+_FLUSH_WAV = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+_write_probe_wav(_FLUSH_WAV, seconds=2.0)
 
 
 # ---- GPU gate: prove CUDA inference before serving ----
