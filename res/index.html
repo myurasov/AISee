@@ -598,7 +598,8 @@ function renderStat(h, models, gpu, force = false) {
   const rows = models.map(m =>
     "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
     '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
-    "<td>" + (m.supports_native_video ? "yes" : "no") + "</td>" +
+    "<td>" + (m.modality === "audio" ? "audio"
+              : m.supports_native_video ? "images + video" : "images") + "</td>" +
     "<td" + (m.gpu_frac != null ? ' title="' + Math.round(m.gpu_frac * 100) + '% of this GPU"' : "") + ">" +
       (m.mem_gib != null ? m.mem_gib + " GiB"
         : (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-")) + "</td>" +
@@ -608,7 +609,7 @@ function renderStat(h, models, gpu, force = false) {
     '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
     '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
   $("modelsBox").innerHTML = models.length
-    ? "<table><tr><th>model</th><th>state</th><th>video</th><th>gpu mem</th>" +
+    ? "<table><tr><th>model</th><th>state</th><th>media</th><th>gpu mem</th>" +
       "<th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
     : '<div class="muted">no models installed</div>';
   for (const b of document.querySelectorAll("#modelsBox button"))
