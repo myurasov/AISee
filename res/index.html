@@ -52,7 +52,7 @@
   #frame { border: 1px solid var(--border); background: var(--panel); padding: 1.4rem 1.6rem; min-height: 14rem;
            overflow-x: auto; }
   .tab { display: none; } .tab.on { display: block; }
-  #status { color: var(--fg-dim); margin: .8rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
+  #status { color: var(--fg-dim); flex: 1; min-height: 0; margin: 0; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
   th, td { border: 1px solid var(--border-soft); padding: .25rem .5rem; text-align: left; word-break: normal; overflow-wrap: break-word; }
   th { background: var(--soft); color: var(--fg-dim); font-weight: 600; }
@@ -204,8 +204,9 @@
     <div id="chunkBox"><label for="chunk" title="seconds of video per analysis chunk; the default is sized so each chunk gets the model's full frame budget">chunk length (s)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
   </div>
   <div class="muted" id="samplingHint" style="margin-top:.35rem"></div>
-  <p style="margin-bottom:0;margin-top:1.3rem"><button id="go">Run</button></p>
-  <div id="status"></div>
+  <div style="display:flex;align-items:center;gap:1rem;margin-top:1.3rem">
+    <div id="status"></div><button id="go">Run</button>
+  </div>
 </div>
 
 <div class="tab" id="tab-tasks">
