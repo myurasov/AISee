@@ -170,17 +170,17 @@
 <div class="tab" id="tab-query">
   <div class="cards" id="kindOpts">
     <label class="card"><input type="radio" name="kind" value="look" checked>
-      <b>look</b><small>Ask a free-form question about images or a short video (under a minute): OCR, descriptions, "where is X". Longer clips lose frames; use watch instead.</small></label>
+      <b>look</b><small>Ask a free-form question about images or a short video: OCR, descriptions, "where is X".</small></label>
     <label class="card"><input type="radio" name="kind" value="assert">
-      <b>assert</b><small>Get a pass/fail verdict with reason and evidence, made for tests and gates. Works on stills or a short video.</small></label>
+      <b>assert</b><small>Get a pass/fail verdict with reason and evidence; for tests and gates. Stills or a short video.</small></label>
     <label class="card"><input type="radio" name="kind" value="watch">
-      <b>watch</b><small>Analyze a long video chunk by chunk, keeping full detail throughout, then synthesize one answer, or pass/fail with the failing time ranges.</small></label>
+      <b>watch</b><small>Analyze a long video chunk by chunk in full detail, then synthesize one answer or a pass/fail.</small></label>
     <label class="card"><input type="radio" name="kind" value="transcribe">
-      <b>transcribe</b><small>Produce a word-timestamped transcript of each audio track and stereo channel (each is its own lane). No speaker labels.</small></label>
+      <b>transcribe</b><small>Word-timestamped transcript of each audio track and stereo channel. No speaker labels.</small></label>
     <label class="card"><input type="radio" name="kind" value="transcribe_diarize">
-      <b>transcribe+diarize</b><small>Transcribe every lane and attribute speakers: who said what, with timestamps.</small></label>
+      <b>transcribe+diarize</b><small>Transcribe every track/channel and attribute speakers: who said what, with timestamps.</small></label>
     <label class="card"><input type="radio" name="kind" value="diarize">
-      <b>diarize</b><small>Detect speaker turns with timestamps (who spoke when, per lane) without transcribing the words.</small></label>
+      <b>diarize</b><small>Detect who spoke when (speaker turns with timestamps) without transcribing the words.</small></label>
   </div>
   <div class="cards modelsrow">
     <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
