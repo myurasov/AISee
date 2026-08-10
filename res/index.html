@@ -196,17 +196,14 @@
   <textarea id="prompt" placeholder="What is shown on the screen?"></textarea>
   <label id="contextLabel" for="context" title="passed to the model alongside the media, e.g. 'the left panel is the scene tree'">context <span class="muted">(optional background the model cannot see in the pixels)</span></label>
   <textarea id="context" style="min-height:2.2em"></textarea>
+  <label id="videoOptsLabel" style="margin-top:1.4rem">video handling <span class="muted" id="videoOptsWhy"></span></label>
   <div class="row" id="samplingRow">
-    <div><label for="fps" title="video sampling rate in frames per second: 1 is enough for 'what happens', 8-15 hunts flicker/glitches">fps</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
-    <div><label for="frames" title="alternative to fps: this many frames spread evenly over the whole clip">frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
-    <div><label for="chunk" title="watch only: seconds of video per chunk (default sized so each chunk gets the full frame budget)">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
-    <div><label for="native" title="frames: the video is sampled into still images. video: send the video itself - the model sees motion/timing (better temporal reasoning, more frames for the same cost); video-capable models only - stills-only models read it as one frame">input</label><select id="native"><option value="frames">frames</option><option value="video">video (native)</option></select></div>
+    <div id="nativeBox"><label for="native" title="video: send the clip itself - the model sees motion and timing (video-capable models only; stills-only models read it as one frame). sampled frames: the clip is turned into still images first">send video as</label><select id="native"><option value="video">video (native)</option><option value="frames">sampled frames</option></select></div>
+    <div id="fpsBox"><label for="fps" title="frames per second of source time: 1 is enough for 'what happens', 8-15 hunts flicker/glitches">temporal resolution (fps)</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
+    <div id="framesBox"><label for="frames" title="alternative to fps: this many frames spread evenly over the whole clip">or total frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
+    <div id="chunkBox"><label for="chunk" title="seconds of video per analysis chunk; the default is sized so each chunk gets the model's full frame budget">chunk length (s)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
   </div>
-  <div class="muted" id="samplingHint" style="margin-top:.35rem">
-    <b>fps</b>/<b>frames</b>: how densely a video is sampled into images (leave empty for auto).
-    <b>input</b>: sampled frames, or the video itself (native) - the model sees motion and timing
-    (video-capable models only). <b>chunk s</b>: watch chunk length. Hover any label for details.
-  </div>
+  <div class="muted" id="samplingHint" style="margin-top:.35rem"></div>
   <p style="margin-bottom:0;margin-top:1.3rem"><button id="go">Run</button></p>
   <div id="status"></div>
 </div>
@@ -1049,6 +1046,21 @@ function modelForKind(k) {
   return $("modelVlm").value;
 }
 
+const VIDEO_OPTS = {
+  look:   {why: "(applies only when the media includes a video)",
+           hint: "A video attachment is sent as the clip itself (default; the model sees motion " +
+                 "and timing) or as sampled still frames. fps / total frames set how densely " +
+                 "frames are taken; leave empty for auto. Hover any label for details."},
+  assert: {why: "(applies only when the media includes a video)",
+           hint: "A video attachment is sent as the clip itself (default; the model sees motion " +
+                 "and timing) or as sampled still frames. fps / total frames set how densely " +
+                 "frames are taken; leave empty for auto. Hover any label for details."},
+  watch:  {why: "(how the video is split and how finely it is watched)",
+           hint: "watch analyzes the whole video in chunks: fps is the temporal resolution " +
+                 "(1 for overviews, 8-15 to hunt flicker), chunk length is how many seconds " +
+                 "each chunk covers (auto sizes it to the model's frame budget)."}
+};
+
 const MEDIA_LABELS = {
   look: "media (images)",
   assert: "media (images, or a video)",
@@ -1064,9 +1076,16 @@ function kindChanged() {
   $("promptLabel").textContent = k === "assert" ? "expectation" : "question";
   $("prompt").style.display = isAudioKind(k) ? "none" : "";
   $("promptLabel").style.display = isAudioKind(k) ? "none" : "";
-  // context + video sampling controls are vision-only
-  for (const id of ["contextLabel", "context", "samplingRow", "samplingHint"])
+  // context + video handling are vision-only; each action shows only its own knobs
+  for (const id of ["contextLabel", "context", "samplingRow", "samplingHint", "videoOptsLabel"])
     $(id).style.display = isAudioKind(k) ? "none" : "";
+  if (!isAudioKind(k)) {
+    $("nativeBox").style.display = k === "watch" ? "none" : "";
+    $("framesBox").style.display = k === "watch" ? "none" : "";
+    $("chunkBox").style.display = k === "watch" ? "" : "none";
+    $("videoOptsWhy").textContent = VIDEO_OPTS[k].why;
+    $("samplingHint").innerHTML = VIDEO_OPTS[k].hint;
+  }
   // all three selectors stay visible; the ones irrelevant to the action are dimmed
   for (const r of document.querySelectorAll('#kindOpts input'))
     r.closest(".card").classList.toggle("on", r.checked);
