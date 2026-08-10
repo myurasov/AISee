@@ -1021,7 +1021,11 @@ class Core:
             def tick():
                 t0 = time.time()
                 while not stop.wait(1.0):
-                    frac = min(0.95, (time.time() - t0) / max(expected_s, 1.0))
+                    # hyperbolic approach: reaches ~77% of the stage at the expected
+                    # duration and keeps creeping (never parks) when the estimate
+                    # was optimistic; completion snaps it forward honestly
+                    t = time.time() - t0
+                    frac = t / (t + 0.3 * max(expected_s, 1.0))
                     self._progress(tid, "running", detail,
                                    pct=round(start_pct + frac * (end_pct - start_pct)))
             th = threading.Thread(target=tick, daemon=True)
