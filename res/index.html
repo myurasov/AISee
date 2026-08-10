@@ -106,12 +106,33 @@
   details.cfgm { margin: .35rem 0; }
   details.cfgm summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   details.cfgm table { margin-bottom: .6rem; }
-  .kindopts { display: flex; flex-direction: column; gap: .35rem; padding: .2rem 0; }
-  .modeloff { opacity: .45; }
-  .modeloff select { pointer-events: none; }
+  /* query form: action cards in 3 columns; model selectors aligned to the same grid */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem; }
+  .card { border: 1px solid var(--border-soft); background: var(--softer);
+          padding: .5rem .7rem; border-radius: 5px; cursor: pointer; margin: 0; }
+  .card input { display: none; }
+  .card b { color: var(--fg-strong); }
+  .card small { display: block; color: var(--fg-faint); margin-top: .1rem; }
+  .card.on { outline: 2px solid var(--accent); background: var(--accent-soft); }
+  .cards.modelsrow { margin-top: .6rem; align-items: start; }
+  .modelsrow label { margin: 0 0 .15rem; }
+  .modelsrow select { padding: .3rem .45rem; }
+  .modeloff { opacity: .35; }
   .kindopts label { display: inline-flex; align-items: center; gap: .3rem; margin: 0;
                     color: var(--fg); cursor: pointer; }
   .kindopts input { accent-color: var(--accent); }
+  /* phones: wrap rows, shrink chrome, keep everything tappable */
+  @media (max-width: 700px) {
+    body { margin: .6rem .7rem; }
+    nav { flex-wrap: wrap; }
+    nav button { padding: .35rem .6rem; margin-bottom: .15rem; }
+    #frame { padding: .7rem .7rem; }
+    .row { flex-wrap: wrap; }
+    .row > div { flex: 1 1 100%; }
+    .cards { grid-template-columns: 1fr; }
+    #darkToggle { top: .5rem; right: .5rem; }
+    button.morethumbs { margin-top: .3rem; }
+  }
   #drop { border: 2px dashed var(--drop-border); background: var(--softer); padding: 1.1rem 1rem; text-align: center; }
   #drop.over { border-color: var(--accent); background: var(--accent-soft); }
   #drop input { display: none; }
@@ -142,25 +163,25 @@
 <div id="frame">
 
 <div class="tab" id="tab-query">
-  <div class="row">
-    <div style="flex: 0 0 auto; min-width: 12rem">
-      <label>action</label>
-      <div id="kindOpts" class="kindopts">
-        <label><input type="radio" name="kind" value="look" checked> look</label>
-        <label><input type="radio" name="kind" value="assert"> assert</label>
-        <label><input type="radio" name="kind" value="watch"> watch</label>
-        <label><input type="radio" name="kind" value="transcribe"> transcribe</label>
-        <label><input type="radio" name="kind" value="transcribe_diarize"> transcribe+diarize</label>
-        <label><input type="radio" name="kind" value="diarize"> diarize</label>
-      </div>
-    </div>
-    <div>
-      <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
-      <div id="modelAsrBox"><label for="modelAsr" title="which installed ASR model transcribes">transcription model</label><select id="modelAsr"><option value="">(default)</option></select></div>
-      <div id="modelDiarBox"><label for="modelDiar" title="which installed diarization model attributes speakers">diarization model</label><select id="modelDiar"><option value="">(default)</option></select></div>
-    </div>
+  <div class="cards" id="kindOpts">
+    <label class="card"><input type="radio" name="kind" value="look" checked>
+      <b>look</b><small>stills analysis (images)</small></label>
+    <label class="card"><input type="radio" name="kind" value="assert">
+      <b>assert</b><small>pass/fail check (stills or video)</small></label>
+    <label class="card"><input type="radio" name="kind" value="watch">
+      <b>watch</b><small>whole-video analysis</small></label>
+    <label class="card"><input type="radio" name="kind" value="transcribe">
+      <b>transcribe</b><small>transcript of each audio track/channel</small></label>
+    <label class="card"><input type="radio" name="kind" value="transcribe_diarize">
+      <b>transcribe+diarize</b><small>transcript + speakers per track/channel</small></label>
+    <label class="card"><input type="radio" name="kind" value="diarize">
+      <b>diarize</b><small>who spoke when, no transcript</small></label>
   </div>
-  <div id="kindHint" class="muted" style="margin-top:.25rem"></div>
+  <div class="cards modelsrow">
+    <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
+    <div id="modelAsrBox"><label for="modelAsr" title="which installed ASR model transcribes">transcription model</label><select id="modelAsr"><option value="">(default)</option></select></div>
+    <div id="modelDiarBox"><label for="modelDiar" title="which installed diarization model attributes speakers">diarization model</label><select id="modelDiar"><option value="">(default)</option></select></div>
+  </div>
   <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images/video/audio)</label>
   <div id="drop">
     <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
@@ -168,15 +189,15 @@
   </div>
   <label for="prompt" id="promptLabel">question</label>
   <textarea id="prompt" placeholder="What is shown on the screen?"></textarea>
-  <label for="context" title="passed to the model alongside the media, e.g. 'the left panel is the scene tree'">context <span class="muted">(optional background the model cannot see in the pixels)</span></label>
+  <label id="contextLabel" for="context" title="passed to the model alongside the media, e.g. 'the left panel is the scene tree'">context <span class="muted">(optional background the model cannot see in the pixels)</span></label>
   <textarea id="context" style="min-height:2.2em"></textarea>
-  <div class="row">
+  <div class="row" id="samplingRow">
     <div><label for="fps" title="video sampling rate in frames per second: 1 is enough for 'what happens', 8-15 hunts flicker/glitches">fps</label><input type="number" id="fps" step="0.5" min="0" placeholder="auto"></div>
     <div><label for="frames" title="alternative to fps: this many frames spread evenly over the whole clip">frames</label><input type="number" id="frames" min="1" placeholder="auto"></div>
     <div><label for="chunk" title="watch only: seconds of video per chunk (default sized so each chunk gets the full frame budget)">chunk s (watch)</label><input type="number" id="chunk" min="1" placeholder="auto"></div>
     <div><label for="native" title="frames: the video is sampled into still images. video: send the video itself - the model sees motion/timing (better temporal reasoning, more frames for the same cost); video-capable models only - stills-only models read it as one frame">input</label><select id="native"><option value="frames">frames</option><option value="video">video (native)</option></select></div>
   </div>
-  <div class="muted" style="margin-top:.35rem">
+  <div class="muted" id="samplingHint" style="margin-top:.35rem">
     <b>fps</b>/<b>frames</b>: how densely a video is sampled into images (leave empty for auto).
     <b>input</b>: sampled frames, or the video itself (native) - the model sees motion and timing
     (video-capable models only). <b>chunk s</b>: watch chunk length. Hover any label for details.
@@ -1026,13 +1047,21 @@ function modelForKind(k) {
 function kindChanged() {
   const k = kindValue();
   $("promptLabel").textContent = k === "assert" ? "expectation" : "question";
-  $("kindHint").textContent = KIND_HINTS[k];
   $("prompt").style.display = isAudioKind(k) ? "none" : "";
   $("promptLabel").style.display = isAudioKind(k) ? "none" : "";
+  // context + video sampling controls are vision-only
+  for (const id of ["contextLabel", "context", "samplingRow", "samplingHint"])
+    $(id).style.display = isAudioKind(k) ? "none" : "";
   // all three selectors stay visible; the ones irrelevant to the action are dimmed
-  $("modelVlmBox").classList.toggle("modeloff", isAudioKind(k));
-  $("modelAsrBox").classList.toggle("modeloff", !(k === "transcribe" || k === "transcribe_diarize"));
-  $("modelDiarBox").classList.toggle("modeloff", !(k === "transcribe_diarize" || k === "diarize"));
+  for (const r of document.querySelectorAll('#kindOpts input'))
+    r.closest(".card").classList.toggle("on", r.checked);
+  const en = {modelVlm: !isAudioKind(k),
+              modelAsr: k === "transcribe" || k === "transcribe_diarize",
+              modelDiar: k === "transcribe_diarize" || k === "diarize"};
+  for (const [id, on] of Object.entries(en)) {
+    $(id).disabled = !on;
+    $(id + "Box").classList.toggle("modeloff", !on);
+  }
 }
 for (const r of document.querySelectorAll('#kindOpts input'))
   r.addEventListener("change", kindChanged);
