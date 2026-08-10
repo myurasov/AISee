@@ -218,6 +218,9 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
 ## Quick diagnostic recipes
 
 - Connection refused? The API daemon is down on the host - an admin must start it.
+- "not starting <model>: audio job(s) in progress"? Transcription/diarization holds the
+  GPU on a unified-memory host - wait for it to finish and retry; same for a refusal
+  right after a big job ends (memory settles within a minute).
 - Task stuck in `model_loading`? Almost always a weight download - keep polling `progress`.
 - `failed` with a memory error: the GPU is busy; retry later or tell the operator.
 - Verdict looks wrong? Read `evidence`, retry with `--context` or a different model.

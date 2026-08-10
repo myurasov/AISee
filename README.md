@@ -152,7 +152,9 @@ a **96 GB** discrete card serves everything at 256k except the two dense-KV 32B-
 while the two big Qwens (~62 GiB weights) do not fit at all (install warns). A model start
 is refused up front - with a GiB message - when the requirement does not fit next to the
 already-running models (plus a system reserve), or when the GPU's actually-free memory says
-otherwise. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron); video is 1 per request at 24 frames (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
+otherwise (measured margins: a large load must leave 10 GiB free on unified hosts, audio
+engines 3 GiB, discrete GPUs 2 GiB). On unified hosts a large model is also refused while
+audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron); video is 1 per request at 24 frames (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`

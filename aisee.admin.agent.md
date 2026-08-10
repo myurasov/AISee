@@ -149,7 +149,10 @@ transcriptions while a big vision model is resident - stop it or let it idle-unl
 - Starting a model that does not fit next to the running ones - by stated GiB
   requirements plus a system reserve, or by actually-free GPU memory - is refused up front
   (HTTP 409 / a clear GiB-denominated error) before any container work; stop a resident
-  model first or co-locate with smaller slices. "Free memory ... is less than desired" can still
+  model first or co-locate with smaller slices. On unified-memory hosts a large model is
+  also refused while audio jobs are in flight (the cold load would starve them - retry
+  after they finish), and a start right after a big job ends can be refused for a minute
+  until memory actually settles. "Free memory ... is less than desired" can still
   happen when a non-AISee process holds the GPU - stop it and retry.
 - Tasks orphaned in `model_loading` after a daemon crash are requeued automatically at the
   next `api start`.
