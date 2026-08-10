@@ -170,17 +170,17 @@
 <div class="tab" id="tab-query">
   <div class="cards" id="kindOpts">
     <label class="card"><input type="radio" name="kind" value="look" checked>
-      <b>look</b><small>one-shot question: images, or a SHORT video (&lt; ~1 min)</small></label>
+      <b>look</b><small>one-shot free-form question: OCR, descriptions, "where is X". Images, or a SHORT video (&lt; ~1 min - longer clips lose frames; use watch)</small></label>
     <label class="card"><input type="radio" name="kind" value="assert">
-      <b>assert</b><small>one-shot pass/fail check: stills or a SHORT video</small></label>
+      <b>assert</b><small>one-shot pass/fail verdict with reason + evidence - for tests and gates. Stills, or a SHORT video</small></label>
     <label class="card"><input type="radio" name="kind" value="watch">
-      <b>watch</b><small>LONG video, chunk by chunk: full detail over the whole timeline</small></label>
+      <b>watch</b><small>LONG video, chunk by chunk: every chunk gets the model's full frame budget, then one synthesized answer (or pass/fail with failing time ranges)</small></label>
     <label class="card"><input type="radio" name="kind" value="transcribe">
-      <b>transcribe</b><small>transcript of each audio track/channel</small></label>
+      <b>transcribe</b><small>word-timestamped transcript of each audio track/channel (every track and stereo channel is its own lane); no speaker labels</small></label>
     <label class="card"><input type="radio" name="kind" value="transcribe_diarize">
-      <b>transcribe+diarize</b><small>transcript + speakers per track/channel</small></label>
+      <b>transcribe+diarize</b><small>transcript PLUS speaker attribution per lane: who said what, with timestamps</small></label>
     <label class="card"><input type="radio" name="kind" value="diarize">
-      <b>diarize</b><small>who spoke when, no transcript</small></label>
+      <b>diarize</b><small>speaker turns with timestamps only (who spoke when, per lane) - no transcript</small></label>
   </div>
   <div class="cards modelsrow">
     <div id="modelVlmBox"><label for="modelVlm" title="which installed vision model answers; the default is the safe all-rounder">VLM model</label><select id="modelVlm"><option value="">(default)</option></select></div>
