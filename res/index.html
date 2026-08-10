@@ -603,7 +603,7 @@ function renderStat(h, models, gpu, force = false) {
     "<td" + (m.gpu_frac != null ? ' title="' + Math.round(m.gpu_frac * 100) + '% of this GPU"' : "") + ">" +
       (m.mem_gib != null ? m.mem_gib + " GiB"
         : (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-")) + "</td>" +
-    "<td>" + (m.idle_timeout || "-") + " s</td>" +
+    "<td>" + (m.idle_timeout ? m.idle_timeout + " s" : "never") + "</td>" +
     '<td style="white-space:nowrap">' + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
     '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
     '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +

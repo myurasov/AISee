@@ -374,12 +374,19 @@ class Core:
                 f"({reserve:.0f} GiB reserved for the system"
                 + (f"; resident: {resident}" if resident else "") +
                 "). Stop a model first.")
-        # a cold vLLM load transiently holds more than its steady-state slice (weights
-        # stream through page cache while CUDA allocates the full fraction), and audio
-        # jobs spike host RAM mid-job beyond their mem_gib. On unified memory both
-        # compete with the OS itself - admitting a big load then starved sshd/journald
-        # for ~8 min (2026-08-10 incident), killing the in-flight transcription.
-        margin = 6.0 if prof["unified"] else 2.0
+        # Measured on GB10 (2026-08-10, qwen30b cold load on an idle host): a model
+        # consumes ~4 GiB MORE than its mem_gib once serving (110 -> 14 GiB available
+        # for a 92 GiB requirement), and the load itself adds no extra dip beyond
+        # that (trough 13 vs steady 14). A 2 GiB margin therefore drove free memory
+        # to ~zero and starved sshd/journald for ~8 min once audio jobs spiked on
+        # top (the 2026-08-10 incident). Large unified loads need 10 GiB (keeps
+        # ~6 GiB genuinely free after load - GPU memory IS the OS's memory there);
+        # the small audio engines keep a 3 GiB bar so promised co-residency next to
+        # a resident VLM (~14 GiB free) still admits them.
+        if prof["unified"]:
+            margin = 10.0 if need >= 30 else 3.0
+        else:
+            margin = 2.0
         if prof["unified"] and entry.get("engine", "vllm") == "vllm" and need >= 30:
             busy = [e["slug"] for e in registry.list_installed()
                     if e.get("modality") == "audio" and e["slug"] != entry["slug"]
