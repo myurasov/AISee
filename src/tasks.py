@@ -584,7 +584,12 @@ class Core:
         t = self.store.get(tid)
         return bool(t) and t["status"] == "canceled"
 
-    def _progress(self, tid: str, step: str, detail: str = "", **extra) -> None:
+    def _progress(self, tid: str, step: str, detail: str = "", pct: int | None = None,
+                  **extra) -> None:
+        # pct is set only where real completion is computable (chunks, lanes) -
+        # never a fake spinner value
+        if pct is not None:
+            extra["pct"] = max(0, min(100, int(pct)))
         self.store.update(tid, progress={"step": step, "detail": detail, **extra})
 
     def _process(self, task: dict) -> None:
@@ -901,6 +906,7 @@ class Core:
                        (f"resuming: {n - len(todo)}/{n} chunks already analyzed, "
                         f"watching the rest (concurrency {concurrency})") if results else
                        f"watching {n} chunks (concurrency {concurrency})",
+                       pct=2 + round((n - len(todo)) / n * 93),
                        chunk={"i": n - len(todo), "n": n, "t_start": 0.0, "t_end": 0.0})
         done_count = n - len(todo)
         t_chunks = time.time()
@@ -917,6 +923,7 @@ class Core:
                 done_count += 1
                 self._progress(tid, "running",
                                f"watched chunk {done_count}/{n}",
+                               pct=2 + round(done_count / n * 93),
                                chunk={"i": done_count, "n": n, "t_start": 0.0, "t_end": 0.0})
         chunks = [results[i] for i in sorted(results) if results[i] is not None]
         self.store.update(tid, timing={
@@ -944,7 +951,7 @@ class Core:
             out["reason"] = ("all chunks satisfied the expectation" if not failing else
                              "; ".join(f'[{c["range"]}] {c.get("reason", "")}' for c in failing)[:800])
         else:
-            self._progress(tid, "running", "synthesizing final answer across chunks")
+            self._progress(tid, "running", "synthesizing final answer across chunks", pct=96)
             t_syn = time.time()
             notes = "\n".join(f'[{c["range"]}] {c["answer"]}' for c in chunks)
             # the synthesis condenses ALL chunks, so its output scales with chunk count -
@@ -1075,6 +1082,12 @@ class Core:
         asr_wall = diar_wall = 0.0
         lanes_out: list[dict] = []
         words_by_lane: dict[str, list[dict]] = {}
+        # honest percent: one unit per lane stage (ASR, and diarization when on)
+        total_units = max(1, len(live) * (2 if diar_entry is not None else 1))
+        done_units = 0
+
+        def _pct() -> int:
+            return 4 + round(done_units / total_units * 92)
         for i, (ln, w) in enumerate(wavs):
             lane: dict = {k: ln[k] for k in
                           ("label", "stream", "channel", "title", "language") if k in ln}
@@ -1084,8 +1097,10 @@ class Core:
                 continue
             note = f" lane {i + 1}/{len(wavs)} ({ln['label']})" if len(wavs) > 1 else ""
             self._progress(tid, "running",
-                           f"transcribing{note} ({audio_s / 60:.1f} min of audio)")
+                           f"transcribing{note} ({audio_s / 60:.1f} min of audio)",
+                           pct=_pct())
             r = audio.asr_transcribe(entry["port"], w, timeout=_remaining("transcription"))
+            done_units += 1
             asr_wall += r.get("wall_s") or 0.0
             words = r.get("words") or []
             segments = r.get("segments") or []
@@ -1096,8 +1111,9 @@ class Core:
                 return
             if diar_entry is not None:
                 try:
-                    self._progress(tid, "running", f"diarizing{note}")
+                    self._progress(tid, "running", f"diarizing{note}", pct=_pct())
                     d = self._diarize_lane(p, w, diar_entry, remaining=_remaining)
+                    done_units += 1
                     diar_wall += d.pop("diarize_wall_s", 0.0)
                     if words:
                         words = audio.assign_speakers(words, d["turns"])
@@ -1140,7 +1156,7 @@ class Core:
                 if k in lone:
                     result[k] = lone[k]
             result["speaker_source"] = ("diarization" if result["diarized"] else "none")
-        self._progress(tid, "running", "writing transcript artifacts")
+        self._progress(tid, "running", "writing transcript artifacts", pct=98)
         art_dir = paths.media_dir() / tid / "artifacts"
         result["artifacts"] = audio.write_artifacts(art_dir, result, words_by_lane)
         self.store.update(tid, status="done", result=result,
@@ -1175,6 +1191,7 @@ class Core:
         self.store.update(tid, status="running", timing={"audio_s": round(audio_s, 1)})
         diar_wall = 0.0
         lanes_out: list[dict] = []
+        done_lanes = 0
         for i, (ln, w) in enumerate(wavs):
             lane: dict = {k: ln[k] for k in
                           ("label", "stream", "channel", "title") if k in ln}
@@ -1184,8 +1201,10 @@ class Core:
                 continue
             note = f" lane {i + 1}/{len(wavs)} ({ln['label']})" if len(wavs) > 1 else ""
             self._progress(tid, "running",
-                           f"diarizing{note} ({audio_s / 60:.1f} min of audio)")
+                           f"diarizing{note} ({audio_s / 60:.1f} min of audio)",
+                           pct=4 + round(done_lanes / len(live) * 92))
             d = self._diarize_lane(p, w, entry, remaining=_remaining)
+            done_lanes += 1
             diar_wall += d.pop("diarize_wall_s", 0.0)
             d["rtfx"] = d.pop("diarize_rtfx", None)
             lane.update(d)

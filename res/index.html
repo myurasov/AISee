@@ -823,7 +823,7 @@ async function pollInto(id) {
     const t = await api("/v1/tasks/" + id);
     fillDetail(td, t);
     const st = document.querySelector('#tasksBox tr[data-id="' + id + '"] td.st');
-    if (st) { st.textContent = t.status; st.className = "st st-" + t.status; }
+    if (st) { st.textContent = stText(t); st.className = "st st-" + t.status; }
     if (TERMINAL.includes(t.status)) stopPoller(id);
   } catch (e) {
     td.innerHTML = '<div class="d-status">error: ' + e.message + "</div>";
@@ -927,6 +927,12 @@ async function fillMediaCells() {
 const TASKS_PAGE_SIZE = 100;
 let tasksPage = 0;
 
+function stText(t) {
+  // live percent in the status column while a task is actually progressing
+  const pct = (t.progress || {}).pct;
+  return t.status + (!TERMINAL.includes(t.status) && pct != null ? " " + pct + "%" : "");
+}
+
 async function refreshTasks(reattach = false) {
   try {
     const all = await api("/v1/tasks?limit=10000");  // everything the TTL has not evicted
@@ -935,7 +941,7 @@ async function refreshTasks(reattach = false) {
     tasksPage = Math.min(tasksPage, pages - 1);
     const tasks = all.slice(tasksPage * TASKS_PAGE_SIZE, (tasksPage + 1) * TASKS_PAGE_SIZE);
     // live polling: redraw only when the visible page, set of tasks, or a status changed
-    const sig = tasksPage + "/" + all.map(t => t.id + ":" + t.status).join("|");
+    const sig = tasksPage + "/" + all.map(t => t.id + ":" + stText(t)).join("|");
     if (sig === tasksSig && !reattach) return;
     tasksSig = sig;
     const rows = tasks.map(t =>
@@ -943,7 +949,7 @@ async function refreshTasks(reattach = false) {
       "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
       '<td class="mediacell" data-id="' + t.id + '"><div class="mrow">' +
       '<span class="placeholder">...</span></div></td>' +
-      '<td class="st st-' + t.status + '">' + t.status + "</td>" +
+      '<td class="st st-' + t.status + '">' + stText(t) + "</td>" +
       "<td>" + fmtDate(t.created) + "</td>" +
       "<td>" + ((t.timings || {}).active_s != null ? t.timings.active_s + " s"
             : (t.timings || {}).total_s != null ? t.timings.total_s + " s" : "-") + "</td>" +

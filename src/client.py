@@ -214,7 +214,8 @@ class Client:
         while True:
             t = self.task(tid)
             p = t.get("progress") or {}
-            line = f"[{t['status']}] {p.get('step', '')}: {p.get('detail', '')}"
+            pct = f" {p['pct']}%" if p.get("pct") is not None else ""
+            line = f"[{t['status']}{pct}] {p.get('step', '')}: {p.get('detail', '')}"
             if p.get("chunk"):
                 c = p["chunk"]
                 line += f" (chunk {c['i']}/{c['n']})"

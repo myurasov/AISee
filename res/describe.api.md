@@ -54,6 +54,7 @@ host/port, guarded by the consumer token, with consumer capabilities only: tools
 2. Poll `GET /v1/tasks/{id}` every 2-5 s. `status` walks through:
    `queued -> preparing_media -> model_loading (only if the model is cold) -> running -> done`
    (`failed` / `canceled` are terminal too). `progress` holds a human-readable `step` + `detail`,
+   a `pct` (0-100) whenever real completion is computable (watch chunks, audio lanes),
    and for `watch` a `chunk: {i, n, t_start, t_end}` counter.
 3. **`model_loading` can take minutes** (cold model start; the largest models take ~9 minutes on
    first load). This is normal - keep polling; `progress.detail` explains what is happening.
