@@ -60,14 +60,22 @@ def default_gpu_frac() -> float:
     return gpu_profile()["gpu_frac"]
 
 
-def fit_max_model_len(cat: dict, profile: dict, gpu_frac: float) -> int:
-    """Largest standard context whose KV cache fits next to the weights on this GPU."""
+def fit_max_model_len(cat: dict, profile: dict, gpu_frac: float,
+                      extra_args: list[str] | None = None) -> int:
+    """Largest context whose KV cache fits next to the weights on this GPU.
+
+    Capped at the checkpoint's native limit (ctx_native); an fp8 KV cache in the
+    serve args halves the per-token KV cost, so the same GiB slice fits twice the
+    context."""
     weights = cat.get("weights_gib")
     kv_128k = cat.get("kv_gib_128k")
     if not weights or not kv_128k:
         return catalog.DEFAULT_MAX_MODEL_LEN
+    if extra_args and "fp8" in extra_args:
+        kv_128k = kv_128k / 2.0
     budget = profile["mem_gib"] * gpu_frac - weights - catalog.ACTIVATION_HEADROOM_GIB
-    for cand in catalog.CONTEXT_CANDIDATES:
+    native = int(cat.get("ctx_native", catalog.DEFAULT_MAX_MODEL_LEN))
+    for cand in [native] + [c for c in catalog.CONTEXT_CANDIDATES if c < native]:
         if kv_128k * cand / 131072.0 <= budget:
             return cand
     return catalog.CONTEXT_CANDIDATES[-1]  # vLLM will complain at load if truly hopeless
@@ -162,6 +170,8 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
     # serve eager; discrete GPUs keep graphs (measured 3-4x faster decode on RTX PRO 6000)
     if profile["unified"] and "--enforce-eager" not in args:
         args.append("--enforce-eager")
+    ctx = (max_model_len or cat.get("max_model_len")
+           or fit_max_model_len(cat, profile, frac, extra_args=args))
     entry = {
         "slug": slug,
         "hf_id": hf_id,
@@ -170,10 +180,9 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         "gpu_frac": frac,
         **({"mem_gib": mem_gib} if mem_gib else {}),
         "extra_args": args,
-        "max_images": cat.get("max_images", catalog.DEFAULT_MAX_IMAGES),
+        "max_images": catalog.max_images_for(cat, ctx),
         "video_frames": cat.get("video_frames", catalog.DEFAULT_VIDEO_FRAMES),
-        "max_model_len": max_model_len or cat.get("max_model_len")
-                         or fit_max_model_len(cat, profile, frac),
+        "max_model_len": ctx,
         "supports_native_video": cat.get("supports_native_video", True),
         "reasoning": cat.get("reasoning", False),
         "thinking_toggle": cat.get("thinking_toggle", False),

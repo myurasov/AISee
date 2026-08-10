@@ -108,10 +108,13 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
 
 - `install` writes a registry entry (`~/.aisee/models/<slug>.toml`) and picks a port; weights
   (tens of GB) download on first start - the task/model sits in `model_loading` meanwhile.
-  Serving settings (gpu_frac, context, media budgets, eager vs CUDA graphs) are auto-sized
-  for the detected GPU; install warns when the weights cannot fit.
-- The first installed model becomes the default. Single resident model per GPU is the main
-  mode; to co-locate models lower each `--gpu-frac`/`--max-model-len` so slices sum < 1.0.
+  Serving settings are auto-sized for the detected GPU from the model's absolute GiB
+  requirement (mem_gib -> serving fraction; context = largest size up to the checkpoint's
+  native limit whose KV cache fits the slice; media budgets; eager vs CUDA graphs);
+  install warns when the weights cannot fit.
+- The first installed model becomes the default. Models co-reside when their GiB
+  requirements fit together (the ~11 GiB audio pair next to a VLM is the normal case);
+  to co-locate more, lower `--gpu-frac`/`--max-model-len` per model.
 - Idle models auto-stop after `idle_timeout` (default 900 s) and restart on the next query.
 - Remote equivalents exist over REST with the admin token:
   `POST /v1/models {"name": ...}`, `DELETE /v1/models/{slug}`,
@@ -143,9 +146,10 @@ transcriptions while a big vision model is resident - stop it or let it idle-unl
 - Model stuck loading: `./aisee model logs <slug>` - usually a weight download (HF can
   throttle to ~10-15 MB/s; the largest models take tens of minutes on first load).
 - HF 403 on a gated model: the token's account must accept the license on the model page.
-- Starting a model whose gpu_frac does not fit next to the running ones is refused up front
-  (HTTP 409 / a clear CLI error) before any container work - stop a resident model first or
-  co-locate with smaller --gpu-frac slices. "Free memory ... is less than desired" can still
+- Starting a model that does not fit next to the running ones - by stated GiB
+  requirements plus a system reserve, or by actually-free GPU memory - is refused up front
+  (HTTP 409 / a clear GiB-denominated error) before any container work; stop a resident
+  model first or co-locate with smaller slices. "Free memory ... is less than desired" can still
   happen when a non-AISee process holds the GPU - stop it and retry.
 - Tasks orphaned in `model_loading` after a daemon crash are requeued automatically at the
   next `api start`.

@@ -74,6 +74,7 @@ def _model_lines(core) -> list[dict]:
                 "default": v["default"], "modality": v["modality"],
                 "engine": v["engine"], "capabilities": v["capabilities"],
                 "serving": {"gpu_frac": entry.get("gpu_frac"),
+                            "mem_gib": entry.get("mem_gib"),
                             "concurrency": entry.get("concurrency", 1),
                             "idle_timeout": entry.get("idle_timeout")},
                 "strengths": cat.get("strengths", ""),
@@ -95,6 +96,7 @@ def _model_lines(core) -> list[dict]:
                 "max_images": entry.get("max_images"),
                 "video_frames": entry.get("video_frames"),
                 "gpu_frac": entry.get("gpu_frac"),
+                "mem_gib": entry.get("mem_gib"),
                 "concurrency": entry.get("concurrency", 1),
                 "idle_timeout": entry.get("idle_timeout"),
             },
@@ -119,8 +121,9 @@ def _render_models(core) -> str:
                 f"- HF id: `{m['hf_id']}`; audio model ({m['engine']}); "
                 f"capabilities: {', '.join(m['capabilities'])}"
                 + (f"; license: {m['license']}" if m["license"] else ""),
-                f"- Serving: {s['concurrency']} concurrent inference(s); gpu_frac "
-                f"{s['gpu_frac']}; idle unload after {s['idle_timeout']} s",
+                f"- Serving: {s['concurrency']} concurrent inference(s); "
+                f"{(str(s['mem_gib']) + ' GiB GPU memory') if s.get('mem_gib') else 'gpu_frac ' + str(s['gpu_frac'])}; "
+                f"idle unload after {s['idle_timeout']} s",
             ]
             for k in ("strengths", "weaknesses", "pitfalls"):
                 if m[k]:
@@ -133,7 +136,8 @@ def _render_models(core) -> str:
             + (f"; license: {m['license']}" if m["license"] else ""),
             (lambda s: f"- Serving: context {s['max_model_len']} tokens; per request up to "
                        f"{s['max_images']} images / 1 video sampled to {s['video_frames']} frames; "
-                       f"{s['concurrency']} concurrent inferences; gpu_frac {s['gpu_frac']}; "
+                       f"{s['concurrency']} concurrent inferences; "
+                       f"{(str(s['mem_gib']) + ' GiB GPU memory') if s.get('mem_gib') else 'gpu_frac ' + str(s['gpu_frac'])}; "
                        f"idle unload after {s['idle_timeout']} s")(m["serving"]),
             resolution.markdown_line(m["input_resolution"]),
         ]

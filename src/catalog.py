@@ -9,12 +9,12 @@ Entries carry serving requirements plus agent-facing strengths / weaknesses / pi
 
 DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
 
-# Serving defaults assume the main mode of operation: ONE model resident per GPU, and are
-# computed from the detected GPU at install time (registry.gpu_profile / fit_max_model_len):
-# gpu_frac is ~1.0 on discrete GPUs and 0.75 on unified-memory systems (GB10 class, where
-# the GPU pool is also system RAM); max_model_len is the largest standard context whose
-# KV cache fits next to the weights (catalog entries carry weights_gib / kv_gib_128k
-# estimates). Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
+# Serving requirements are stated in absolute GiB (mem_gib) and adapted to the detected
+# GPU at install time (registry.gpu_profile / fit_max_model_len): the serving fraction is
+# mem_gib / GPU memory (clamped to the host cap), and max_model_len is the largest
+# context (up to ctx_native) whose KV cache fits next to the weights inside that slice
+# (entries carry measured weights_gib / kv_gib_128k; an fp8 KV cache halves the KV cost).
+# Known tiers: GB10 (~120 GiB unified), 96 GB and 48 GB discrete.
 DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
 # conservative install default; deployments tune it per model so a full batch of 1080p
 # stills fills the context (a 1080p still costs ~2k tokens on 32 px cell models, ~2.7k on
@@ -24,17 +24,30 @@ DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
 # numbers; models whose pixel ceiling is below 4K (Holo 3.69 MP, Nemotron tiles) gain
 # no detail from 4K inputs.
 DEFAULT_MAX_IMAGES = 16
+PROMPT_RESERVE_TOKENS = 8192  # question + answer/thinking headroom inside the context
+
+
+def max_images_for(cat: dict, max_model_len: int) -> int:
+    """Per-request image budget: as many 1080p stills as fill the context.
+
+    Uses the entry's measured tokens_per_image (1080p cost on its preprocessor);
+    entries without one keep their explicit max_images / the conservative default.
+    Capped at 120 (the deep-retrieval envelope validated on real tasks was ~80)."""
+    tpi = cat.get("tokens_per_image")
+    if not tpi:
+        return cat.get("max_images", DEFAULT_MAX_IMAGES)
+    return max(4, min(120, (max_model_len - PROMPT_RESERVE_TOKENS) // tpi))
 # 24 frames: the Qwen3-VL family budgets ~24 MP across ALL sampled frames, so 24 frames
 # keep each frame at ~1.05 MP - 720p passes natively (64 frames would drop it to ~0.39 MP)
 DEFAULT_VIDEO_FRAMES = 24
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
-CONTEXT_CANDIDATES = (131072, 65536, 32768, 16384, 8192)
+CONTEXT_CANDIDATES = (262144, 131072, 65536, 32768, 16384, 8192)
+# per-model checkpoint ceiling (max_position_embeddings); auto-sizing never exceeds it.
+# Entries without ctx_native are capped at DEFAULT_MAX_MODEL_LEN.
 ACTIVATION_HEADROOM_GIB = 4               # runtime overhead on top of weights + KV
-# unified memory (GB10): the GPU pool IS system RAM, so vLLM's slice must leave room
-# for the OS, AISee itself, and the small audio models (~8 GB) - 0.90 plus audio
-# starved the OS into an ssh-killing thrash on a 120 GiB GB10; even 0.80 left only
-# ~4 GB available with the audio models co-resident. 0.75 still fits every catalog
-# model at its full auto-sized context (largest needs 79 GiB at 128k)
+# unified memory (GB10): the GPU pool IS system RAM, so a model's slice must leave room
+# for the OS, AISee itself, and the small audio models. Sizing normally comes from
+# mem_gib; this fraction is only the fallback for off-catalog models without one.
 GPU_FRAC_UNIFIED = 0.75
 UNIFIED_CAPACITY_BUDGET = 0.92  # resident gpu_frac sum cap on unified hosts (OS reserve)
 GPU_FRAC_DISCRETE = 0.97  # dedicated VRAM: literal 1.0 fails vLLM's free-memory check
@@ -60,14 +73,18 @@ def mem_requirement_gib(cat: dict) -> float | None:
 CATALOG: dict[str, dict] = {
     "qwen3-vl-30b-a3b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
         "image": DEFAULT_IMAGE,
-        "weights_gib": 62, "kv_gib_128k": 13,
-        "mem_gib": 99,
+        "weights_gib": 62, "kv_gib_128k": 10.5,
+        "mem_gib": 92,
         # NOTE: Qwen3-VL has no hybrid thinking toggle - the Instruct checkpoints never
         # think (their chat template has no enable_thinking); the Thinking variants are
         # separate checkpoints. Do not add --reasoning-parser here: with a non-thinking
         # model it misroutes the whole answer into reasoning_content.
-        "extra_args": [],
+        # fp8 KV cache: halves KV cost -> 256k context in the same GiB slice; validated
+        # 2026-08-10 (exact OCR, 150k-token needle retrieval 3/3, watch) on both hosts
+        "extra_args": ["--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": False,
         "load_timeout": 3600,
@@ -81,12 +98,14 @@ CATALOG: dict[str, dict] = {
     },
     "qwen3-vl-30b-a3b-thinking": {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Thinking",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
         "image": DEFAULT_IMAGE,
-        "weights_gib": 62, "kv_gib_128k": 13,
-        "mem_gib": 99,
+        "weights_gib": 62, "kv_gib_128k": 10.5,
+        "mem_gib": 92,
         # the parser routes the always-on chain-of-thought into the reasoning field so
         # answers stay clean; without it the CoT would pollute the answer text
-        "extra_args": ["--reasoning-parser", "qwen3"],
+        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": True,
         "load_timeout": 7200,
@@ -102,11 +121,13 @@ CATALOG: dict[str, dict] = {
     },
     "qwen3-vl-32b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-32B-Instruct",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
         "image": DEFAULT_IMAGE,
 
         "weights_gib": 63, "kv_gib_128k": 34,
         "mem_gib": 108,
-        "extra_args": [],
+        "extra_args": ["--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": False,
         "load_timeout": 3600,
@@ -118,6 +139,8 @@ CATALOG: dict[str, dict] = {
     },
     "nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad": {
         "hf_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",
+        "tokens_per_image": 3300,
+        "ctx_native": 131072,
         "image": DEFAULT_IMAGE,
         "weights_gib": 11, "kv_gib_128k": 5,
         "mem_gib": 28,
@@ -135,6 +158,8 @@ CATALOG: dict[str, dict] = {
     },
     "holo1-5-7b": {
         "hf_id": "Hcompany/Holo1.5-7B",
+        "tokens_per_image": 2700,
+        "ctx_native": 128000,
         "image": DEFAULT_IMAGE,
         "weights_gib": 16, "kv_gib_128k": 7,
         "mem_gib": 38,
@@ -150,10 +175,12 @@ CATALOG: dict[str, dict] = {
     },
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
         "image": DEFAULT_IMAGE,
-        "weights_gib": 17, "kv_gib_128k": 18,
+        "weights_gib": 17, "kv_gib_128k": 17.5,
         "mem_gib": 66,
-        "extra_args": ["--reasoning-parser", "qwen3"],
+        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": True,
         "load_timeout": 7200,
@@ -166,14 +193,16 @@ CATALOG: dict[str, dict] = {
     },
     "cosmos3-nano": {
         "hf_id": "nvidia/Cosmos3-Nano",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
         # multi-arch manifest (arm64 + amd64); the -aarch64 tag broke x86 hosts with
         # "exec format error"
         "image": "vllm/vllm-omni:cosmos3",
 
-        "weights_gib": 32, "kv_gib_128k": 26,
-        "mem_gib": 101,
+        "weights_gib": 32, "kv_gib_128k": 14.5,
+        "mem_gib": 72,
         "extra_args": ["--hf-overrides", '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
-                       "--trust-remote-code"],
+                       "--trust-remote-code", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": True,
         "load_timeout": 5400,
@@ -186,6 +215,8 @@ CATALOG: dict[str, dict] = {
     },
     "cosmos3-super": {
         "hf_id": "nvidia/Cosmos3-Super",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
         # reasoner-only serving: Cosmos3 is a two-tower MoT (32B AR reasoner + 32B
         # diffusion generator). Upstream vLLM's Cosmos3ForConditionalGeneration IS the
         # reasoner-only path ("the Reasoner-only part" per its source), so the 64B
@@ -193,11 +224,11 @@ CATALOG: dict[str, dict] = {
         # Needs vLLM >= 0.24 (the older cosmos3 image tag also works for nano but its
         # vLLM predates this model's config); multi-arch image (amd64 + arm64).
         "image": "vllm/vllm-omni:v0.24.0",
-        "weights_gib": 64, "kv_gib_128k": 32,
+        "weights_gib": 64, "kv_gib_128k": 30.5,
         "mem_gib": 108,
         "extra_args": ["--hf-overrides",
                        '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
-                       "--trust-remote-code"],
+                       "--trust-remote-code", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": True,
         "load_timeout": 10800,
@@ -205,7 +236,7 @@ CATALOG: dict[str, dict] = {
         "strengths": "The 64B omnimodel's Reasoner tower (32B): deepest physical/temporal "
                      "reasoning in the catalog; correct dense OCR; handles native video. "
                      "Fast for its size (~3-7 s stills / asserts measured on RTX PRO 6000).",
-        "weaknesses": "64k context on 96 GB cards (128k needs a GB10-class pool). "
+        "weaknesses": "128k context on 96 GB cards (256k needs a GB10-class pool). "
                       "Borderline UI-state asserts can flip between runs - phrase "
                       "expectations concretely.",
         "pitfalls": "Understanding only - the generator tower is not loaded, so no "
@@ -216,6 +247,8 @@ CATALOG: dict[str, dict] = {
     },
     "ui-tars-1-5-7b": {
         "hf_id": "ByteDance-Seed/UI-TARS-1.5-7B",
+        "tokens_per_image": 2700,
+        "ctx_native": 128000,
         "image": DEFAULT_IMAGE,
         "weights_gib": 16, "kv_gib_128k": 7,
         "mem_gib": 38,

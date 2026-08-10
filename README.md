@@ -123,29 +123,36 @@ drops the entry; weights stay in the shared cache.
 The built-in catalog covers eight vision models and two audio models, measured on a DGX Spark
 GB10 (2026-07 / 2026-08). Installing by slug applies the serving flags each one needs:
 
-| Slug | Context | Notes |
-|---|---|---|
-| `qwen3-vl-30b-a3b-instruct` | 128k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
-| `qwen3-vl-32b-instruct` | 64k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs |
-| `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
-| `holo1-5-7b` | 128k | UI element grounding; stills only |
-| `cosmos-reason2-8b` | 128k | temporal / physical video reasoning |
-| `cosmos3-nano` | 64k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
-| `cosmos3-super` | 64k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 128k on GB10, 64k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
-| `ui-tars-1-5-7b` | 128k | GUI-agent model (action generation later); stills only |
-| `parakeet-tdt-0.6b-v3` | audio | ASR default: 25 languages incl. Russian, word timestamps, 12-87x realtime, no hallucination loops |
-| `pyannote/speaker-diarization-3.1` | audio | diarization default: unbounded speaker count, ~25x realtime (HF-gated: accept 3 repo licenses) |
+| Slug | GPU memory | Context | Notes |
+|---|---|---|---|
+| `qwen3-vl-30b-a3b-instruct` | 92 GiB | 256k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
+| `qwen3-vl-32b-instruct` | 108 GiB | 256k/128k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs; 128k on 96 GB |
+| `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 28 GiB | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
+| `holo1-5-7b` | 38 GiB | 128k | UI element grounding; stills only |
+| `cosmos-reason2-8b` | 66 GiB | 256k | temporal / physical video reasoning |
+| `cosmos3-nano` | 72 GiB | 256k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
+| `cosmos3-super` | 108 GiB | 256k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 256k on GB10, 128k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
+| `ui-tars-1-5-7b` | 38 GiB | 128k | GUI-agent model (action generation later); stills only |
+| `parakeet-tdt-0.6b-v3` | 7 GiB | audio | ASR default: 25 languages incl. Russian, word timestamps, 12-87x realtime, no hallucination loops |
+| `pyannote/speaker-diarization-3.1` | 4 GiB | audio | diarization default: unbounded speaker count, ~25x realtime (HF-gated: accept 3 repo licenses) |
 
-Serving defaults assume the **main mode of operation: a single resident model per GPU**, and
-are computed from the detected GPU at `model install` time: `gpu_frac` is **1.0 on discrete
-GPUs** and **0.75 on unified-memory systems** (GB10/Grace class, where the GPU pool is also
-system RAM - the reserve keeps the OS and the small audio models alive; resident models'
-fractions are additionally capped at a 0.92 sum there), and the context window is the largest standard size (up to 128k) whose KV cache
-fits next to the model's weights. On the known tiers: **GB10** (~120 GiB unified) serves the
-whole catalog at 128k; a **96 GB** discrete card serves everything at 128k except the dense 32B
-(64k - its 128k KV cache alone is ~34 GiB); a **48 GB** card fits the 7-17 GiB models at 128k
-and Cosmos3-Nano at 32k, while the two big Qwens (~62 GiB weights) do not fit at all (install
-warns). Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron); video is 1 per request at 24 frames (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
+Each catalog model states an **absolute GPU-memory requirement in GiB** (weights + ~4 GiB
+runtime + a KV-cache pool sized for ~2.5 full contexts where affordable), so the sizing is
+portable across GPUs. At `model install` time the requirement is adapted to the detected
+GPU: the serving fraction becomes `mem_gib / GPU memory` (capped at 0.97 on discrete cards
+and 0.92 on unified-memory systems, where the GPU pool is also system RAM and the reserve
+keeps the OS and the small audio models alive), and the context window is the largest size -
+up to the checkpoint's native limit - whose KV cache fits inside that slice. The Qwen3-VL
+and Cosmos families serve with an **fp8 KV cache** (halves KV cost; validated with exact-OCR
+and deep needle-retrieval tests with no quality loss), which is what makes their native
+**256k contexts** affordable. On the known tiers: **GB10** (~120 GiB unified) serves the
+whole catalog at 256k (128k for Nemotron/Holo/UI-TARS - their checkpoints' native limit);
+a **96 GB** discrete card serves everything at 256k except the two dense-KV 32B-class models
+(`qwen3-vl-32b`, `cosmos3-super` - 128k there); a **48 GB** card fits the 7-17 GiB models,
+while the two big Qwens (~62 GiB weights) do not fit at all (install warns). A model start
+is refused up front - with a GiB message - when the requirement does not fit next to the
+already-running models (plus a system reserve), or when the GPU's actually-free memory says
+otherwise. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron); video is 1 per request at 24 frames (24 keeps each frame at ~720p - the video pixel budget is shared across frames). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`
@@ -158,8 +165,8 @@ expensive knob - vLLM reserves KV-cache memory for the full `max_model_len` insi
 logs/default, the same registry TOMLs, idle-timeout unload, and auto-load on first use all work
 identically. They differ in serving: instead of vLLM they run small FastAPI apps in locally
 built images (`aisee/audio-nemo`, `aisee/audio-pyannote`; built automatically from
-`res/serving/` on the first start, ~10-20 min one-time), sized honestly (`gpu_frac`
-0.06/0.04, ~8 GB total) so they co-reside comfortably next to a vision model. Both containers
+`res/serving/` on the first start, ~10-20 min one-time), sized honestly (7 + 4 GiB) so
+they co-reside comfortably next to a vision model. Both containers
 GPU-gate at startup: if inference is not actually running on CUDA (the classic ARM64 failure
 mode is a silent CPU fallback), the container exits loudly instead of serving 30-120x slower.
 The first model installed for a capability becomes that capability's default
@@ -202,12 +209,13 @@ Things to know when going off-catalog:
   limit - only temporal resolution (the frame budget spread over the clip); use `watch` for
   long videos.
 
-Several models can be installed at once, but with the single-model defaults only one fits the
-GPU at a time - to co-locate models, lower `gpu_frac` and `max_model_len` per model so the
-slices sum under 1.0 (weights + KV must fit each slice; e.g. an 8B at 0.25/32k next to the MoE
-at 0.55/32k). A start that would push the running models' `gpu_frac` sum over 1.0 is refused
-up front with a clear error (HTTP 409) instead of letting the container crash-loop. Tasks
-queue FIFO per model, with up to `concurrency` running at once.
+Several models can be installed at once, and models co-reside whenever their GiB requirements
+fit together (the small audio pair, ~11 GiB, runs comfortably next to the default VLM; two
+large VLMs generally do not fit). A start that would not fit next to the running models -
+by the models' stated GiB requirements plus a system reserve, or by the GPU's actually-free
+memory - is refused up front with a clear GiB-denominated error (HTTP 409) instead of letting
+the container crash-loop. To co-locate more, lower `--gpu-frac` / `--max-model-len` per model
+at install. Tasks queue FIFO per model, with up to `concurrency` running at once.
 
 A model idle longer than its `idle_timeout` (default 900 s, `0` disables) is stopped
 automatically to free the GPU. The next query targeting it starts it again; the task reports
@@ -401,7 +409,7 @@ python-multipart, mcp). Nothing outside the checkout.
 ~/.aisee/
   config.toml          # api host/port, defaults (fps, idle_timeout, task retention, blob TTL)
   credentials.json     # HF/NGC/API tokens, 0600; written by `creds set` or prompts
-  models/<slug>.toml   # per-model serving config: image, port, gpu_frac, vllm args
+  models/<slug>.toml   # per-model serving config: image, port, mem_gib/gpu_frac, vllm args
   hf-cache/            # shared model-weights cache, mounted into every container;
                        #   by far the biggest item (tens of GB per model)
   tasks/tasks.db       # sqlite task store (statuses, progress, timings, results)
