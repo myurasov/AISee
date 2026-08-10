@@ -77,21 +77,20 @@
   .j-k { color: var(--link); }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
-  #tasksBox td.mediacell { min-width: 110px; }
+  #tasksBox td.mediacell { min-width: 130px; text-align: center; vertical-align: middle; }
+  #tasksBox td.st { vertical-align: middle; }
   /* flex layout with a min-height reservation: filled and empty cells compute the same
      height (no inline-block baseline gaps), so rows never jump when thumbnails load */
-  .mrow { display: flex; flex-wrap: wrap; gap: .3rem; align-items: flex-start;
-          min-height: 92px; }
+  .mrow { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start;
+          justify-content: center; min-height: 92px; }
   .mrow .placeholder { color: var(--fg-faint); align-self: center; }
-  .maudio { font-size: .75rem; align-self: center; color: var(--link);
-            text-decoration: underline; max-width: 180px; overflow: hidden;
-            text-overflow: ellipsis; white-space: nowrap; }
-  .maudio .fname { font-size: .68rem; color: var(--fg-faint); text-decoration: none; }
-  .mthumb { display: block; margin: 0; text-align: center; }
-  .mthumb img { height: 75px; display: block; border: 1px solid var(--border-thumb);
-                background: var(--softer); object-fit: contain; }
-  .mthumb .fname { font-size: .68rem; line-height: 15px; color: var(--fg-faint); max-width: 140px;
-                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mitem { display: flex; flex-direction: column; align-items: center; gap: .15rem;
+           max-width: 260px; text-align: center; }
+  .mitem img { border: 1px solid var(--border-thumb); background: var(--softer);
+               object-fit: contain; display: block; padding: 3px; }
+  .mlink { font-size: .72rem; color: var(--link); overflow-wrap: anywhere; }
+  .mitem .fname { font-size: .68rem; color: var(--fg-faint); overflow-wrap: anywhere;
+                  max-width: none; white-space: normal; }
   button.morethumbs { padding: .2rem .6rem; font-size: .75rem; vertical-align: top;
                       margin-top: 1.6rem; }
   /* media drop zone */
@@ -884,27 +883,6 @@ async function fillMediaCells() {
       const CAP = 6;  // thumbs shown before folding into a "+N more" expander
       const uncapped = td.dataset.showall === "1";
       for (const mi of files) {
-        if (mi.kind === "audio") {
-          // audio has no thumbnail: a plain link to the file, no image
-          const a = document.createElement("a");
-          a.className = "maudio";
-          a.href = base() + "/v1/tasks/" + id + "/media/" + mi.index + q;
-          a.target = "_blank";
-          a.title = mi.filename + " - click to open";
-          a.addEventListener("click", e => e.stopPropagation());
-          let info = "audio";
-          if (mi.duration_s) info += " " + (mi.duration_s >= 90
-            ? (mi.duration_s / 60).toFixed(1) + " min" : Math.round(mi.duration_s) + " s");
-          if (mi.audio_tracks > 1) info += " · " + mi.audio_tracks + " tracks";
-          a.textContent = mi.filename;
-          const cap = document.createElement("div");
-          cap.className = "fname";
-          cap.textContent = info;
-          a.appendChild(cap);
-          wrap.appendChild(a);
-          shown++;
-          continue;
-        }
         if (!uncapped && shown === CAP && files.length > CAP + 1) {
           const more = document.createElement("button");
           more.className = "morethumbs";
@@ -918,31 +896,37 @@ async function fillMediaCells() {
           wrap.appendChild(more);
           break;
         }
+        const item = document.createElement("div");
+        item.className = "mitem";
+        if (mi.kind !== "audio") {
+          const img = document.createElement("img");
+          img.style.height = "75px";
+          img.style.width = (mi.width && mi.height
+                             ? Math.max(24, Math.round(75 * mi.width / mi.height))
+                             : 100) + "px";
+          img.src = base() + "/v1/tasks/" + id + "/media/" + mi.index + "/thumb" + q;
+          img.onerror = () => { img.remove(); };
+          item.appendChild(img);
+        }
         const a = document.createElement("a");
-        a.className = "mthumb";
+        a.className = "mlink";
         a.href = base() + "/v1/tasks/" + id + "/media/" + mi.index + q;
         a.target = "_blank";
         a.title = mi.filename + " - click to open";
+        a.textContent = mi.filename;
         a.addEventListener("click", e => e.stopPropagation());  // don't toggle the row
-        const img = document.createElement("img");
-        img.style.height = "75px";
-        img.style.width = (mi.width && mi.height
-                           ? Math.max(24, Math.round(75 * mi.width / mi.height))
-                           : 100) + "px";
-        img.src = base() + "/v1/tasks/" + id + "/media/" + mi.index + "/thumb" + q;
-        img.onerror = () => { a.remove(); };
-        a.appendChild(img);
-        const cap = document.createElement("div");
-        cap.className = "fname";
+        item.appendChild(a);
         let info = mi.kind || "";
         if (mi.width) info += " " + mi.width + "x" + mi.height;
-        if (mi.kind === "video") {
-          if (mi.duration_s) info += " " + mi.duration_s + "s";
-          if (mi.frames) info += " " + mi.frames + "f";
-        }
-        cap.textContent = info || mi.filename;
-        a.appendChild(cap);
-        wrap.appendChild(a);
+        if (mi.duration_s) info += " " + (mi.duration_s >= 90
+          ? (mi.duration_s / 60).toFixed(1) + " min" : Math.round(mi.duration_s) + " s");
+        if (mi.kind === "video" && mi.frames) info += " " + mi.frames + "f";
+        if (mi.audio_tracks > 1) info += " · " + mi.audio_tracks + " audio tracks";
+        const cap = document.createElement("div");
+        cap.className = "fname";
+        cap.textContent = info;
+        item.appendChild(cap);
+        wrap.appendChild(item);
         shown++;
       }
       if (!shown) wrap.innerHTML = '<span class="placeholder">-</span>';
