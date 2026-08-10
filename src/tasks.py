@@ -300,6 +300,7 @@ class Core:
         self._workers: dict[str, list[threading.Thread]] = {}
         self._cancel: set[str] = set()
         self._model_loading: dict[str, str] = {}  # slug -> phase note
+        self._rtfx_seen: dict[str, float] = {}    # engine kind -> last observed rtfx
         self._stop = threading.Event()
 
     # ---------------- model lifecycle ----------------
@@ -1007,6 +1008,39 @@ class Core:
                 first_by_hash[digest] = ln["label"]
         return path, wavs
 
+    def _stage_ticker(self, tid: str, detail: str, start_pct: int, end_pct: int,
+                      expected_s: float):
+        """Context manager: while a blocking engine call runs, advance pct from
+        start toward (never onto) end using elapsed time vs the expected duration."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def cm():
+            stop = threading.Event()
+
+            def tick():
+                t0 = time.time()
+                while not stop.wait(1.0):
+                    frac = min(0.95, (time.time() - t0) / max(expected_s, 1.0))
+                    self._progress(tid, "running", detail,
+                                   pct=round(start_pct + frac * (end_pct - start_pct)))
+            th = threading.Thread(target=tick, daemon=True)
+            th.start()
+            try:
+                yield
+            finally:
+                stop.set()
+                th.join(timeout=0.1)
+        return cm()
+
+    def _expected_rtfx(self, engine_kind: str) -> float:
+        """Recently observed realtime factor per engine (conservative default)."""
+        return self._rtfx_seen.get(engine_kind) or (40.0 if engine_kind == "asr" else 12.0)
+
+    def _note_rtfx(self, engine_kind: str, rtfx) -> None:
+        if rtfx:
+            self._rtfx_seen[engine_kind] = float(rtfx)
+
     def _diarize_lane(self, p: dict, wav, diar_entry: dict, *, remaining) -> dict:
         """One lane through the diarizer, with sliver-cluster cleanup. Returns the
         lane's diarization fields (num_speakers, speakers, turns, rtfx, ...)."""
@@ -1096,11 +1130,16 @@ class Core:
                 lanes_out.append(lane)
                 continue
             note = f" lane {i + 1}/{len(wavs)} ({ln['label']})" if len(wavs) > 1 else ""
-            self._progress(tid, "running",
-                           f"transcribing{note} ({audio_s / 60:.1f} min of audio)",
-                           pct=_pct())
-            r = audio.asr_transcribe(entry["port"], w, timeout=_remaining("transcription"))
+            lane_s = audio.wav_duration(w)
+            detail = f"transcribing{note} ({lane_s / 60:.1f} min of audio)"
+            self._progress(tid, "running", detail, pct=_pct())
+            next_pct = 4 + round((done_units + 1) / total_units * 92)
+            with self._stage_ticker(tid, detail, _pct(), next_pct,
+                                    lane_s / self._expected_rtfx("asr") + 5):
+                r = audio.asr_transcribe(entry["port"], w,
+                                         timeout=_remaining("transcription"))
             done_units += 1
+            self._note_rtfx("asr", r.get("rtfx"))
             asr_wall += r.get("wall_s") or 0.0
             words = r.get("words") or []
             segments = r.get("segments") or []
@@ -1111,9 +1150,12 @@ class Core:
                 return
             if diar_entry is not None:
                 try:
-                    self._progress(tid, "running", f"diarizing{note}", pct=_pct())
-                    d = self._diarize_lane(p, w, diar_entry, remaining=_remaining)
+                    next_pct = 4 + round((done_units + 1) / total_units * 92)
+                    with self._stage_ticker(tid, f"diarizing{note}", _pct(), next_pct,
+                                            lane_s / self._expected_rtfx("diar") + 5):
+                        d = self._diarize_lane(p, w, diar_entry, remaining=_remaining)
                     done_units += 1
+                    self._note_rtfx("diar", d.get("diarize_rtfx"))
                     diar_wall += d.pop("diarize_wall_s", 0.0)
                     if words:
                         words = audio.assign_speakers(words, d["turns"])
@@ -1200,11 +1242,16 @@ class Core:
                 lanes_out.append(lane)
                 continue
             note = f" lane {i + 1}/{len(wavs)} ({ln['label']})" if len(wavs) > 1 else ""
-            self._progress(tid, "running",
-                           f"diarizing{note} ({audio_s / 60:.1f} min of audio)",
-                           pct=4 + round(done_lanes / len(live) * 92))
-            d = self._diarize_lane(p, w, entry, remaining=_remaining)
+            lane_s = audio.wav_duration(w)
+            detail = f"diarizing{note} ({lane_s / 60:.1f} min of audio)"
+            start_pct = 4 + round(done_lanes / len(live) * 92)
+            end_pct = 4 + round((done_lanes + 1) / len(live) * 92)
+            self._progress(tid, "running", detail, pct=start_pct)
+            with self._stage_ticker(tid, detail, start_pct, end_pct,
+                                    lane_s / self._expected_rtfx("diar") + 5):
+                d = self._diarize_lane(p, w, entry, remaining=_remaining)
             done_lanes += 1
+            self._note_rtfx("diar", d.get("rtfx"))
             diar_wall += d.pop("diarize_wall_s", 0.0)
             d["rtfx"] = d.pop("diarize_rtfx", None)
             lane.update(d)

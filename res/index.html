@@ -295,7 +295,7 @@ function showTab(name) {
   if (gpuTimer) { clearInterval(gpuTimer); gpuTimer = null; }
   if (name === "gpu") { refreshGpu(); gpuTimer = setInterval(refreshGpu, 2000); }
   if (tasksTimer) { clearInterval(tasksTimer); tasksTimer = null; }
-  if (name === "tasks") { refreshTasks(true); tasksTimer = setInterval(refreshTasks, 3000); }
+  if (name === "tasks") { refreshTasks(true); tasksTimer = setInterval(refreshTasks, 1500); }
   if (name === "mcp") loadMcpTab();
   if (name === "api") loadApiTab();
   if (name === "config") loadConfigTab();
@@ -823,7 +823,7 @@ async function pollInto(id) {
     const t = await api("/v1/tasks/" + id);
     fillDetail(td, t);
     const st = document.querySelector('#tasksBox tr[data-id="' + id + '"] td.st');
-    if (st) { st.textContent = stText(t); st.className = "st st-" + t.status; }
+    if (st) { st.innerHTML = stText(t); st.className = "st st-" + t.status; }
     if (TERMINAL.includes(t.status)) stopPoller(id);
   } catch (e) {
     td.innerHTML = '<div class="d-status">error: ' + e.message + "</div>";
@@ -856,7 +856,7 @@ function expand(id) {
   td.innerHTML = '<div class="d-status">loading...</div>';
   d.appendChild(td);
   pollInto(id);
-  pollers[id] = setInterval(() => pollInto(id), 2000);
+  pollers[id] = setInterval(() => pollInto(id), 1500);
 }
 
 const mediaInfoCache = {};
@@ -930,7 +930,7 @@ let tasksPage = 0;
 function stText(t) {
   // live percent in the status column while a task is actually progressing
   const pct = (t.progress || {}).pct;
-  return t.status + (!TERMINAL.includes(t.status) && pct != null ? " " + pct + "%" : "");
+  return t.status + (!TERMINAL.includes(t.status) && pct != null ? "<br>" + pct + "%" : "");
 }
 
 async function refreshTasks(reattach = false) {
