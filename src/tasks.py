@@ -650,7 +650,18 @@ class Core:
                            else "encoding images")
             text = (vlm.with_context(p["question"], context) if kind == "look"
                     else vlm.with_context(f"Expectation to verify: {p['expectation']}", context))
-            content = media.build_content(media_files, text, frames=frames, fps=fps,
+            # native long videos: the engine samples video_frames anyway, so re-encode
+            # down to that budget instead of shipping the whole clip at original rate
+            # (an hour of full-rate MJPEG is a multi-GB request that kills the engine)
+            content_fps = fps
+            if native and not fps:
+                durs = [media.video_duration(m) or 0
+                        for m in media_files if media.is_video(m)]
+                dur = max(durs, default=0)
+                if dur > 90:
+                    content_fps = max(0.02, entry.get("video_frames", 24) / dur)
+            content = media.build_content(media_files, text, frames=frames,
+                                          fps=content_fps,
                                           native=native, max_images=entry["max_images"],
                                           work_dir=work_dir)
             prep_s = round(time.time() - t0, 1)
