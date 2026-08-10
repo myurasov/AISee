@@ -194,8 +194,9 @@ def cmd_model(args) -> int:
         if c.api_running():
             for m in c.models():
                 d = " [default]" if m["default"] else ""
-                note = f" ({m['loading_note']})" if m.get("loading_note") else ""
-                _p(f"{m['slug']}{d}: {m['state']}{note} port={m['port']}")
+                # a live loading note is more informative than the bare state word
+                state = m["loading_note"] if m.get("loading_note") else m["state"]
+                _p(f"{m['slug']}{d}: {state} port={m['port']}")
         else:
             state_names = {"absent": "installed", "exited": "failed", "running": "running"}
             for e in registry.list_installed():

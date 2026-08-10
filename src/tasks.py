@@ -452,9 +452,9 @@ class Core:
                         engine = entry.get("engine", "vllm")
                         if engine in dockerctl.ENGINE_BUILD_DIRS:
                             # audio serving images are built locally, not pulled
-                            self._model_loading[slug] = "building image (~10-20 min)"
+                            self._model_loading[slug] = "building image (~10+ min)"
                             if progress:
-                                progress("building image (~10-20 min)")
+                                progress("building image (~10+ min)")
                             dockerctl.build_image(entry["image"], engine)
                         else:
                             self._model_loading[slug] = "pulling image"
