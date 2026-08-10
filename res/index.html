@@ -15,6 +15,7 @@
     --tab-bg: #f0f0f0; --btn-border: #888; --link: #369; --sel: #eef4ff;
     --ok: #2a7; --warn: #b80; --err: #c33; --pass: #4a4;
     --accent: #76b900; --accent-soft: #f3f9e8; --drop-border: #bbb; --bar-text: #333;
+    --hl-border: #4a4a4a; --hl-bg: #e9e9e9;
   }
   body.dark {
     --bg: #14181c; --panel: #1d2227; --soft: #262d34; --softer: #21272d; --code: #2a3138;
@@ -23,6 +24,7 @@
     --tab-bg: #21272d; --btn-border: #4a545e; --link: #6cb1e0; --sel: #24344a;
     --ok: #4c9; --warn: #d9a03c; --err: #e77; --pass: #5b5;
     --accent: #4f7c08; --accent-soft: #22301a; --drop-border: #4a545e; --bar-text: #e8ecf0;
+    --hl-border: #aeb9c4; --hl-bg: #333d47;
     color-scheme: dark;
   }
   *, *::before, *::after { box-sizing: border-box; }
@@ -111,10 +113,13 @@
   .card { border: 1px solid var(--border-soft); background: var(--softer);
           padding: .5rem .7rem; border-radius: 5px; cursor: pointer; margin: 0; }
   .card input { display: none; }
-  .card b { color: var(--fg-strong); }
-  .card small { display: block; color: var(--fg-faint); margin-top: .1rem; }
-  .card.on { outline: 2px solid var(--accent); background: var(--accent-soft); }
-  .cards.modelsrow { margin-top: .6rem; align-items: start; }
+  .card b { color: var(--fg-label); font-size: .85rem; font-weight: 400; }
+  .card small { display: block; color: var(--fg-faint); font-size: .75rem; margin-top: .1rem; }
+  .card.on { outline: 2px solid var(--hl-border); background: var(--hl-bg); }
+  .card.on b { color: var(--fg-strong); }
+  .cards.modelsrow { margin-top: 1rem; align-items: start; }
+  /* breathing room between the query form sections */
+  #tab-query > label { margin-top: 1.1rem; }
   .modelsrow label { margin: 0 0 .15rem; }
   .modelsrow select { padding: .3rem .45rem; }
   .modeloff { opacity: .35; }
@@ -182,7 +187,7 @@
     <div id="modelAsrBox"><label for="modelAsr" title="which installed ASR model transcribes">transcription model</label><select id="modelAsr"><option value="">(default)</option></select></div>
     <div id="modelDiarBox"><label for="modelDiar" title="which installed diarization model attributes speakers">diarization model</label><select id="modelDiar"><option value="">(default)</option></select></div>
   </div>
-  <label for="files" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images/video/audio)</label>
+  <label for="files" id="mediaLabel" title="uploads are content-deduplicated: a file the server has seen recently is not re-sent">media (images)</label>
   <div id="drop">
     <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
     <div id="dropHint" class="muted">drag &amp; drop files here, or click to browse</div>
@@ -1044,8 +1049,18 @@ function modelForKind(k) {
   return $("modelVlm").value;
 }
 
+const MEDIA_LABELS = {
+  look: "media (images)",
+  assert: "media (images, or a video)",
+  watch: "media (one video)",
+  transcribe: "media (audio file, or a video with audio)",
+  transcribe_diarize: "media (audio file, or a video with audio)",
+  diarize: "media (audio file, or a video with audio)"
+};
+
 function kindChanged() {
   const k = kindValue();
+  $("mediaLabel").textContent = MEDIA_LABELS[k];
   $("promptLabel").textContent = k === "assert" ? "expectation" : "question";
   $("prompt").style.display = isAudioKind(k) ? "none" : "";
   $("promptLabel").style.display = isAudioKind(k) ? "none" : "";
