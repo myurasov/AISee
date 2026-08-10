@@ -374,8 +374,25 @@ class Core:
                 f"({reserve:.0f} GiB reserved for the system"
                 + (f"; resident: {resident}" if resident else "") +
                 "). Stop a model first.")
+        # a cold vLLM load transiently holds more than its steady-state slice (weights
+        # stream through page cache while CUDA allocates the full fraction), and audio
+        # jobs spike host RAM mid-job beyond their mem_gib. On unified memory both
+        # compete with the OS itself - admitting a big load then starved sshd/journald
+        # for ~8 min (2026-08-10 incident), killing the in-flight transcription.
+        margin = 6.0 if prof["unified"] else 2.0
+        if prof["unified"] and entry.get("engine", "vllm") == "vllm" and need >= 30:
+            busy = [e["slug"] for e in registry.list_installed()
+                    if e.get("modality") == "audio" and e["slug"] != entry["slug"]
+                    and dockerctl.container_state(e["slug"]) == "running"
+                    and (self.store.open_count(e["slug"]) > 0
+                         or self._in_use.get(e["slug"]))]
+            if busy:
+                raise RuntimeError(
+                    f"not starting '{entry['slug']}': audio job(s) in progress on "
+                    f"{', '.join(busy)} and a large model cold-load would starve them "
+                    "(unified memory). Retry after they finish.")
         free_now = dockerctl.gpu_free_gib(prof["unified"])
-        if free_now is not None and need > free_now - 2.0:
+        if free_now is not None and need > free_now - margin:
             raise RuntimeError(
                 f"not starting '{entry['slug']}': it needs ~{need:.0f} GiB but only "
                 f"~{free_now:.0f} GiB is actually free right now (something outside "
