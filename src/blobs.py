@@ -39,19 +39,41 @@ def find(sha: str) -> Path | None:
     return None
 
 
+def _names_dir() -> Path:
+    return blobs_dir() / "names"
+
+
+def original_name(sha: str) -> str | None:
+    """The filename the blob was first uploaded under, when recorded."""
+    p = _names_dir() / sha.lower()
+    try:
+        name = p.read_text().strip()
+        return os.path.basename(name) or None
+    except OSError:
+        return None
+
+
 def put_bytes(data: bytes, filename: str) -> tuple[str, Path]:
-    """Store bytes as a blob (no-op if already present); returns (sha256, blob path)."""
+    """Store bytes as a blob (no-op if already present); returns (sha256, blob path).
+    The original filename is remembered so sha-referenced tasks can show it."""
     sha = hashlib.sha256(data).hexdigest()
+    name = os.path.basename(filename or "")
     existing = find(sha)
     if existing:
+        if name and not original_name(sha):
+            _names_dir().mkdir(parents=True, exist_ok=True)
+            (_names_dir() / sha).write_text(name)
         return sha, existing
     d = blobs_dir()
     d.mkdir(parents=True, exist_ok=True)
-    ext = Path(os.path.basename(filename)).suffix.lower()[:16]
+    ext = Path(name).suffix.lower()[:16]
     p = d / (sha + ext)
     tmp = d / (sha + ext + ".tmp")
     tmp.write_bytes(data)
     tmp.rename(p)
+    if name:
+        _names_dir().mkdir(parents=True, exist_ok=True)
+        (_names_dir() / sha).write_text(name)
     return sha, p
 
 
@@ -60,7 +82,12 @@ def link_into(blob: Path, dest_dir: Path, filename: str | None = None) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / (os.path.basename(filename) if filename else blob.name)
     if dest.exists():
-        return dest
+        # a DIFFERENT blob may already hold this name in the task: never reuse it
+        if dest.stat().st_ino == blob.stat().st_ino:
+            return dest
+        dest = dest_dir / blob.name
+        if dest.exists():
+            return dest
     try:
         os.link(blob, dest)
     except OSError:
@@ -81,6 +108,7 @@ def gc(ttl_hours: float) -> int:
         try:
             if p.is_file() and p.stat().st_mtime < cutoff:
                 p.unlink()
+                (_names_dir() / p.stem[:64]).unlink(missing_ok=True)
                 n += 1
         except OSError:
             pass

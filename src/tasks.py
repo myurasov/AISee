@@ -477,6 +477,11 @@ class Core:
         if kind not in caps:
             raise ValueError(f"model '{slug}' does not support '{kind}' "
                              f"(it supports: {', '.join(caps)})")
+        if kind == "transcribe" and params.get("diarize") and not params.get("diarize_model"):
+            # pin the diarizer at submit time so the task record names both models
+            diar = registry.default_for_capability("diarize")
+            if diar:
+                params["diarize_model"] = diar
         return self.store.create(kind, slug, params)
 
     def _hold_in_use(self, slug: str) -> None:

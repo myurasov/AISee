@@ -78,6 +78,7 @@
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   #tasksBox td { vertical-align: middle; }
+  .pctline { color: var(--fg-faint); font-size: .75rem; }
   #tasksBox td.mediacell { min-width: 130px; text-align: center; }
   /* flex layout with a min-height reservation: filled and empty cells compute the same
      height (no inline-block baseline gaps), so rows never jump when thumbnails load */
@@ -942,7 +943,19 @@ let tasksPage = 0;
 function stText(t) {
   // live percent in the status column while a task is actually progressing
   const pct = (t.progress || {}).pct;
-  return t.status + (!TERMINAL.includes(t.status) && pct != null ? "<br>" + pct + "%" : "");
+  const word = t.status === "preparing_media" ? "preparing" : t.status;
+  return word + (!TERMINAL.includes(t.status) && pct != null
+                 ? '<br><span class="pctline">' + pct + "%</span>" : "");
+}
+
+function kindText(t) {
+  return t.kind + ((t.params || {}).diarize ? "+diarize" : "");
+}
+
+function modelText(t) {
+  const diar = (t.params || {}).diarize_model
+            || ((t.result || {}).diarization_model);
+  return (t.model || "") + (diar ? '<br><span class="pctline">+ ' + diar + "</span>" : "");
 }
 
 async function refreshTasks(reattach = false) {
@@ -966,7 +979,7 @@ async function refreshTasks(reattach = false) {
     tasksSig = sig;
     const rows = tasks.map(t =>
       '<tr data-id="' + t.id + '">' +
-      "<td>" + t.id + "</td><td>" + t.kind + "</td><td>" + (t.model || "") + "</td>" +
+      "<td>" + t.id + "</td><td>" + kindText(t) + "</td><td>" + modelText(t) + "</td>" +
       '<td class="mediacell" data-id="' + t.id + '"><div class="mrow">' +
       '<span class="placeholder">...</span></div></td>' +
       '<td class="st st-' + t.status + '">' + stText(t) + "</td>" +

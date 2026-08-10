@@ -276,7 +276,8 @@ def create_app() -> FastAPI:
             if not b:
                 raise HTTPException(400, f"unknown blob {ref} - upload it first "
                                          "(POST /v1/blobs) or send the file")
-            return str(blobs.link_into(b, tid_dir / "in"))
+            # link under the original upload filename when recorded, so tasks show it
+            return str(blobs.link_into(b, tid_dir / "in", blobs.original_name(ref[7:])))
 
         if ctype.startswith("multipart/"):
             form = await request.form()
