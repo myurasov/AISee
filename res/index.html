@@ -639,6 +639,10 @@ async function connect() {
     renderStat(h, models, true);
     lastModels = models;
     try { cfgDefaults = (await api("/v1/config")).defaults || {}; } catch (e) {}
+    try {
+      for (const dm of (await api("/v1/describe?format=json")).models || [])
+        if (dm.input_resolution) resGuide[dm.slug] = dm.input_resolution;
+    } catch (e) {}
     for (const [id, cap] of [["modelVlm", "look"], ["modelAsr", "transcribe"], ["modelDiar", "diarize"]]) {
       const sel = $(id);
       const prev = sel.value;
@@ -878,6 +882,29 @@ function expand(id) {
 const mediaInfoCache = {};
 let lastModels = [];   // /v1/models cache for the query form's auto hints
 let cfgDefaults = {};  // /v1/config defaults (frames, fps)
+let resGuide = {};     // slug -> input_resolution (from /v1/describe?format=json)
+let pickedVideoDur = null;  // duration (s) of the first picked video file, if any
+
+function mpLabel(px) {
+  if (!px) return null;
+  const names = [[8100000, "4K"], [1900000, "1080p"], [850000, "720p"], [380000, "480p"]];
+  const near = names.find(([p2]) => px >= p2);
+  return "~" + (px / 1e6).toFixed(1) + " MP" + (near ? " (\u2248" + near[1] + ")" : "");
+}
+
+function probePickedVideo() {
+  pickedVideoDur = null;
+  const f = [...$("files").files].find(f => f.type.startsWith("video/"));
+  if (!f) { updateAutoHints(); return; }
+  const v = document.createElement("video");
+  v.preload = "metadata";
+  v.onloadedmetadata = () => {
+    if (isFinite(v.duration)) pickedVideoDur = v.duration;
+    URL.revokeObjectURL(v.src);
+    updateAutoHints();
+  };
+  v.src = URL.createObjectURL(f);
+}
 
 function currentVlm() {
   const want = $("modelVlm").value;
@@ -897,28 +924,41 @@ function updateAutoHints() {
   const mi = m ? m.max_images : 16;
   const fpsIn = parseFloat($("fps").value) || null;
   const M = "<b>" + slug + "</b>";
+  const ir = resGuide[slug] || {};
+  const perFrame = mpLabel((ir.video || {}).per_frame_max_pixels);
+  const stillMp = mpLabel((ir.still || {}).max_pixels);
+  const atRes = perFrame ? " at up to <b>" + perFrame + "</b> each" : "";
   let msg;
   if (k === "watch") {
     const fps = fpsIn || (m ? m.fps : (cfgDefaults.fps || 1));
     const chunk = parseFloat($("chunk").value) || Math.max(1, Math.round(vf / fps));
-    msg = M + " watches the video in <b>" + chunk + " s</b> chunks at <b>" + fps +
-          " fps</b>, then synthesizes one answer - chunks are sized so each one fills " +
-          "the model's <b>" + vf + "</b>-frame budget (" + Math.round(chunk * fps) +
-          " frames here), keeping full detail over any length.";
+    const nCh = pickedVideoDur ? Math.ceil(pickedVideoDur / chunk) : null;
+    const intro = nCh
+      ? "At these settings your <b>" + Math.round(pickedVideoDur / 60) + " min</b> video " +
+        "becomes <b>" + nCh + "</b> chunks of <b>" + chunk + " s</b>"
+      : "At these settings a 10-min video becomes <b>" + Math.ceil(600 / chunk) +
+        "</b> chunks of <b>" + chunk + " s</b>";
+    msg = intro + ", each watched at <b>" + fps + " fps</b> by " + M +
+          " - whose single-shot budget is <b>" + vf + "</b> frames" + atRes +
+          " - then everything is synthesized into one answer. Raise fps for finer " +
+          "time resolution (more chunks), raise chunk length for reach.";
   } else if ($("native").value === "video") {
-    msg = "The whole clip goes to " + M + ", which reads <b>" + vf + "</b> frames " +
-          "spread evenly across it" +
-          (fpsIn ? " (re-encoded at <b>" + fpsIn + " fps</b> first)" : "") +
-          " - that is its fixed per-request video budget, so the longer the clip, the " +
-          "coarser the time detail (watch avoids this by chunking).";
+    const gap = pickedVideoDur ? Math.max(1, Math.round(pickedVideoDur / vf)) : null;
+    msg = "The whole clip goes to " + M + " in one shot - its single-shot budget is <b>" +
+          vf + "</b> frames" + atRes + ", spread evenly across the clip" +
+          (gap ? " (one frame every <b>~" + gap + " s</b> of your video)" : "") +
+          (fpsIn ? ", re-encoded at <b>" + fpsIn + " fps</b> first" : "") +
+          " - the longer the clip, the coarser the timeline; watch avoids this by chunking.";
   } else {
     const nIn = parseInt($("frames").value, 10) || null;
     msg = (fpsIn
           ? "Still frames sampled at <b>" + fpsIn + "/s</b>"
           : "<b>" + (nIn || cfgDefaults.frames || 16) + "</b> still frames spread evenly " +
             "across the clip") +
-          " go to " + M + " as individual images - at most <b>" + mi + "</b> per " +
-          "request, because each image costs part of the model's context window.";
+          " go to " + M + " as individual images" +
+          (stillMp ? " at up to <b>" + stillMp + "</b> each" : "") +
+          " - at most <b>" + mi + "</b> per request, because each image costs part of " +
+          "the model's context window.";
   }
   $("samplingHint").innerHTML = "<i>" + msg + "</i>";
   $("fps").placeholder = "auto";
@@ -1108,7 +1148,7 @@ drop.addEventListener("drop", e => {
     dropHint();
   }
 });
-$("files").addEventListener("change", dropHint);
+$("files").addEventListener("change", () => { dropHint(); probePickedVideo(); });
 function dropHint() {
   const fs = [...$("files").files];
   const h = $("dropHint");
