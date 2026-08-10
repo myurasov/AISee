@@ -244,7 +244,7 @@ def wait_ready(entry: dict, timeout: int | None = None, progress=None) -> None:
                 f"model container is crash-looping; last log lines:\n{logs_tail(entry['slug'])}")
         n += 1
         if progress and n % 4 == 0:
-            progress(f"loading... {int(time.time() - (deadline - timeout))}s")
+            progress(f"starting... {int(time.time() - (deadline - timeout))}s")
         time.sleep(5)
     raise RuntimeError(f"model not ready after {timeout}s (weights may still be downloading); "
                        f"log tail:\n{logs_tail(entry['slug'])}")

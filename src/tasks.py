@@ -1050,6 +1050,25 @@ class Core:
             self._progress(tid, "preparing_media",
                            f"extracting audio lane {i + 1}/{len(lanes)} ({ln['label']})")
             wavs.append((ln, audio.extract_lane(path, ln, work_dir / f"lane{i}.wav")))
+        # long-form audio next to a resident large VLM starves a unified-memory host:
+        # the ASR/alignment transient (tens of GB, far above the engines' mem_gib)
+        # plus a ~96 GiB resident drove the GB10 into NVRM alloc failures, an OOM
+        # kill, and an unreachable host twice on 2026-08-10. Fail fast with the
+        # documented schedule-them-apart rule instead of wedging the box.
+        total_s = max((audio.wav_duration(w) for _, w in wavs), default=0.0)
+        prof = registry.gpu_profile()
+        if prof["unified"] and total_s > 900:
+            big = [e["slug"] for e in registry.list_installed()
+                   if e.get("modality", "vision") == "vision"
+                   and float(e.get("mem_gib") or 0) >= 30
+                   and dockerctl.container_state(e["slug"]) == "running"]
+            if big:
+                raise RuntimeError(
+                    f"not transcribing {total_s / 60:.0f} min of audio while a large "
+                    f"vision model is resident ({', '.join(big)}): on unified memory "
+                    "the long-form audio transient plus the resident model starves "
+                    "the host. Stop the vision model (or wait for idle-unload) and "
+                    "retry; clips under 15 min co-reside fine.")
         # factual dedup only (no interpretation): BIT-identical lanes (equal PCM
         # hashes) are not processed twice; similar-but-distinct lanes never merge
         first_by_hash: dict[str, str] = {}
