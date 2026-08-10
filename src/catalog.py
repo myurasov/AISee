@@ -40,11 +40,29 @@ UNIFIED_CAPACITY_BUDGET = 0.92  # resident gpu_frac sum cap on unified hosts (OS
 GPU_FRAC_DISCRETE = 0.97  # dedicated VRAM: literal 1.0 fails vLLM's free-memory check
                           #   (driver/ECC overhead holds a few hundred MiB at startup)
 
+# Absolute memory requirement per model (GiB), portable across GPUs: weights +
+# ~4 GiB runtime + a KV pool of KV_TARGET_X full contexts (never below one full
+# context). The serving fraction is derived from this at container start
+# (mem_gib / detected GPU memory, clamped to the host cap), and the capacity
+# check compares GiB against what is actually free. Validated on real tasks
+# 2026-08-10 (see res/report-gpu-memory-budgeting.md in the project).
+KV_TARGET_X = 2.5
+ACT_GIB = 4  # runtime overhead next to the weights
+
+
+def mem_requirement_gib(cat: dict) -> float | None:
+    """weights + overhead + KV pool sized for KV_TARGET_X full contexts (floor 1.0)."""
+    w, kv = cat.get("weights_gib"), cat.get("kv_gib_128k")
+    if not w or not kv:
+        return None
+    return round(w + ACT_GIB + max(kv * KV_TARGET_X, float(kv)), 1)
+
 CATALOG: dict[str, dict] = {
     "qwen3-vl-30b-a3b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
         "image": DEFAULT_IMAGE,
         "weights_gib": 62, "kv_gib_128k": 13,
+        "mem_gib": 99,
         # NOTE: Qwen3-VL has no hybrid thinking toggle - the Instruct checkpoints never
         # think (their chat template has no enable_thinking); the Thinking variants are
         # separate checkpoints. Do not add --reasoning-parser here: with a non-thinking
@@ -65,6 +83,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Thinking",
         "image": DEFAULT_IMAGE,
         "weights_gib": 62, "kv_gib_128k": 13,
+        "mem_gib": 99,
         # the parser routes the always-on chain-of-thought into the reasoning field so
         # answers stay clean; without it the CoT would pollute the answer text
         "extra_args": ["--reasoning-parser", "qwen3"],
@@ -86,6 +105,7 @@ CATALOG: dict[str, dict] = {
         "image": DEFAULT_IMAGE,
 
         "weights_gib": 63, "kv_gib_128k": 34,
+        "mem_gib": 108,
         "extra_args": [],
         "supports_native_video": True,
         "reasoning": False,
@@ -100,6 +120,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",
         "image": DEFAULT_IMAGE,
         "weights_gib": 11, "kv_gib_128k": 5,
+        "mem_gib": 28,
         "extra_args": ["--trust-remote-code"],
         "supports_native_video": True,
         "reasoning": False,
@@ -116,6 +137,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "Hcompany/Holo1.5-7B",
         "image": DEFAULT_IMAGE,
         "weights_gib": 16, "kv_gib_128k": 7,
+        "mem_gib": 38,
         "extra_args": [],
         "supports_native_video": False,
         "reasoning": False,
@@ -130,6 +152,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
         "image": DEFAULT_IMAGE,
         "weights_gib": 17, "kv_gib_128k": 18,
+        "mem_gib": 66,
         "extra_args": ["--reasoning-parser", "qwen3"],
         "supports_native_video": True,
         "reasoning": True,
@@ -148,6 +171,7 @@ CATALOG: dict[str, dict] = {
         "image": "vllm/vllm-omni:cosmos3",
 
         "weights_gib": 32, "kv_gib_128k": 26,
+        "mem_gib": 101,
         "extra_args": ["--hf-overrides", '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code"],
         "supports_native_video": True,
@@ -170,6 +194,7 @@ CATALOG: dict[str, dict] = {
         # vLLM predates this model's config); multi-arch image (amd64 + arm64).
         "image": "vllm/vllm-omni:v0.24.0",
         "weights_gib": 64, "kv_gib_128k": 32,
+        "mem_gib": 108,
         "extra_args": ["--hf-overrides",
                        '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code"],
@@ -193,6 +218,7 @@ CATALOG: dict[str, dict] = {
         "hf_id": "ByteDance-Seed/UI-TARS-1.5-7B",
         "image": DEFAULT_IMAGE,
         "weights_gib": 16, "kv_gib_128k": 7,
+        "mem_gib": 38,
         "extra_args": ["--trust-remote-code"],
         "supports_native_video": False,
         "reasoning": False,
@@ -214,6 +240,7 @@ CATALOG: dict[str, dict] = {
         "modality": "audio",
         "capabilities": ["transcribe"],
         "gpu_frac": 0.06,   # ~5 GB resident (transducer: no KV cache)
+        "mem_gib": 7,       # steady-state; long-form transients bounded by mem_limit
         # long-form ASR peaks high in HOST RAM: timestamp alignment on a 79-min file
         # hit ~16 GB anon rss (measured); the cap is the contained-failure bound
         "mem_limit": "40g",
@@ -236,6 +263,7 @@ CATALOG: dict[str, dict] = {
         "modality": "audio",
         "capabilities": ["diarize"],
         "gpu_frac": 0.04,   # ~3 GB resident
+        "mem_gib": 4,
         "mem_limit": "16g",
         "concurrency": 1,
         "load_timeout": 5400,

@@ -189,6 +189,29 @@ def stop_model(slug: str) -> None:
     _run(["rm", "-f", container_name(slug)], check=False)
 
 
+def gpu_free_gib(unified: bool) -> float | None:
+    """What is ACTUALLY free for a new model right now, in GiB.
+
+    Unified memory (GB10 class): the GPU pool is system RAM -> MemAvailable.
+    Discrete: total - used from nvidia-smi."""
+    try:
+        if unified:
+            mi = {}
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    k, _, v = line.partition(":")
+                    mi[k] = v
+            return float(mi["MemAvailable"].split()[0]) / 1048576.0
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total,memory.used",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10).stdout.strip().splitlines()[0]
+        total, used = (float(x) for x in out.split(","))
+        return (total - used) / 1024.0
+    except Exception:
+        return None  # no probe available: fall back to bookkeeping only
+
+
 def restart_count(slug: str) -> int:
     r = _run(["inspect", "-f", "{{.RestartCount}}", container_name(slug)], check=False)
     try:

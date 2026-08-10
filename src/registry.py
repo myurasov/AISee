@@ -133,6 +133,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
             "capabilities": list(cat.get("capabilities", [])),
             "port": port or existing.get("port") or _free_port(),
             "gpu_frac": gpu_frac if gpu_frac is not None else cat.get("gpu_frac", 0.06),
+            "mem_gib": cat.get("mem_gib", 7),
             "mem_limit": cat.get("mem_limit", "16g"),
             "supports_native_video": False,
             "load_timeout": cat.get("load_timeout", 5400),
@@ -144,7 +145,18 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         entry_path(slug).write_text(_dump_entry(entry))
         _adopt_capability_defaults(entry, cfg)
         return entry
-    frac = gpu_frac if gpu_frac is not None else cat.get("gpu_frac", profile["gpu_frac"])
+    # the catalog states an absolute requirement in GiB (portable across GPUs);
+    # the serving fraction is derived from it for THIS host, clamped to the host cap.
+    # An explicit --gpu-frac still overrides everything.
+    mem_gib = cat.get("mem_gib") or catalog.mem_requirement_gib(cat)
+    cap = (catalog.UNIFIED_CAPACITY_BUDGET if profile["unified"]
+           else catalog.GPU_FRAC_DISCRETE)
+    if gpu_frac is not None:
+        frac = gpu_frac
+    elif mem_gib:
+        frac = round(min(cap, mem_gib / profile["mem_gib"]), 3)
+    else:
+        frac = cat.get("gpu_frac", profile["gpu_frac"])
     args = list(extra_args if extra_args is not None else cat.get("extra_args", []))
     # CUDA-graph capture is unstable/slow on unified-memory (GB10-class) systems, so they
     # serve eager; discrete GPUs keep graphs (measured 3-4x faster decode on RTX PRO 6000)
@@ -156,6 +168,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         "image": image or cat.get("image", catalog.DEFAULT_IMAGE),
         "port": port or existing.get("port") or _free_port(),
         "gpu_frac": frac,
+        **({"mem_gib": mem_gib} if mem_gib else {}),
         "extra_args": args,
         "max_images": cat.get("max_images", catalog.DEFAULT_MAX_IMAGES),
         "video_frames": cat.get("video_frames", catalog.DEFAULT_VIDEO_FRAMES),

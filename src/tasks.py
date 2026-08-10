@@ -322,6 +322,7 @@ class Core:
             "state": self.model_state(slug),
             "modality": entry.get("modality", "vision"),
             "engine": entry.get("engine", "vllm"),
+            "mem_gib": entry.get("mem_gib"),
             "capabilities": entry.get("capabilities") or list(catalog.VISION_KINDS),
             "idle_timeout": entry.get("idle_timeout"),
             "last_used": self.store.last_used(slug),
@@ -348,25 +349,38 @@ class Core:
     def check_gpu_capacity(self, entry: dict) -> None:
         """Refuse a start that would oversubscribe the GPU - before any container work.
 
-        Each model reserves gpu_frac of GPU memory at startup; if the running models'
-        fractions plus this one exceed 1.0, vLLM would crash-loop on allocation anyway,
-        so fail fast with an actionable message instead."""
+        Models state their requirement in GiB (mem_gib, clamped to what this host can
+        give at most); the check compares against BOTH the bookkeeping of resident
+        models and the memory that is actually free right now."""
+        prof = registry.gpu_profile()
+        total = prof["mem_gib"]
+        cap = (catalog.UNIFIED_CAPACITY_BUDGET if prof["unified"]
+               else catalog.GPU_FRAC_DISCRETE)
+        reserve = 10.0 if prof["unified"] else 2.0
+
+        def gib(e: dict) -> float:
+            raw = float(e.get("mem_gib") or (e.get("gpu_frac") or 0) * total)
+            return min(raw, cap * total)  # a host can only ever give cap x total
         others = [e for e in registry.list_installed()
                   if e["slug"] != entry["slug"]
                   and dockerctl.container_state(e["slug"]) == "running"]
-        used = sum(float(e.get("gpu_frac") or 0) for e in others)
-        need = float(entry.get("gpu_frac") or 0)
-        # unified-memory hosts (GB10): the GPU pool IS system RAM - a paper sum of 1.0
-        # starves the OS into an unreachable thrash, so keep a hard reserve
-        budget = (catalog.UNIFIED_CAPACITY_BUDGET if registry.gpu_profile()["unified"]
-                  else 1.0)
-        if used + need > budget + 1e-6:
-            resident = ", ".join(f"{e['slug']} (gpu_frac {e['gpu_frac']})" for e in others)
+        used = sum(gib(e) for e in others)
+        need = gib(entry)
+        if used + need > total - reserve + 1e-6:
+            resident = ", ".join(f"{e['slug']} (~{gib(e):.0f} GiB)" for e in others)
             raise RuntimeError(
-                f"not starting '{entry['slug']}': it needs gpu_frac {need} but running "
-                f"models already reserve {used:.2f} of the {budget:.2f} GPU budget "
-                f"({resident}). Stop one first, or reinstall models with smaller "
-                f"--gpu-frac slices to co-locate.")
+                f"not starting '{entry['slug']}': it needs ~{need:.0f} GiB but running "
+                f"models already hold ~{used:.0f} GiB of the {total:.0f} GiB GPU "
+                f"({reserve:.0f} GiB reserved for the system"
+                + (f"; resident: {resident}" if resident else "") +
+                "). Stop a model first.")
+        free_now = dockerctl.gpu_free_gib(prof["unified"])
+        if free_now is not None and need > free_now - 2.0:
+            raise RuntimeError(
+                f"not starting '{entry['slug']}': it needs ~{need:.0f} GiB but only "
+                f"~{free_now:.0f} GiB is actually free right now (something outside "
+                "the registry is using GPU memory - check nvidia-smi). Retry when it "
+                "frees up.")
 
     def _lock_for(self, slug: str) -> threading.Lock:
         return self._model_locks.setdefault(slug, threading.Lock())
