@@ -292,7 +292,8 @@ function showTab(name) {
   for (const s of document.querySelectorAll(".tab"))
     s.className = s.id === "tab-" + name ? "tab on" : "tab";
   localStorage.setItem("aisee.tab", name);
-  const want = name === "tasks" && tasksPage > 0 ? "tasks/" + (tasksPage + 1) : name;
+  const want = name === "tasks" && tasksPage > 0 ? "tasks/" + (tasksPage + 1)
+             : name === "query" ? "query/" + kindValue() : name;
   if (location.hash.slice(1) !== want)
     history.replaceState(null, "", "#" + want);
   if (statTimer) { clearInterval(statTimer); statTimer = null; }
@@ -645,6 +646,10 @@ async function connect() {
         sel.appendChild(o);
       }
       sel.value = prev;
+      if (!sel.value) {
+        const saved = localStorage.getItem("aisee.sel." + id);
+        if (saved && sel.querySelector('option[value="' + saved + '"]')) sel.value = saved;
+      }
     }
     pickRunningModel(models);
     await refreshTasks(true);
@@ -1110,8 +1115,12 @@ const MEDIA_LABELS = {
   diarize: "media (audio file, or a video with audio)"
 };
 
+const PERSIST_SEL = ["modelVlm", "modelAsr", "modelDiar", "native", "fps", "frames", "chunk"];
+
 function kindChanged() {
   const k = kindValue();
+  if (location.hash.slice(1).split("/")[0] === "query")
+    history.replaceState(null, "", "#query/" + k);
   $("mediaLabel").textContent = MEDIA_LABELS[k];
   $("promptLabel").textContent = k === "assert" ? "expectation" : "question";
   $("prompt").style.display = isAudioKind(k) ? "none" : "";
@@ -1137,8 +1146,23 @@ function kindChanged() {
     $(id + "Box").classList.toggle("modeloff", !on);
   }
 }
+// restore the action from the URL BEFORE the first kindChanged writes the hash back
+(() => {
+  const parts = location.hash.slice(1).split("/");
+  const r = parts[0] === "query"
+    && document.querySelector('#kindOpts input[value="' + parts[1] + '"]');
+  if (r) r.checked = true;
+})();
 for (const r of document.querySelectorAll('#kindOpts input'))
   r.addEventListener("change", kindChanged);
+// every other query-form selection is remembered per browser
+for (const id of PERSIST_SEL) {
+  const saved = localStorage.getItem("aisee.sel." + id);
+  if (saved !== null && ($(id).tagName !== "SELECT"
+      || $(id).querySelector('option[value="' + saved + '"]')))
+    $(id).value = saved;
+  $(id).addEventListener("change", () => localStorage.setItem("aisee.sel." + id, $(id).value));
+}
 kindChanged();
 
 // SHA-256 for upload dedup. crypto.subtle needs a secure context (https/localhost), so a
@@ -1288,7 +1312,20 @@ function pageFromHash() {  // "#tasks/3" -> page index 2 (1-based in the URL)
   const p = parseInt(location.hash.slice(1).split("/")[1], 10);
   return Number.isFinite(p) && p > 1 ? p - 1 : 0;
 }
+const KINDS = [...document.querySelectorAll('#kindOpts input')].map(r => r.value);
+function kindFromHash() {
+  const parts = location.hash.slice(1).split("/");
+  return parts[0] === "query" && KINDS.includes(parts[1]) ? parts[1] : null;
+}
+function applyKindFromHash() {
+  const k = kindFromHash();
+  if (k && k !== kindValue()) {
+    document.querySelector('#kindOpts input[value="' + k + '"]').checked = true;
+    kindChanged();
+  }
+}
 window.addEventListener("hashchange", () => {
+  applyKindFromHash();
   const t = tabFromHash();
   const page = pageFromHash();
   if (t === "tasks" && page !== tasksPage) {
@@ -1300,6 +1337,7 @@ window.addEventListener("hashchange", () => {
     showTab(t);
 });
 tasksPage = pageFromHash();
+applyKindFromHash();
 showTab(tabFromHash() || localStorage.getItem("aisee.tab") || "server");
 connect();
 </script>
