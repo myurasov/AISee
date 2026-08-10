@@ -15,7 +15,7 @@
     --tab-bg: #f0f0f0; --btn-border: #888; --link: #369; --sel: #eef4ff;
     --ok: #2a7; --warn: #b80; --err: #c33; --pass: #4a4;
     --accent: #76b900; --accent-soft: #f3f9e8; --drop-border: #bbb; --bar-text: #333;
-    --hl-border: #4a4a4a; --hl-bg: #e9e9e9;
+    --hl-border: #9aa2aa; --hl-bg: #f0f2f4;
   }
   body.dark {
     --bg: #14181c; --panel: #1d2227; --soft: #262d34; --softer: #21272d; --code: #2a3138;
@@ -43,16 +43,16 @@
   /* tabs + frame */
   nav { display: flex; gap: 0; margin-bottom: -1px; align-items: flex-end; }
   nav button { border: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--tab-bg); color: var(--fg-dim);
-               padding: .4rem 1rem; margin-right: .25rem; position: relative; }
+               padding: .45rem 1rem; margin-right: .25rem; position: relative; font-size: .85rem; }
   nav button.on { background: var(--panel); color: var(--fg-strong); border-bottom: 1px solid var(--panel); z-index: 2; }
   #darkToggle { position: fixed; top: .9rem; right: 1.1rem; z-index: 10; border: none;
                background: none; color: var(--fg-dim); padding: .2rem; font-size: 1.25rem;
                line-height: 1; }
   #darkToggle:hover { background: none; color: var(--fg); }
-  #frame { border: 1px solid var(--border); background: var(--panel); padding: 1rem 1.2rem; min-height: 14rem;
+  #frame { border: 1px solid var(--border); background: var(--panel); padding: 1.4rem 1.6rem; min-height: 14rem;
            overflow-x: auto; }
   .tab { display: none; } .tab.on { display: block; }
-  #status { color: var(--fg-dim); margin: .6rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
+  #status { color: var(--fg-dim); margin: .8rem 0 0; min-height: 1.3em; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; margin-top: .4rem; font-size: .85rem; }
   th, td { border: 1px solid var(--border-soft); padding: .25rem .5rem; text-align: left; word-break: normal; overflow-wrap: break-word; }
   th { background: var(--soft); color: var(--fg-dim); font-weight: 600; }
@@ -109,19 +109,19 @@
   details.cfgm summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   details.cfgm table { margin-bottom: .6rem; }
   /* query form: action cards in 3 columns; model selectors aligned to the same grid */
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; }
   .card { border: 1px solid var(--border-soft); background: var(--softer);
-          padding: .5rem .7rem; border-radius: 5px; cursor: pointer; margin: 0; }
+          padding: .7rem .9rem; border-radius: 5px; cursor: pointer; margin: 0; }
   .card input { display: none; }
   .card b { color: var(--fg-label); font-size: .85rem; font-weight: 400; }
-  .card small { display: block; color: var(--fg-faint); font-size: .75rem; margin-top: .1rem; }
+  .card small { display: block; color: var(--fg-faint); font-size: .75rem; margin-top: .2rem; }
   .card.on { outline: 2px solid var(--hl-border); background: var(--hl-bg); }
   .card.on b { color: var(--fg-strong); }
-  .cards.modelsrow { margin-top: 1rem; align-items: start; }
+  .cards.modelsrow { margin-top: 1.3rem; align-items: start; }
   /* breathing room between the query form sections */
-  #tab-query > label { margin-top: 1.1rem; }
+  #tab-query > label { margin-top: 1.4rem; }
   .modelsrow label { margin: 0 0 .15rem; }
-  .modelsrow select { padding: .3rem .45rem; }
+  .modelsrow select { padding: .35rem .5rem; }
   .modeloff { opacity: .35; }
   .kindopts label { display: inline-flex; align-items: center; gap: .3rem; margin: 0;
                     color: var(--fg); cursor: pointer; }
@@ -207,7 +207,7 @@
     <b>input</b>: sampled frames, or the video itself (native) - the model sees motion and timing
     (video-capable models only). <b>chunk s</b>: watch chunk length. Hover any label for details.
   </div>
-  <p style="margin-bottom:0"><button id="go">Run</button></p>
+  <p style="margin-bottom:0;margin-top:1.3rem"><button id="go">Run</button></p>
   <div id="status"></div>
 </div>
 
