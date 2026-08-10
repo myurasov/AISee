@@ -604,7 +604,7 @@ function renderStat(h, models, gpu, force = false) {
       (m.mem_gib != null ? m.mem_gib + " GiB"
         : (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-")) + "</td>" +
     "<td>" + (m.idle_timeout || "-") + " s</td>" +
-    "<td>" + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
+    '<td style="white-space:nowrap">' + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
     '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
     '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
     '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
