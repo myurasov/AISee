@@ -83,10 +83,10 @@
   .mrow { display: flex; flex-wrap: wrap; gap: .3rem; align-items: flex-start;
           min-height: 92px; }
   .mrow .placeholder { color: var(--fg-faint); align-self: center; }
-  .mchip { font-size: .68rem; line-height: 1.35; color: var(--fg-dim); align-self: center;
-           border: 1px solid var(--border-soft); background: var(--softer);
-           padding: .3rem .55rem; border-radius: 4px; max-width: 170px;
-           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .maudio { font-size: .75rem; align-self: center; color: var(--link);
+            text-decoration: underline; max-width: 180px; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap; }
+  .maudio .fname { font-size: .68rem; color: var(--fg-faint); text-decoration: none; }
   .mthumb { display: block; margin: 0; text-align: center; }
   .mthumb img { height: 75px; display: block; border: 1px solid var(--border-thumb);
                 background: var(--softer); object-fit: contain; }
@@ -885,16 +885,23 @@ async function fillMediaCells() {
       const uncapped = td.dataset.showall === "1";
       for (const mi of files) {
         if (mi.kind === "audio") {
-          // audio has no thumbnail: a text chip instead of an img that 404-flashes
-          const chip = document.createElement("span");
-          chip.className = "mchip";
+          // audio has no thumbnail: a plain link to the file, no image
+          const a = document.createElement("a");
+          a.className = "maudio";
+          a.href = base() + "/v1/tasks/" + id + "/media/" + mi.index + q;
+          a.target = "_blank";
+          a.title = mi.filename + " - click to open";
+          a.addEventListener("click", e => e.stopPropagation());
           let info = "audio";
           if (mi.duration_s) info += " " + (mi.duration_s >= 90
             ? (mi.duration_s / 60).toFixed(1) + " min" : Math.round(mi.duration_s) + " s");
           if (mi.audio_tracks > 1) info += " · " + mi.audio_tracks + " tracks";
-          chip.innerHTML = mi.filename + "<br>" + info;
-          chip.title = mi.filename;
-          wrap.appendChild(chip);
+          a.textContent = mi.filename;
+          const cap = document.createElement("div");
+          cap.className = "fname";
+          cap.textContent = info;
+          a.appendChild(cap);
+          wrap.appendChild(a);
           shown++;
           continue;
         }
