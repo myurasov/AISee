@@ -77,11 +77,11 @@
   .j-k { color: var(--link); }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
-  #tasksBox td.mediacell { min-width: 130px; text-align: center; vertical-align: middle; }
-  #tasksBox td.st { vertical-align: middle; }
+  #tasksBox td { vertical-align: middle; }
+  #tasksBox td.mediacell { min-width: 130px; text-align: center; }
   /* flex layout with a min-height reservation: filled and empty cells compute the same
      height (no inline-block baseline gaps), so rows never jump when thumbnails load */
-  .mrow { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start;
+  .mrow { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
           justify-content: center; min-height: 92px; }
   .mrow .placeholder { color: var(--fg-faint); align-self: center; }
   .mitem { display: flex; flex-direction: column; align-items: center; gap: .15rem;
@@ -898,7 +898,7 @@ async function fillMediaCells() {
         }
         const item = document.createElement("div");
         item.className = "mitem";
-        if (mi.kind !== "audio") {
+        if (mi.kind === "image" || mi.width) {
           const img = document.createElement("img");
           img.style.height = "75px";
           img.style.width = (mi.width && mi.height
@@ -916,12 +916,14 @@ async function fillMediaCells() {
         a.textContent = mi.filename;
         a.addEventListener("click", e => e.stopPropagation());  // don't toggle the row
         item.appendChild(a);
-        let info = mi.kind || "";
-        if (mi.width) info += " " + mi.width + "x" + mi.height;
-        if (mi.duration_s) info += " " + (mi.duration_s >= 90
+        const parts = [mi.width ? mi.kind : (mi.kind === "video" ? "audio" : mi.kind)];
+        if (mi.width) parts.push(mi.width + "x" + mi.height);
+        if (mi.duration_s) parts.push(mi.duration_s >= 90
           ? (mi.duration_s / 60).toFixed(1) + " min" : Math.round(mi.duration_s) + " s");
-        if (mi.kind === "video" && mi.frames) info += " " + mi.frames + "f";
-        if (mi.audio_tracks > 1) info += " · " + mi.audio_tracks + " audio tracks";
+        if (mi.bytes) parts.push(mi.bytes >= 1048576
+          ? (mi.bytes / 1048576).toFixed(1) + " MB" : Math.round(mi.bytes / 1024) + " KB");
+        if (mi.audio_tracks > 1) parts.push(mi.audio_tracks + " audio tracks");
+        const info = parts.filter(Boolean).join(" · ");
         const cap = document.createElement("div");
         cap.className = "fname";
         cap.textContent = info;
