@@ -83,6 +83,10 @@
   .mrow { display: flex; flex-wrap: wrap; gap: .3rem; align-items: flex-start;
           min-height: 92px; }
   .mrow .placeholder { color: var(--fg-faint); align-self: center; }
+  .mchip { font-size: .68rem; line-height: 1.35; color: var(--fg-dim); align-self: center;
+           border: 1px solid var(--border-soft); background: var(--softer);
+           padding: .3rem .55rem; border-radius: 4px; max-width: 170px;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mthumb { display: block; margin: 0; text-align: center; }
   .mthumb img { height: 75px; display: block; border: 1px solid var(--border-thumb);
                 background: var(--softer); object-fit: contain; }
@@ -880,6 +884,20 @@ async function fillMediaCells() {
       const CAP = 6;  // thumbs shown before folding into a "+N more" expander
       const uncapped = td.dataset.showall === "1";
       for (const mi of files) {
+        if (mi.kind === "audio") {
+          // audio has no thumbnail: a text chip instead of an img that 404-flashes
+          const chip = document.createElement("span");
+          chip.className = "mchip";
+          let info = "audio";
+          if (mi.duration_s) info += " " + (mi.duration_s >= 90
+            ? (mi.duration_s / 60).toFixed(1) + " min" : Math.round(mi.duration_s) + " s");
+          if (mi.audio_tracks > 1) info += " · " + mi.audio_tracks + " tracks";
+          chip.innerHTML = mi.filename + "<br>" + info;
+          chip.title = mi.filename;
+          wrap.appendChild(chip);
+          shown++;
+          continue;
+        }
         if (!uncapped && shown === CAP && files.length > CAP + 1) {
           const more = document.createElement("button");
           more.className = "morethumbs";
