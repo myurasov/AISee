@@ -637,6 +637,8 @@ async function connect() {
     $("ver").textContent = "v" + h.version;
     $("health").textContent = "connected";
     renderStat(h, models, true);
+    lastModels = models;
+    try { cfgDefaults = (await api("/v1/config")).defaults || {}; } catch (e) {}
     for (const [id, cap] of [["modelVlm", "look"], ["modelAsr", "transcribe"], ["modelDiar", "diarize"]]) {
       const sel = $(id);
       const prev = sel.value;
@@ -655,6 +657,7 @@ async function connect() {
       }
     }
     pickRunningModel(models);
+    updateAutoHints();
     await refreshTasks(true);
   } catch (e) {
     $("health").textContent = "cannot connect: " + e.message;
@@ -873,6 +876,52 @@ function expand(id) {
 }
 
 const mediaInfoCache = {};
+let lastModels = [];   // /v1/models cache for the query form's auto hints
+let cfgDefaults = {};  // /v1/config defaults (frames, fps)
+
+function currentVlm() {
+  const want = $("modelVlm").value;
+  return lastModels.find(m => m.slug === want)
+      || lastModels.find(m => m.default && (m.capabilities || ["look"]).includes("look"))
+      || lastModels.find(m => (m.capabilities || ["look"]).includes("look"))
+      || null;
+}
+
+function updateAutoHints() {
+  // one live sentence: the EFFECTIVE settings this submission will use
+  const k = kindValue();
+  if (isAudioKind(k)) return;
+  const m = currentVlm();
+  const slug = m ? m.slug : "the model";
+  const vf = m ? m.video_frames : 24;
+  const mi = m ? m.max_images : 16;
+  const fpsIn = parseFloat($("fps").value) || null;
+  let msg;
+  if (k === "watch") {
+    const fps = fpsIn || (m ? m.fps : (cfgDefaults.fps || 1));
+    const chunk = parseFloat($("chunk").value) || Math.max(1, Math.round(vf / fps));
+    msg = "Effective: " + slug + " watches the video in <b>" + chunk + " s chunks</b> at " +
+          "<b>" + fps + " fps</b> (" + Math.round(chunk * fps) + " of its " + vf +
+          "-frame budget per chunk), then synthesizes one answer.";
+  } else if ($("native").value === "video") {
+    msg = "Effective: the whole clip goes to " + slug + ", which reads <b>" + vf +
+          " frames</b> spread evenly across it (its per-request video budget" +
+          (fpsIn ? "; re-encoded at " + fpsIn + " fps first" : "") +
+          ") - fine up to a few minutes, use watch beyond that.";
+  } else {
+    const nIn = parseInt($("frames").value, 10) || null;
+    msg = "Effective: " + (fpsIn
+          ? "still frames sampled at <b>" + fpsIn + "/s</b> (capped at " + mi + " images, "
+            + slug + "'s per-request budget)"
+          : "<b>" + (nIn || cfgDefaults.frames || 16) + " still frames</b> spread evenly " +
+            "across the clip (cap " + mi + ", " + slug + "'s per-request budget)") +
+          " go to " + slug + " as individual images.";
+  }
+  $("samplingHint").innerHTML = msg;
+  $("fps").placeholder = "auto";
+  $("frames").placeholder = "auto";
+  $("chunk").placeholder = "auto";
+}
 
 async function fillMediaCells() {
   for (const td of document.querySelectorAll("#tasksBox td.mediacell")) {
@@ -963,7 +1012,7 @@ function kindText(t) {
 function modelText(t) {
   const diar = (t.params || {}).diarize_model
             || ((t.result || {}).diarization_model);
-  return (t.model || "") + (diar ? '<br><span class="pctline">+ ' + diar + "</span>" : "");
+  return (t.model || "") + (diar ? "<br>+ " + diar : "");
 }
 
 async function refreshTasks(reattach = false) {
@@ -1095,18 +1144,9 @@ function modelForKind(k) {
 }
 
 const VIDEO_OPTS = {
-  look:   {why: "(applies only when the media includes a video)",
-           hint: "A video attachment is sent as the clip itself (default; the model sees motion " +
-                 "and timing) or as sampled still frames. fps / total frames set how densely " +
-                 "frames are taken; leave empty for auto. Hover any label for details."},
-  assert: {why: "(applies only when the media includes a video)",
-           hint: "A video attachment is sent as the clip itself (default; the model sees motion " +
-                 "and timing) or as sampled still frames. fps / total frames set how densely " +
-                 "frames are taken; leave empty for auto. Hover any label for details."},
-  watch:  {why: "(how the video is split and how finely it is watched)",
-           hint: "watch analyzes the whole video in chunks: fps is the temporal resolution " +
-                 "(1 for overviews, 8-15 to hunt flicker), chunk length is how many seconds " +
-                 "each chunk covers (auto sizes it to the model's frame budget)."}
+  look:   {why: "(applies only when the media includes a video)"},
+  assert: {why: "(applies only when the media includes a video)"},
+  watch:  {why: "(how the video is split and how finely it is watched)"}
 };
 
 const MEDIA_LABELS = {
@@ -1136,7 +1176,6 @@ function kindChanged() {
     $("framesBox").style.display = k === "watch" ? "none" : "";
     $("chunkBox").style.display = k === "watch" ? "" : "none";
     $("videoOptsWhy").textContent = VIDEO_OPTS[k].why;
-    $("samplingHint").innerHTML = VIDEO_OPTS[k].hint;
   }
   // all three selectors stay visible; the ones irrelevant to the action are dimmed
   for (const r of document.querySelectorAll('#kindOpts input'))
@@ -1148,6 +1187,7 @@ function kindChanged() {
     $(id).disabled = !on;
     $(id + "Box").classList.toggle("modeloff", !on);
   }
+  updateAutoHints();
 }
 // restore the action from the URL BEFORE the first kindChanged writes the hash back
 (() => {
@@ -1164,8 +1204,13 @@ for (const id of PERSIST_SEL) {
   if (saved !== null && ($(id).tagName !== "SELECT"
       || $(id).querySelector('option[value="' + saved + '"]')))
     $(id).value = saved;
-  $(id).addEventListener("change", () => localStorage.setItem("aisee.sel." + id, $(id).value));
+  $(id).addEventListener("change", () => {
+    localStorage.setItem("aisee.sel." + id, $(id).value);
+    updateAutoHints();
+  });
 }
+for (const id of ["fps", "frames", "chunk"])
+  $(id).addEventListener("input", updateAutoHints);
 kindChanged();
 
 // SHA-256 for upload dedup. crypto.subtle needs a secure context (https/localhost), so a
