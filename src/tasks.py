@@ -407,7 +407,7 @@ class Core:
                         if progress:
                             progress(note)
                     if progress:
-                        progress("model is loading (attaching to an in-progress start)")
+                        progress("attaching to in-progress start")
                     dockerctl.wait_ready(entry, progress=_pw)
                     self.store.touch_model(slug)
                     return entry
@@ -423,20 +423,19 @@ class Core:
                 self._model_loading[slug] = "starting container"
                 try:
                     if progress:
-                        progress("model is loading: starting container")
+                        progress("starting container")
                     if not dockerctl.image_present(entry["image"]):
                         engine = entry.get("engine", "vllm")
                         if engine in dockerctl.ENGINE_BUILD_DIRS:
                             # audio serving images are built locally, not pulled
-                            self._model_loading[slug] = "building serving image"
+                            self._model_loading[slug] = "building image (~10-20 min)"
                             if progress:
-                                progress("model is loading: building the serving image "
-                                         "(one-time, can take 10-20 min)")
+                                progress("building image (~10-20 min)")
                             dockerctl.build_image(entry["image"], engine)
                         else:
                             self._model_loading[slug] = "pulling image"
                             if progress:
-                                progress("model is loading: pulling serving image")
+                                progress("pulling image")
                             dockerctl.pull(entry["image"], creds.resolve("NGC_API_KEY"))
                     dockerctl.start_model(entry, hf_token=hf_token)
                     self._model_loading[slug] = "applying image patches"

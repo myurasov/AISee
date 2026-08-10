@@ -597,7 +597,7 @@ function renderStat(h, models, gpu, force = false) {
     (freeGib !== null ? " - " + freeGib + " of " + totalGib + " GiB GPU memory available" : "");
   const rows = models.map(m =>
     "<tr><td>" + m.slug + (m.default ? " *" : "") + "</td>" +
-    '<td class="st-' + m.state + '">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
+    '<td class="st-' + m.state + '" style="white-space:nowrap">' + m.state + (m.loading_note ? " (" + m.loading_note + ")" : "") + "</td>" +
     "<td>" + (m.modality === "audio" ? "audio"
               : m.supports_native_video ? "images + video" : "images") + "</td>" +
     "<td" + (m.gpu_frac != null ? ' title="' + Math.round(m.gpu_frac * 100) + '% of this GPU"' : "") + ">" +
