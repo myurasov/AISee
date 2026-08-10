@@ -79,6 +79,9 @@
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
   #tasksBox td { vertical-align: middle; }
   .pctline { color: var(--fg-faint); font-size: .75rem; }
+  /* kind, model and took columns read better centered */
+  #tasksBox tr[data-id] td:nth-child(2), #tasksBox tr[data-id] td:nth-child(3),
+  #tasksBox tr[data-id] td:nth-child(7) { text-align: center; }
   #tasksBox td.mediacell { min-width: 130px; text-align: center; }
   /* flex layout with a min-height reservation: filled and empty cells compute the same
      height (no inline-block baseline gaps), so rows never jump when thumbnails load */
@@ -954,7 +957,7 @@ function stText(t) {
 }
 
 function kindText(t) {
-  return t.kind + ((t.params || {}).diarize ? "+diarize" : "");
+  return t.kind + ((t.params || {}).diarize ? " + diarize" : "");
 }
 
 function modelText(t) {
