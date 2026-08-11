@@ -10,7 +10,7 @@ from . import paths
 # Sized for the main mode of operation: one resident model on a 96 GB-class GPU
 # (or a GB10) with the dense serving profile (128k context, 16 images / 64 video frames).
 DEFAULTS: dict = {
-    "api": {"host": "0.0.0.0", "port": 8484},
+    "api": {"host": "0.0.0.0", "port": 4444},
     "defaults": {
         "default_model": "",
         "idle_timeout": 3600, # seconds; 0 = never unload

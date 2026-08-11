@@ -39,7 +39,7 @@ verdict (0 pass, 1 fail).
 
 ## Access
 
-You need the server URL (`http://HOST:PORT`, default port 8484) and, if the host requires
+You need the server URL (`http://HOST:PORT`, default port 4444) and, if the host requires
 auth, the **consumer token** (`AISEE_API_TOKEN`). Get both from whoever operates the host
 (or from the admin agent). Set them once:
 

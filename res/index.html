@@ -551,7 +551,7 @@ async function refreshGpu() {
 // ---------------- server / api ----------------
 
 $("server").value = localStorage.getItem("aisee.server") ||
-  (location.protocol.startsWith("http") ? location.origin : "http://localhost:8484");
+  (location.protocol.startsWith("http") ? location.origin : "http://localhost:4444");
 $("token").value = localStorage.getItem("aisee.token") || "";
 $("adminToken").value = localStorage.getItem("aisee.adminToken") || "";
 
