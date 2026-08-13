@@ -608,7 +608,7 @@ function renderStat(h, models, gpu, force = false) {
       (m.modality === "audio"
         ? (m.concurrency || 1) + " streams"
         : (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") +
-          " / " + (m.max_images != null ? m.max_images + " img @1080p" : "-") +
+          " / " + (m.max_images != null ? m.max_images + " im @1080p" : "-") +
           " / " + (m.video_frames != null ? m.video_frames + " fr @720p" : "-") +
           " / " + (m.concurrency || 1) + " streams") + "</td>" +
     "<td>" + (m.idle_timeout ? m.idle_timeout + " s" : "never") + "</td>" +
