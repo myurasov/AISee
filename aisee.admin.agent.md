@@ -168,19 +168,23 @@ Measured components (fp8 KV is on by default for the Qwen3-VL + Cosmos families)
 | cosmos3-super | 64 | 30.5 | yes | 2200 | 256k |
 
 **What the auto-sizer produces on common GPUs** (context / image budget; "-" = weights
-do not fit). Columns are VRAM tiers; map cards to tiers: RTX 3090 / 4090 / L4 -> 24,
+do not fit). Columns are VRAM tiers; map cards to tiers: T4 / V100-16G / RTX 4080 -> 16, RTX 3090 / 4090 / L4 -> 24,
 RTX 5090 -> 32, A100-40G -> 40, L40S / RTX 6000 Ada / A6000 -> 48, A100-80G / H100 -> 80,
 RTX PRO 6000 Blackwell -> 96, DGX Spark GB10 (unified) -> 120u, H200 -> 141:
 
-| model | 24 | 32 | 40 | 48 | 80 | 96 | 120u | 141 |
-|---|---|---|---|---|---|---|---|---|
-| qwen3-vl-30b (both) | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
-| qwen3-vl-32b-instruct | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
-| nemotron-nano-12b (nvfp4) | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 |
-| holo1-5-7b / ui-tars | 32k/9 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 |
-| cosmos-reason2-8b | 32k/11 | 128k/55 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
-| cosmos3-nano | - | - | 32k/11 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
-| cosmos3-super | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
+| model | 16 | 24 | 32 | 40 | 48 | 80 | 96 | 120u | 141 |
+|---|---|---|---|---|---|---|---|---|---|
+| qwen3-vl-30b (both) | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| qwen3-vl-32b-instruct | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
+| nemotron-nano-12b (nvfp4) | 8k/4* | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 |
+| holo1-5-7b / ui-tars | - | 32k/9 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 |
+| cosmos-reason2-8b | - | 32k/11 | 128k/55 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| cosmos3-nano | - | - | - | 32k/11 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| cosmos3-super | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
+
+(*nemotron on 16 GB: only on cards reporting a full 16.0 GiB (RTX 4080 / V100-16G);
+T4-class cards expose ~15.4 GiB and miss by a hair - and 8k ctx / 4 images is
+demo-grade anyway. 16 GB is below the practical floor of this catalog.)
 
 (Computed with the exact install logic from the component table; audio models are not
 context-sized - parakeet needs ~7 GiB and pyannote ~4 GiB on any GPU.)
