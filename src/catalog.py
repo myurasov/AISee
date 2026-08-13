@@ -37,9 +37,13 @@ def max_images_for(cat: dict, max_model_len: int) -> int:
     if not tpi:
         return cat.get("max_images", DEFAULT_MAX_IMAGES)
     return max(4, min(120, (max_model_len - PROMPT_RESERVE_TOKENS) // tpi))
-# 24 frames: the Qwen3-VL family budgets ~24 MP across ALL sampled frames, so 24 frames
-# keep each frame at ~1.05 MP - 720p passes natively (64 frames would drop it to ~0.39 MP)
-DEFAULT_VIDEO_FRAMES = 24
+# 96 frames (measured 2026-08-14, frames-study): num_frames is a CAP, not a quota -
+# the engine samples min(cap, frames in the clip) and per-frame resolution does NOT
+# shrink as the cap rises (~515 tokens/frame flat at 24 vs 96; 14 px text read at both).
+# Total cost is linear (~50k tokens worst case), so high caps only cost latency on long
+# clips (2-3x look time on GB10). Temporal recall on a 2 s event stream reached 1.0 only
+# at 96 on the Qwen/Cosmos family; detail stayed 1.0 from 24 up on every model.
+DEFAULT_VIDEO_FRAMES = 96
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
 CONTEXT_CANDIDATES = (262144, 131072, 65536, 32768, 16384, 8192)
 # per-model checkpoint ceiling (max_position_embeddings); auto-sizing never exceeds it.
@@ -144,6 +148,9 @@ CATALOG: dict[str, dict] = {
         "hf_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",
         "tokens_per_image": 3300,
         "ctx_native": 131072,
+        # frames-study 2026-08-14: saturates at 64 (temporal 1.0, best motion count);
+        # 96 adds nothing and overshoots motion counting
+        "video_frames": 64,
         "image": DEFAULT_IMAGE,
         "weights_gib": 11, "kv_gib_128k": 5,
         "mem_gib": 28,

@@ -169,9 +169,12 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   32 px cell models (Qwen3-VL/Cosmos), ~2.7k on 28 px cells (Holo/UI-TARS), ~3.3k on the
   tiled Nemotron - so e.g. ~60 fit half a 256k context with room to spare (4K
   stills cost ~4x, and models capped below 4K gain no detail from them). Video: 1 per
-  request, sampled to 24 frames server-side - 24 keeps each frame at ~720p, since the
-  video pixel budget is shared across frames. `/v1/describe` states each model's exact
-  budgets on its `Image budget:` and `Input resolution:` lines.
+  request, sampled up to the model's frame budget (default 96; a CAP, not a quota - short
+  clips cost only the frames they contain). Each sampled frame keeps ~720p detail
+  regardless of the cap (~515 tokens/frame, measured); total cost grows linearly with
+  sampled frames, so long-clip looks trade latency, never per-frame detail.
+  `/v1/describe` states each model's exact budgets on its `Image budget:` and
+  `Input resolution:` lines.
 - **There is no maximum video length - only temporal resolution.** A `native` video is reduced
   to the frame budget spread evenly over the clip. For anything longer than a few minutes use
   `watch`: it chunks the video so every chunk gets the full frame budget - chunk length is
