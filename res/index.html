@@ -606,11 +606,11 @@ function renderStat(h, models, gpu, force = false) {
         : (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-")) + "</td>" +
     '<td style="white-space:nowrap" title="context / image budget / video frames / concurrent requests">' +
       (m.modality === "audio"
-        ? (m.concurrency || 1) + "x"
+        ? (m.concurrency || 1) + " streams"
         : (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") +
           " / " + (m.max_images != null ? m.max_images + " img" : "-") +
           " / " + (m.video_frames != null ? m.video_frames + " fr" : "-") +
-          " / " + (m.concurrency || 1) + "x") + "</td>" +
+          " / " + (m.concurrency || 1) + " streams") + "</td>" +
     "<td>" + (m.idle_timeout ? m.idle_timeout + " s" : "never") + "</td>" +
     '<td style="white-space:nowrap">' + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
     '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
