@@ -588,7 +588,8 @@ function renderStat(h, models, gpu, force = false) {
   const totalGib = g0 && g0.memory_total_mib ? Math.round(g0.memory_total_mib / 1024) : null;
   const sig = h.version + "|" + freeGib + "|" + models.map(m =>
     m.slug + ":" + m.state + ":" + (m.loading_note || "") + ":" + m.idle_timeout + ":" +
-    m.mem_gib + ":" + m.gpu_frac + ":" + m.concurrency).join("|");
+    m.mem_gib + ":" + m.gpu_frac + ":" + m.concurrency + ":" + m.max_model_len + ":" +
+    m.max_images).join("|");
   if (!force && sig === statSig) return;
   statSig = sig;
   $("apiInfo").textContent = "AISee v" + h.version + " at " + base() + " - " +
@@ -603,13 +604,20 @@ function renderStat(h, models, gpu, force = false) {
     "<td" + (m.gpu_frac != null ? ' title="' + Math.round(m.gpu_frac * 100) + '% of this GPU"' : "") + ">" +
       (m.mem_gib != null ? m.mem_gib + " GiB"
         : (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-")) + "</td>" +
+    '<td style="white-space:nowrap" title="context / image budget / video frames / concurrent requests">' +
+      (m.modality === "audio"
+        ? (m.concurrency || 1) + "x"
+        : (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") +
+          " / " + (m.max_images != null ? m.max_images + " img" : "-") +
+          " / " + (m.video_frames != null ? m.video_frames + " fr" : "-") +
+          " / " + (m.concurrency || 1) + "x") + "</td>" +
     "<td>" + (m.idle_timeout ? m.idle_timeout + " s" : "never") + "</td>" +
     '<td style="white-space:nowrap">' + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
     '<td style="text-align:center"><button data-act="' + (m.state === "running" || m.state === "starting" ? "stop" : "start") +
     '" data-slug="' + m.slug + '">' + (m.state === "running" || m.state === "starting" ? "stop" : "start") + "</button>" +
     '<button style="margin-top:5px;" data-act="remove" data-slug="' + m.slug + '">uninstall</button></td></tr>').join("");
   $("modelsBox").innerHTML = models.length
-    ? "<table><tr><th>model</th><th>state</th><th>media</th><th>gpu mem</th>" +
+    ? "<table><tr><th>model</th><th>state</th><th>media</th><th>gpu mem</th><th>budgets</th>" +
       "<th>idle timeout</th><th>last used</th><th>actions</th></tr>" + rows + "</table>"
     : '<div class="muted">no models installed</div>';
   for (const b of document.querySelectorAll("#modelsBox button"))
