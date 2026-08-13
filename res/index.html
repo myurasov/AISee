@@ -604,12 +604,12 @@ function renderStat(h, models, gpu, force = false) {
     "<td" + (m.gpu_frac != null ? ' title="' + Math.round(m.gpu_frac * 100) + '% of this GPU"' : "") + ">" +
       (m.mem_gib != null ? m.mem_gib + " GiB"
         : (m.gpu_frac != null ? Math.round(m.gpu_frac * 100) + "%" : "-")) + "</td>" +
-    '<td style="white-space:nowrap" title="context / image budget / video frames / concurrent requests">' +
+    '<td style="white-space:nowrap" title="context / image budget (1080p-equivalent stills) / video frames per request (~720p each, shared pixel budget) / concurrent requests">' +
       (m.modality === "audio"
         ? (m.concurrency || 1) + " streams"
         : (m.max_model_len ? Math.round(m.max_model_len / 1024) + "k" : "-") +
-          " / " + (m.max_images != null ? m.max_images + " img" : "-") +
-          " / " + (m.video_frames != null ? m.video_frames + " fr" : "-") +
+          " / " + (m.max_images != null ? m.max_images + " img @1080p" : "-") +
+          " / " + (m.video_frames != null ? m.video_frames + " fr @720p" : "-") +
           " / " + (m.concurrency || 1) + " streams") + "</td>" +
     "<td>" + (m.idle_timeout ? m.idle_timeout + " s" : "never") + "</td>" +
     '<td style="white-space:nowrap">' + (m.last_used ? fmtDate(m.last_used) : "never") + "</td>" +
