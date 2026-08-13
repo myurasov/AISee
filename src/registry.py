@@ -165,6 +165,10 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         frac = round(min(cap, mem_gib / profile["mem_gib"]), 3)
     else:
         frac = cat.get("gpu_frac", profile["gpu_frac"])
+    if mem_gib:
+        # record what THIS host actually grants (frac x its memory): the catalog
+        # number can exceed a smaller GPU and would misreport in list/capacity math
+        mem_gib = round(min(mem_gib, frac * profile["mem_gib"]), 1)
     args = list(extra_args if extra_args is not None else cat.get("extra_args", []))
     # CUDA-graph capture is unstable/slow on unified-memory (GB10-class) systems, so they
     # serve eager; discrete GPUs keep graphs (measured 3-4x faster decode on RTX PRO 6000)

@@ -306,6 +306,8 @@ class Core:
     # ---------------- model lifecycle ----------------
 
     def model_state(self, slug: str) -> str:
+        if self._model_loading.get(slug) == "queued":
+            return "queued"  # waiting for another cold load to finish (OOM protection)
         if slug in self._model_loading:
             return "starting"
         st = dockerctl.container_state(slug)
@@ -443,9 +445,18 @@ class Core:
             hf_token = creds.resolve("HF_TOKEN")
             modality = entry.get("modality", "vision")
             load_lock = self._load_locks.setdefault(modality, threading.Lock())
-            with load_lock:  # admission control: one cold load at a time per modality
-                self._model_loading[slug] = "starting container"
-                try:
+            if load_lock.locked():
+                # another model of this modality is cold-loading; surface the wait
+                self._model_loading[slug] = "queued"
+                if progress:
+                    progress("queued")
+            try:
+                with load_lock:  # admission control: one cold load at a time per modality
+                    if self._model_loading.get(slug) == "queued":
+                        # the world changed while we waited (the other model is
+                        # resident now) - re-verify before touching the GPU
+                        self.check_gpu_capacity(entry)
+                    self._model_loading[slug] = "starting container"
                     if progress:
                         progress("starting container")
                     if not dockerctl.image_present(entry["image"]):
@@ -471,8 +482,8 @@ class Core:
                         if progress:
                             progress(note)
                     dockerctl.wait_ready(entry, progress=_p)
-                finally:
-                    self._model_loading.pop(slug, None)
+            finally:
+                self._model_loading.pop(slug, None)
             self.store.touch_model(slug)
             return entry
 
