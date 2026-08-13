@@ -126,12 +126,12 @@ GB10 (2026-07 / 2026-08). Installing by slug applies the serving flags each one 
 | Slug | GPU memory | Context | Notes |
 |---|---|---|---|
 | `qwen3-vl-30b-a3b-instruct` | 92 GiB | 256k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
-| `qwen3-vl-32b-instruct` | 108 GiB | 256k/128k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs; 128k on 96 GB |
+| `qwen3-vl-32b-instruct` | 102 GiB | 256k/128k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs; 128k on 96 GB |
 | `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 28 GiB | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
 | `holo1-5-7b` | 38 GiB | 128k | UI element grounding; stills only |
 | `cosmos-reason2-8b` | 66 GiB | 256k | temporal / physical video reasoning |
 | `cosmos3-nano` | 72 GiB | 256k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
-| `cosmos3-super` | 108 GiB | 256k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 256k on GB10, 128k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
+| `cosmos3-super` | 102 GiB | 256k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 256k on GB10, 128k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
 | `ui-tars-1-5-7b` | 38 GiB | 128k | GUI-agent model (action generation later); stills only |
 | `parakeet-tdt-0.6b-v3` | 7 GiB | audio | ASR default: 25 languages incl. Russian, word timestamps, 12-87x realtime, no hallucination loops |
 | `pyannote/speaker-diarization-3.1` | 4 GiB | audio | diarization default: unbounded speaker count, ~25x realtime (HF-gated: accept 3 repo licenses) |

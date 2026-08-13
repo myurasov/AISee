@@ -403,10 +403,11 @@ class Core:
         free_now = dockerctl.gpu_free_gib(prof["unified"])
         if free_now is not None and need > free_now - margin:
             raise RuntimeError(
-                f"not starting '{entry['slug']}': it needs ~{need:.0f} GiB but only "
-                f"~{free_now:.0f} GiB is actually free right now (something outside "
-                "the registry is using GPU memory - check nvidia-smi). Retry when it "
-                "frees up.")
+                f"not starting '{entry['slug']}': it needs ~{need:.0f} GiB plus a "
+                f"{margin:.0f} GiB always-free safety margin (host starvation "
+                f"protection), but only ~{free_now:.0f} GiB is free right now "
+                f"(~{need + margin:.0f} required). Retry when memory frees up - "
+                "resident models and anything outside the registry both count.")
 
     def _lock_for(self, slug: str) -> threading.Lock:
         return self._model_locks.setdefault(slug, threading.Lock())

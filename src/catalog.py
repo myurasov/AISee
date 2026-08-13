@@ -126,7 +126,10 @@ CATALOG: dict[str, dict] = {
         "image": DEFAULT_IMAGE,
 
         "weights_gib": 63, "kv_gib_128k": 34,
-        "mem_gib": 108,
+        # 102 not 108: an idle GB10 has ~116 GiB free and the admission gate keeps a
+        # 10 GiB always-free margin, so anything above ~106 could never start there.
+        # 256k fp8 KV still fits: pool = 102 - weights - 4 runtime >= the 256k KV cost.
+        "mem_gib": 102,
         "extra_args": ["--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
         "reasoning": False,
@@ -225,7 +228,10 @@ CATALOG: dict[str, dict] = {
         # vLLM predates this model's config); multi-arch image (amd64 + arm64).
         "image": "vllm/vllm-omni:v0.24.0",
         "weights_gib": 64, "kv_gib_128k": 30.5,
-        "mem_gib": 108,
+        # 102 not 108: an idle GB10 has ~116 GiB free and the admission gate keeps a
+        # 10 GiB always-free margin, so anything above ~106 could never start there.
+        # 256k fp8 KV still fits: pool = 102 - weights - 4 runtime >= the 256k KV cost.
+        "mem_gib": 102,
         "extra_args": ["--hf-overrides",
                        '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code", "--kv-cache-dtype", "fp8"],
