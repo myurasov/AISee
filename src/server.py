@@ -94,7 +94,10 @@ def create_app() -> FastAPI:
     def console():
         page = Path(__file__).resolve().parent.parent / "res" / "index.html"
         if page.exists():
-            return HTMLResponse(page.read_text())
+            # no-cache: browsers heuristically cache header-less responses and then
+            # show a stale console after a deploy (res/ is otherwise restart-free)
+            return HTMLResponse(page.read_text(),
+                                headers={"Cache-Control": "no-cache"})
         return HTMLResponse("<h1>AISee</h1><p>console file missing; see /v1/describe</p>")
 
     @app.get("/v1/health")
