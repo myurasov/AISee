@@ -138,6 +138,77 @@ oom-score-adj, so under memory pressure THEY die (task fails cleanly, container 
 rather than the host or the VLM. On unified-memory hosts do not schedule hour-scale
 transcriptions while a big vision model is resident - stop it or let it idle-unload first.
 
+## Sizing models per GPU (context, image budgets, memory)
+
+`install` auto-sizes everything, so normally you do nothing. This section is for when you
+want a DIFFERENT configuration (a bigger context on a small card, co-residency headroom,
+a larger image batch) or need to predict what a GPU will give before buying/renting one.
+
+**The sizing model.** Every catalog entry carries measured, GPU-independent components;
+a host configuration follows from them:
+
+```
+grant   = min(catalog mem_gib, cap x VRAM)     # cap: 0.97 discrete, 0.92 unified
+KV pool = grant - weights_gib - 4 (runtime)
+context = largest candidate (native, 128k, 64k, 32k, 16k, 8k) whose KV cost fits:
+          kv_cost(c) = kv_gib_128k x (c / 128k) x (0.5 if fp8 KV)
+max_images = clamp((context - 8192) / tokens_per_image, 4..120)
+```
+
+Measured components (fp8 KV is on by default for the Qwen3-VL + Cosmos families):
+
+| model | weights | KV GiB/128k | fp8 | tok/img | native ctx |
+|---|---|---|---|---|---|
+| qwen3-vl-30b-a3b-instruct / -thinking | 62 | 10.5 | yes | 2200 | 256k |
+| qwen3-vl-32b-instruct | 63 | 34 | yes | 2200 | 256k |
+| nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad | 11 | 5 | no | 3300 | 128k |
+| holo1-5-7b / ui-tars-1-5-7b | 16 | 7 | no | 2700 | 128000 |
+| cosmos-reason2-8b | 17 | 17.5 | yes | 2200 | 256k |
+| cosmos3-nano | 32 | 14.5 | yes | 2200 | 256k |
+| cosmos3-super | 64 | 30.5 | yes | 2200 | 256k |
+
+**What the auto-sizer produces on common GPUs** (context / image budget; "-" = weights
+do not fit). Columns are VRAM tiers; map cards to tiers: RTX 3090 / 4090 / L4 -> 24,
+RTX 5090 -> 32, A100-40G -> 40, L40S / RTX 6000 Ada / A6000 -> 48, A100-80G / H100 -> 80,
+RTX PRO 6000 Blackwell -> 96, DGX Spark GB10 (unified) -> 120u, H200 -> 141:
+
+| model | 24 | 32 | 40 | 48 | 80 | 96 | 120u | 141 |
+|---|---|---|---|---|---|---|---|---|
+| qwen3-vl-30b (both) | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| qwen3-vl-32b-instruct | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
+| nemotron-nano-12b (nvfp4) | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 |
+| holo1-5-7b / ui-tars | 32k/9 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 |
+| cosmos-reason2-8b | 32k/11 | 128k/55 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| cosmos3-nano | - | - | 32k/11 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| cosmos3-super | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
+
+(Computed with the exact install logic from the component table; audio models are not
+context-sized - parakeet needs ~7 GiB and pyannote ~4 GiB on any GPU.)
+
+**Changing the configuration.** Reinstall with overrides - reinstalling preserves the
+port, idle_timeout, and default flag, and recomputes everything else consistently
+(hand-editing `max_model_len` in the TOML does NOT resize the image budget):
+
+```bash
+./aisee model install <slug> --max-model-len 65536   # smaller ctx -> smaller KV pool ->
+                                                     # frees memory for co-residency
+./aisee model install <slug> --gpu-frac 0.5          # hard-cap the memory slice; context
+                                                     # auto-shrinks to what still fits
+```
+
+- **More images per request**: only a bigger context buys more (the budget is derived);
+  on a card stuck at a small context, pick a model with cheaper KV (see table - e.g.
+  cosmos-reason2 reaches 256k/115img on 48 GB where qwen32b cannot).
+- **A context the auto-sizer refused**: it does not fit - the KV pool is the only
+  flexible part, weights + 4 GiB runtime are fixed. Going bigger means fp8 KV (already
+  default where supported), a smaller model, or a bigger GPU.
+- **Will it actually START on this host**: admission also requires free memory NOW -
+  need + margin (10 GiB unified for >= 30 GiB loads, 3 GiB small, 2 GiB discrete), and
+  a serving model consumes ~4 GiB above its grant. On a 120 GiB GB10 that puts the
+  practical ceiling at ~102 GiB (hence cosmos3-super's catalog size).
+- After any resize, `GET /v1/describe` shows the resulting context + image budget per
+  model - verify there, not in the TOML.
+
 ## Troubleshooting
 
 - `install` says the NVIDIA Container Toolkit is missing / `failed to discover GPU vendor
