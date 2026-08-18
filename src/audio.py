@@ -37,6 +37,7 @@ def probe_lanes(path: str | Path) -> list[dict]:
          "-select_streams", "a", str(path)], stderr=subprocess.DEVNULL)
     streams = json.loads(out).get("streams", [])
     lanes = []
+    taken: dict[str, int] = {}  # two streams can carry the same title tag
     for i, s in enumerate(streams):
         tags = s.get("tags") or {}
         title = tags.get("title") or None
@@ -49,6 +50,11 @@ def probe_lanes(path: str | Path) -> list[dict]:
                 label = f"{base}-{'LR'[k]}"
             else:
                 label = f"{base}-c{k}"
+            if label in taken:
+                taken[label] += 1
+                label = f"{label}-{taken[label]}"
+            else:
+                taken[label] = 1
             lanes.append({
                 "label": label,
                 "stream": i,
@@ -242,9 +248,29 @@ def _write_rendered(out_dir: Path, suffix: str, segs: list[dict]) -> list[str]:
     return [f"transcript{suffix}.txt", f"transcript{suffix}.srt", f"transcript{suffix}.vtt"]
 
 
-def write_artifacts(out_dir: Path, result: dict,
-                    words_by_lane: dict[str, list[dict]]) -> list[str]:
-    """transcript.json (full result + per-lane words) plus rendered txt/srt/vtt.
+def _unique(name: str, used: set[str]) -> str:
+    """name, or name-2/-3/... if already taken (artifact suffix collisions)."""
+    out, n = name, 1
+    while out in used:
+        n += 1
+        out = f"{name}-{n}"
+    used.add(out)
+    return out
+
+
+def _write_rttm(out_dir: Path, suffix: str, uri: str, turns: list[dict]) -> str:
+    """diarization<suffix>.rttm - one standard RTTM SPEAKER line per turn."""
+    rttm = [f"SPEAKER {uri} 1 {t['start']:.3f} {t['end'] - t['start']:.3f} "
+            f"<NA> <NA> {t['speaker']} <NA> <NA>" for t in turns]
+    (out_dir / f"diarization{suffix}.rttm").write_text("\n".join(rttm) + "\n")
+    return f"diarization{suffix}.rttm"
+
+
+def write_artifacts(out_dir: Path, result: dict, words_by_lane: dict[str, list[dict]],
+                    turns_by_lane: dict[str, list[dict]] | None = None,
+                    uri: str = "audio") -> list[str]:
+    """transcript.json (full result + per-lane words) plus rendered txt/srt/vtt,
+    plus per-lane RTTM when diarization turns are provided (transcribe+diarize).
     Single lane keeps the plain names; multiple lanes get transcript-<label>.*."""
     out_dir.mkdir(parents=True, exist_ok=True)
     single = len(words_by_lane) == 1
@@ -253,11 +279,15 @@ def write_artifacts(out_dir: Path, result: dict,
                              else words_by_lane)}, indent=1))
     names = ["transcript.json"]
     lanes = result.get("tracks") or []
+    used: set[str] = set()  # distinct labels can sanitize to the same suffix
     for lane in lanes:
         if lane.get("duplicate_of"):
             continue
-        suffix = "" if single else f"-{safe_label(lane['label'])}"
+        suffix = "" if single else f"-{_unique(safe_label(lane['label']), used)}"
         names += _write_rendered(out_dir, suffix, lane.get("segments") or [])
+        turns = (turns_by_lane or {}).get(lane["label"])
+        if turns is not None:  # empty turns (silent lane) still get their RTTM
+            names.append(_write_rttm(out_dir, suffix, uri, turns))
     return names
 
 
@@ -268,12 +298,10 @@ def write_diarization_artifacts(out_dir: Path, result: dict, uri: str) -> list[s
     names = ["diarization.json"]
     lanes = result.get("tracks") or []
     single = len([ln for ln in lanes if not ln.get("duplicate_of")]) == 1
+    used: set[str] = set()
     for lane in lanes:
         if lane.get("duplicate_of"):
             continue
-        suffix = "" if single else f"-{safe_label(lane['label'])}"
-        rttm = [f"SPEAKER {uri} 1 {t['start']:.3f} {t['end'] - t['start']:.3f} "
-                f"<NA> <NA> {t['speaker']} <NA> <NA>" for t in lane.get("turns") or []]
-        (out_dir / f"diarization{suffix}.rttm").write_text("\n".join(rttm) + "\n")
-        names.append(f"diarization{suffix}.rttm")
+        suffix = "" if single else f"-{_unique(safe_label(lane['label']), used)}"
+        names.append(_write_rttm(out_dir, suffix, uri, lane.get("turns") or []))
     return names

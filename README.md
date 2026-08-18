@@ -38,8 +38,11 @@ There are five kinds of queries:
   speaker attribution. A lane is one audio track or one channel of a stereo/multi-channel
   track (stereo often encodes two separate feeds); AISee never interprets or merges lanes -
   that is the consumer's job - and bit-identical lanes (equal decoded PCM) are detected and processed once.
-  Rendered per-lane transcripts (`.txt/.srt/.vtt` + full JSON) are downloadable artifacts.
+  Rendered per-lane transcripts (`.txt/.srt/.vtt` + full JSON, plus RTTM when diarization
+  was on) are downloadable artifacts - one by one, or zipped via `aisee task download`
+  (which also saves the full task as `results-<id>.json`, for every task kind).
 - `diarize` - who spoke when: speaker turns with timestamps per lane, no transcript.
+  Downloads the same way (`diarize-<id>.zip`: per-lane RTTM + JSON).
 
 The CLI is a thin client of the REST API, so there is a single code path: anything the CLI does
 can be done with curl, and both feed the same task queue. All queries are asynchronous - you get
@@ -292,6 +295,8 @@ Everything is under `/v1`; OpenAPI schema at `/openapi.json`.
 | `GET /v1/models` | consumer | registry with state, port, idle_timeout, last_used, default |
 | `GET /v1/catalog` | consumer | built-in catalog with installed flags |
 | `GET /v1/tasks/{id}/artifacts` | consumer | derived outputs (transcripts, RTTM); `/{name}` downloads one |
+| `GET /v1/tasks/{id}/results` | consumer | full task object as a `results-<id>.json` download |
+| `GET /v1/tasks/{id}/archive` | consumer | all artifacts zipped: `transcript-<id>.zip` / `diarize-<id>.zip` (audio kinds only) |
 | `GET /v1/config` | consumer | effective global configuration (api + defaults) |
 | `POST /v1/tasks` | consumer | submit, returns `{id}`. Multipart: `files` + `params` (JSON string); or plain JSON with `media_paths` for files already on the host |
 | `GET /v1/tasks` | consumer | list, filters `?status=` `?model=` |

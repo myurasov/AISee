@@ -144,7 +144,9 @@ async def transcribe(media: str, diarize: bool = False, min_speakers: int | None
     media: a host path or a 'sha256:<hex>' blob ref (see look). min/max/num_speakers:
     per-lane diarization hints when the count is known. Full word timings land in the
     transcript.json artifact (GET /v1/tasks/{id}/artifacts/..., also per-lane
-    .txt/.srt/.vtt). Long recordings take minutes: pass wait=false and poll get_task."""
+    .txt/.srt/.vtt, plus diarization RTTM when diarize=true); one-call downloads:
+    GET /v1/tasks/{id}/archive (transcript-<id>.zip) and /results (results-<id>.json).
+    Long recordings take minutes: pass wait=false and poll get_task."""
     return await _run(_query, "transcribe", [media],
                       {"diarize": diarize, "min_speakers": min_speakers,
                        "max_speakers": max_speakers, "num_speakers": num_speakers,
@@ -158,7 +160,9 @@ async def diarize(media: str, min_speakers: int | None = None,
     """Who spoke when (no transcript): speaker turns with timestamps, for EVERY audio
     track/channel lane of the file (see transcribe for the lane model). Pass
     min/max/num_speakers hints when the count is roughly known (long multi-party
-    audio tends to over-split)."""
+    audio tends to over-split). Artifacts: per-lane diarization[-<lane>].rttm + JSON
+    (GET /v1/tasks/{id}/artifacts/...); GET /v1/tasks/{id}/archive zips them all as
+    diarize-<id>.zip, /results downloads the task as results-<id>.json."""
     return await _run(_query, "diarize", [media],
                       {"min_speakers": min_speakers, "max_speakers": max_speakers,
                        "num_speakers": num_speakers, "model": model}, wait=wait)

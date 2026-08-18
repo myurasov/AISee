@@ -203,7 +203,11 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   multi-party audio - pass hints, and treat `suspicious_speaker_count: true` as a cue to
   re-run with `--max-speakers`.
   Word-level timings and rendered transcripts (`transcript.txt/.srt/.vtt`, `transcript.json`
-  with words) download from `GET /v1/tasks/{id}/artifacts/<name>`. On unified-memory hosts,
+  with words, plus `diarization[-<lane>].rttm` when diarization was on) download from
+  `GET /v1/tasks/{id}/artifacts/<name>`, or all at once from `GET /v1/tasks/{id}/archive`
+  (`transcript-<id>.zip`; diarize tasks get `diarize-<id>.zip`). Any task's full object
+  downloads as `results-<id>.json` from `GET /v1/tasks/{id}/results`; the CLI equivalent
+  is `aisee task download <id> [-o DIR]`. On unified-memory hosts,
   transcribing recordings of tens of minutes while a large vision model is resident can fail
   with "ASR engine connection failed" (the memory pool ran out; the host stays healthy) -
   retry once the vision model idle-unloads, or ask the operator to stop it first.

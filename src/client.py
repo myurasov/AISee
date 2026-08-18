@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -207,6 +208,33 @@ class Client:
 
     def cancel(self, tid: str) -> dict:
         return self._req("DELETE", f"/v1/tasks/{tid}").json()
+
+    def download(self, tid: str, dest: str | Path = ".") -> list[Path]:
+        """Save results-<id>.json (every task) and, for transcribe/diarize tasks,
+        the artifacts zip (transcript-/diarize-<id>.zip) into dest."""
+        t = self.task(tid)
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        endpoints = ["results"]
+        if t.get("kind") in ("transcribe", "diarize"):
+            endpoints.append("archive")
+        saved = []
+        for ep in endpoints:
+            try:
+                r = self._req("GET", f"/v1/tasks/{tid}/{ep}", timeout=120)
+            except RuntimeError as e:
+                if ep == "archive" and "404" in str(e):
+                    continue  # artifacts not written yet, or expired
+                raise
+            m = re.search(r'filename="([^"]+)"',
+                          r.headers.get("content-disposition", ""))
+            # basename() the server-supplied name: a hostile/MITM'd server must
+            # not be able to write outside dest via ../ or an absolute path
+            name = os.path.basename(m.group(1)) if m else ""
+            p = dest / (name or f"{ep}-{tid}")
+            p.write_bytes(r.content)
+            saved.append(p)
+        return saved
 
     def wait(self, tid: str, echo=None, poll_s: float = 2.0) -> dict:
         """Poll until terminal, streaming progress transitions via echo(line)."""

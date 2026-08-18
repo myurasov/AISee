@@ -77,6 +77,8 @@
   .j-k { color: var(--link); }
   .j-line { word-break: break-word; }
   .d-params { margin-bottom: .4rem; font-family: ui-monospace, monospace; font-size: .8rem; }
+  .d-dl { margin-top: .5rem; font-size: .85rem; color: var(--fg-dim); }
+  .d-dl a { margin-right: .8rem; }
   #tasksBox td { vertical-align: middle; }
   .pctline { color: var(--fg-faint); font-size: .75rem; }
   /* kind, model and took columns read better centered */
@@ -850,6 +852,24 @@ function fillDetail(td, t) {
       box.appendChild(jsonTree(r, "result", false, "result"));
     }
     td.appendChild(box);
+    // downloads: results-<id>.json for every kind; audio kinds also get the zip
+    const tok = tokenFor(false);
+    const q = tok ? "?token=" + encodeURIComponent(tok) : "";
+    const links = [["results-" + t.id + ".json", "/results"]];
+    if (t.kind === "transcribe") links.push(["transcript-" + t.id + ".zip", "/archive"]);
+    if (t.kind === "diarize") links.push(["diarize-" + t.id + ".zip", "/archive"]);
+    const dl = document.createElement("div");
+    dl.className = "d-dl";
+    dl.appendChild(document.createTextNode("download: "));
+    for (const [name, path] of links) {
+      const a = document.createElement("a");
+      a.href = base() + "/v1/tasks/" + t.id + path + q;
+      a.target = "_blank";  // an error response must not navigate the console away
+      a.textContent = name;
+      a.addEventListener("click", e => e.stopPropagation());  // don't toggle the row
+      dl.appendChild(a);
+    }
+    td.appendChild(dl);
   }
   // restore the JSON sections the user had expanded before this redraw
   for (const el of td.querySelectorAll("details[data-path]"))

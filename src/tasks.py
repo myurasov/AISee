@@ -1204,6 +1204,7 @@ class Core:
         asr_wall = diar_wall = 0.0
         lanes_out: list[dict] = []
         words_by_lane: dict[str, list[dict]] = {}
+        turns_by_lane: dict[str, list[dict]] = {}  # kept out of the result; RTTM only
         # honest percent: one unit per lane stage (ASR, and diarization when on)
         total_units = max(1, len(live) * (2 if diar_entry is not None else 1))
         done_units = 0
@@ -1248,6 +1249,7 @@ class Core:
                     if words:
                         words = audio.assign_speakers(words, d["turns"])
                         segments = audio.words_to_segments(words)
+                    turns_by_lane[ln["label"]] = d["turns"]
                     lane.update({k: v for k, v in d.items() if k != "turns"})
                 except RuntimeError as e:
                     diar_error = f"diarization failed on lane {ln['label']}: {e}"
@@ -1288,7 +1290,9 @@ class Core:
             result["speaker_source"] = ("diarization" if result["diarized"] else "none")
         self._progress(tid, "running", "writing transcript artifacts", pct=98)
         art_dir = paths.media_dir() / tid / "artifacts"
-        result["artifacts"] = audio.write_artifacts(art_dir, result, words_by_lane)
+        result["artifacts"] = audio.write_artifacts(
+            art_dir, result, words_by_lane,
+            turns_by_lane=turns_by_lane, uri=Path(path).stem)
         self.store.update(tid, status="done", result=result,
                           timing={"finished_at": time.time()})
         self._progress(tid, "done", "")

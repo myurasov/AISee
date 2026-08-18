@@ -382,6 +382,13 @@ def cmd_task(args) -> int:
     if args.task_cmd == "cancel":
         _p(json.dumps(c.cancel(args.id)))
         return 0
+    if args.task_cmd == "download":
+        saved = c.download(args.id, args.out)
+        for p in saved:
+            _p(str(p))
+        if len(saved) == 1 and c.task(args.id).get("kind") in ("transcribe", "diarize"):
+            _p("note: no artifacts zip (task unfinished, or artifacts expired)")
+        return 0
     return 1
 
 
@@ -546,6 +553,11 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("id")
     m = ts.add_parser("cancel")
     m.add_argument("id")
+    m = ts.add_parser("download",
+                      help="save results-<id>.json (+ the transcript/diarize "
+                           "zip for audio tasks)")
+    m.add_argument("id")
+    m.add_argument("-o", "--out", default=".", help="destination directory (default: .)")
     for sp in ts.choices.values():
         add_server(sp)
     p.set_defaults(fn=cmd_task)

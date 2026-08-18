@@ -50,6 +50,12 @@ _ENDPOINTS = [
     ("GET", "/v1/tasks/{id}/artifacts", "consumer", "derived output files (transcripts, RTTM)"),
     ("GET", "/v1/tasks/{id}/artifacts/{name}", "consumer", "download one artifact, e.g. "
                                                            "transcript.srt"),
+    ("GET", "/v1/tasks/{id}/results", "consumer", "download the full task object as "
+                                                  "results-<id>.json (every kind)"),
+    ("GET", "/v1/tasks/{id}/archive", "consumer", "download all artifacts as one zip: "
+                                                  "transcript-<id>.zip (transcribe) or "
+                                                  "diarize-<id>.zip (diarize); 404 for "
+                                                  "other kinds or before the task is done"),
     ("GET", "/v1/blobs/{sha256}", "consumer", "upload-dedup probe: {exists, size}"),
     ("POST", "/v1/blobs", "consumer", "upload media into the content-addressed store "
                                       "-> [{sha256, size}]; reference as sha256:<hash>"),

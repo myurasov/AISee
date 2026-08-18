@@ -4,10 +4,12 @@
 """The AISee REST API server (FastAPI). Owns the core; the CLI is just one of its clients.
 Also serves the MCP server at /mcp (streamable HTTP) as a thin adapter over the same API."""
 
+import io
 import json
 import os
 import subprocess
 import threading
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -454,6 +456,47 @@ def create_app() -> FastAPI:
         if not p.is_file() or d.resolve() not in p.parents:
             raise HTTPException(404, "no such artifact (expired?)")
         return FileResponse(p, filename=p.name, content_disposition_type="inline")
+
+    @app.get("/v1/tasks/{tid}/results")
+    def task_results(tid: str):
+        """The full task object (params, progress, timings, result) as a JSON file
+        download, results-<id>.json. Works for every task kind and status."""
+        t = core.store.get(tid)
+        if not t:
+            raise HTTPException(404, "no such task")
+        return Response(json.dumps(t, indent=1), media_type="application/json",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="results-{tid}.json"'})
+
+    @app.get("/v1/tasks/{tid}/archive")
+    def task_archive(tid: str):
+        """Every artifact of an audio task in one zip: transcript-<id>.zip for
+        transcribe, diarize-<id>.zip for diarize. Other kinds have no artifacts."""
+        t = core.store.get(tid)
+        if not t:
+            raise HTTPException(404, "no such task")
+        stem = {"transcribe": "transcript", "diarize": "diarize"}.get(t.get("kind"))
+        if not stem:
+            raise HTTPException(404, f"no archive for '{t.get('kind')}' tasks - "
+                                     "download /results instead")
+        if t.get("status") != "done":
+            # also closes the mid-write window: artifacts are fully written
+            # before the status flips to done
+            raise HTTPException(404, f"no artifacts (task status: {t.get('status')})")
+        d = paths.media_dir() / tid / "artifacts"
+        buf = io.BytesIO()
+        try:
+            files = sorted(f for f in d.iterdir() if f.is_file()) if d.is_dir() else []
+            if not files:
+                raise HTTPException(404, "no artifacts (expired?)")
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                for f in files:
+                    z.write(f, f.name)
+        except OSError:  # artifacts GC'd between listing and zipping
+            raise HTTPException(404, "no artifacts (expired?)")
+        return Response(buf.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="{stem}-{tid}.zip"'})
 
     @app.delete("/v1/tasks/{tid}")
     def cancel_task(tid: str):

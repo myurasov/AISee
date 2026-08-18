@@ -43,7 +43,11 @@ speaker-count hints when roughly known (applied per lane; long multi-party audio
 over-split; an unhinted count above 10 is flagged `suspicious_speaker_count`). Full word
 timings and rendered per-lane transcript files are HTTP artifacts:
 `GET {{api_base}}/v1/tasks/{id}/artifacts/transcript.json` (also
-`transcript[-<lane>].txt/.srt/.vtt`). Long recordings take minutes (expect ~realtime/30 or
+`transcript[-<lane>].txt/.srt/.vtt`, plus `diarization[-<lane>].rttm` when diarization
+was on). One-call downloads: `GET {{api_base}}/v1/tasks/{id}/archive` zips every artifact
+(`transcript-<id>.zip`, or `diarize-<id>.zip` for diarize tasks), and
+`GET {{api_base}}/v1/tasks/{id}/results` returns any task's full object as
+`results-<id>.json`. Long recordings take minutes (expect ~realtime/30 or
 faster for ASR) - pass `wait=false` and poll `get_task`.
 
 ## Uploading media from your machine

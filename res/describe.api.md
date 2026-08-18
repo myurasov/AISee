@@ -20,6 +20,8 @@
 | GET | `/v1/tasks/{id}/media/{i}` | consumer | download the task's i-th media file; append `/thumb` for a JPEG thumbnail |
 | GET | `/v1/tasks/{id}/artifacts` | consumer | derived output files (transcripts, RTTM) with sizes |
 | GET | `/v1/tasks/{id}/artifacts/{name}` | consumer | download one artifact, e.g. `transcript.srt` |
+| GET | `/v1/tasks/{id}/results` | consumer | download the full task object as `results-<id>.json` (every kind, any status) |
+| GET | `/v1/tasks/{id}/archive` | consumer | download all artifacts as one zip: `transcript-<id>.zip` (transcribe) or `diarize-<id>.zip` (diarize); 404 for other kinds, unfinished tasks, or expired artifacts |
 | GET | `/v1/blobs/{sha256}` | consumer | dedup probe: {exists, size} for already-uploaded content |
 | POST | `/v1/blobs` | consumer | upload media into the content store -> [{sha256, size}] |
 | POST | `/v1/models` | admin | install a model: {"name": catalog slug or HF id} |
@@ -80,10 +82,13 @@ Task kinds and their `result` shapes:
   "diarized", "artifacts"}`; single-lane results also carry flat
   text/segments/num_speakers for convenience. Timestamps are absolute seconds in the
   recording. Full word timings plus rendered per-lane `transcript[-<lane>].txt/.srt/.vtt`
-  are artifacts (`GET /v1/tasks/{id}/artifacts/...`).
+  are artifacts (`GET /v1/tasks/{id}/artifacts/...`); with diarization on, per-lane
+  `diarization[-<lane>].rttm` is written too. One-call download of everything:
+  `GET /v1/tasks/{id}/archive` (returns `transcript-<id>.zip`).
 - `diarize` - who spoke when, no transcript, per lane. Result: `{"tracks": [{label, turns:
   [{start, end, speaker}], num_speakers, speakers, rtfx}], ...}` (single-lane also flat) +
-  per-lane `diarization[-<lane>].rttm` artifacts.
+  per-lane `diarization[-<lane>].rttm` artifacts; `GET /v1/tasks/{id}/archive` zips them
+  all as `diarize-<id>.zip`.
 
 Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON string, files in
 `files`): `kind` (look|assert|watch|transcribe|diarize), `model` (slug; omit for the default),
@@ -92,7 +97,7 @@ Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON stri
 `frames` (even-sampled frame count when fps is not set), `native` (send video natively instead of
 frames, if the model supports it), `chunk_seconds` (watch), `context` (extra background text the
 model should assume), `max_tokens`, `thinking` (bool; for models marked **Thinking: optional** in
-the model list below — enables/disables chain-of-thought reasoning; default `true`; has no effect
+the model list below - enables/disables chain-of-thought reasoning; default `true`; has no effect
 on always-on reasoning models). Audio kinds: `diarize` (transcribe: also attribute speakers per lane;
 default `false`), `diarize_model` (diarizer slug; default: the capability default),
 `min_speakers` / `max_speakers` / `num_speakers` (per-lane diarization hints -
