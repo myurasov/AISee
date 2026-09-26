@@ -47,6 +47,13 @@ def max_images_for(cat: dict, max_model_len: int) -> int:
 # clips (2-3x look time on GB10). Temporal recall on a 2 s event stream reached 1.0 only
 # at 96 on the Qwen/Cosmos family; detail stayed 1.0 from 24 up on every model.
 DEFAULT_VIDEO_FRAMES = 96
+# vLLM >= 0.24 hands checkpoints whose video processor is Qwen3VLVideoProcessor to its own
+# "qwen3_vl" loader, which ignores num_frames and samples a fixed 2 fps (a 6 s clip gets
+# 12 frames instead of 96, a 75 s one 142). Entries on such checkpoints pin the uniform
+# "opencv" loader the frames study above was measured with; dockerctl passes it as the
+# media-io-kwargs video_backend (older vLLM pops that key and defaults to opencv anyway).
+# A model TOML may set its own video_loader ("" keeps vLLM's choice).
+UNIFORM_VIDEO_LOADER = "opencv"
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
 CONTEXT_CANDIDATES = (262144, 131072, 65536, 32768, 16384, 8192)
 # per-model checkpoint ceiling (max_position_embeddings); auto-sizing never exceeds it.
@@ -93,6 +100,7 @@ CATALOG: dict[str, dict] = {
         # 2026-08-10 (exact OCR, 150k-token needle retrieval 3/3, watch) on both hosts
         "extra_args": ["--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
         "reasoning": False,
         "load_timeout": 3600,
         "license": "Apache-2.0",
@@ -114,6 +122,7 @@ CATALOG: dict[str, dict] = {
         # answers stay clean; without it the CoT would pollute the answer text
         "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
         "reasoning": True,
         "load_timeout": 7200,
         "license": "Apache-2.0",
@@ -139,6 +148,7 @@ CATALOG: dict[str, dict] = {
         "mem_gib": 102,
         "extra_args": ["--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
         "reasoning": False,
         "load_timeout": 3600,
         "license": "Apache-2.0",
@@ -178,6 +188,7 @@ CATALOG: dict[str, dict] = {
         "mem_gib": 66,
         "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
         "reasoning": True,
         "load_timeout": 7200,
         "license": "NVIDIA Open Model",

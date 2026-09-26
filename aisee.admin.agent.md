@@ -116,6 +116,10 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   requirements fit together (the ~11 GiB audio pair next to a VLM is the normal case);
   to co-locate more, lower `--gpu-frac`/`--max-model-len` per model.
 - Idle models auto-stop after `idle_timeout` (default 900 s) and restart on the next query.
+- Off-catalog Qwen3-VL derivatives on a vLLM >= 0.24 image: vLLM samples their native
+  video at a fixed 2 fps and ignores the frame cap. Add `video_loader = "opencv"` to the
+  model's TOML (then `model stop`) to get the catalog behavior: up to `video_frames` frames
+  spread evenly over the clip.
 - Remote equivalents exist over REST with the admin token:
   `POST /v1/models {"name": ...}`, `DELETE /v1/models/{slug}`,
   `POST /v1/models/{slug}/start|stop` - so a remote admin does not need ssh once the API

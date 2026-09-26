@@ -14,7 +14,7 @@ import time
 
 import httpx
 
-from . import paths
+from . import catalog, paths
 
 # vLLM 26.06 image bug: prometheus-fastapi-instrumentator 8.0.0 crashes on routers without
 # .path, 500-ing every request. Patched None-safe inside the container after start; a no-op
@@ -114,13 +114,19 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
         return _start_audio_model(entry, hf_token=hf_token)
     name = container_name(entry["slug"])
     port = int(entry["port"])
+    video_io = {"num_frames": entry["video_frames"]}
+    # decided at start, not frozen at install: see catalog.UNIFORM_VIDEO_LOADER
+    loader = entry.get("video_loader",
+                       (catalog.CATALOG.get(entry["slug"]) or {}).get("video_loader"))
+    if loader:
+        video_io["video_backend"] = loader
     serve = [
         "vllm", "serve", entry["hf_id"],
         "--host", "0.0.0.0", "--port", str(port),
         "--gpu-memory-utilization", str(entry["gpu_frac"]),
         "--max-model-len", str(entry["max_model_len"]),
         "--limit-mm-per-prompt", json.dumps({"image": entry["max_images"], "video": 1}),
-        "--media-io-kwargs", json.dumps({"video": {"num_frames": entry["video_frames"]}}),
+        "--media-io-kwargs", json.dumps({"video": video_io}),
         # the mm processor cache desyncs between vLLM's frontend and engine when a client
         # disconnect aborts an in-flight request, then 500s forever on that media hash
         # ("Expected a cached item for mm_hash=..."); re-preprocessing is cheap - disable it
