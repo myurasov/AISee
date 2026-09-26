@@ -116,8 +116,10 @@ async def watch(video: str, question: str | None = None, expectation: str | None
     Give exactly one of question (returns per-chunk findings + a synthesized answer) or
     expectation (returns {pass, failing_ranges} with the time spans where it broke).
     video: a host path or a 'sha256:<hex>' blob ref (see look). fps sets temporal
-    resolution (1 for overviews, 8-15 to hunt flicker). thinking: see look. Long videos
-    take minutes: pass wait=false to get a task_id immediately and poll get_task."""
+    resolution (default 2; 1 for overviews; 8-15 hunts flicker with targeted questions or
+    expectations - above 2, free-form narration gets less reliable). A shorter
+    chunk_seconds gives each frame more detail. thinking: see look. Long videos take
+    minutes: pass wait=false to get a task_id immediately and poll get_task."""
     if bool(question) == bool(expectation):
         return {"error": "give exactly one of question / expectation"}
     return await _run(_query, "watch", [video],

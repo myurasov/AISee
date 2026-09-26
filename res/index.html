@@ -314,11 +314,12 @@ function showTab(name) {
 // ---------------- config tab ----------------
 
 const CONFIG_DOC = {
+  "meta.config_version": "config file format, stamped on every write; an older file is migrated once when loaded (to 2: a leftover fps = 3.0, the pre-1.1.0a3 default, becomes 2) - do not edit",
   "api.host": "bind address of the API daemon: 0.0.0.0 serves the whole network, 127.0.0.1 is this-host-only",
   "api.port": "TCP port serving the REST API, this console, and the /mcp endpoint",
   "defaults.default_model": "model used when a query does not name one (first installed model if empty)",
   "defaults.idle_timeout": "seconds a started model stays on the GPU after its last use before auto-unload; 0 = never unload; per-model TOMLs override this and apply live",
-  "defaults.fps": "video sampling rate (frames per second of source time) when a query sets neither fps nor frames; 1 is enough for 'what happens', 8-15 hunts flicker",
+  "defaults.fps": "watch sampling rate (frames per second of source time) when a watch sets no fps; 2 is the rate the Qwen3-VL/Cosmos family is trained at, 1 is enough for 'what happens', 8-15 hunts flicker with targeted checks (free-form narration gets less reliable above 2); per-model TOMLs override this",
   "defaults.frames": "frames spread evenly over a video when sampling into images (bounded by the model's image budget)",
   "defaults.max_tokens": "answer-length budget per inference; 0 = unset, per-kind built-ins apply (assert 1024, watch 4096/chunk, look 8192; reasoning models 8192 everywhere); max_tokens_look/assert/watch pin one kind; reasoning models think inside the same budget",
   "defaults.watch_still_checks": "risky watch claims (titles, share-state) verified against a still frame, up to this many per chunk; refuted claims are removed/replaced and flagged unstable; 0 disables",
@@ -341,7 +342,9 @@ async function loadConfigTab() {
 
     box.appendChild(h("Global configuration"));
     box.appendChild(note("From ~/.aisee/config.toml on the host, merged over built-in defaults. " +
-                         "Edit the file to change; api.host/port need an API restart, the rest applies live."));
+                         "Edit the file to change: the default-model keys apply live, everything " +
+                         "else needs an API restart (defaults.idle_timeout seeds new installs; " +
+                         "each model's TOML holds its own)."));
     let t = "<table><tr><th>option</th><th>value</th><th>meaning</th></tr>";
     for (const section of Object.keys(cfg)) {
       for (const [k, v] of Object.entries(cfg[section])) {
@@ -385,7 +388,7 @@ async function loadConfigTab() {
         ["idle_timeout", m.idle_timeout != null ? m.idle_timeout + " s" : "-", "model",
          "seconds until an unused model is auto-unloaded; 0 = never; applies live"],
         ["fps", m.fps != null ? m.fps : "-", m.fps_override ? "model" : "default",
-         "video sampling rate when a query sets neither fps nor frames"],
+         "watch sampling rate when a watch sets no fps"],
         ["frames", d.frames != null ? d.frames : "-", "default",
          "frames spread evenly over a video when sampling into images and the query sets none"],
         ["max_tokens", d.max_tokens != null ? d.max_tokens : "-", "default",

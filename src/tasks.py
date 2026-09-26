@@ -817,7 +817,7 @@ class Core:
                                       "finished_at": time.time()})
             self._progress(tid, "done", "")
         elif kind == "watch":
-            self._watch(tid, entry, p, work_dir, fps=fps or float(d["fps"]),
+            self._watch(tid, entry, p, work_dir, fps=fps or float(entry.get("fps") or d["fps"]),
                         max_tokens=max_tokens, timeout=timeout, context=context,
                         thinking=thinking)
         else:

@@ -9,14 +9,19 @@ import tomllib
 
 from . import paths
 
+# bumped when load() must migrate older files (save() stamps it: every save writes it)
+CONFIG_VERSION = 2
+
 # Sized for the main mode of operation: one resident model on a 96 GB-class GPU
-# (or a GB10) with the dense serving profile (128k context, 16 images / 64 video frames).
+# (or a GB10) with the dense serving profile (128k context, 16 images / 96 video frames).
 DEFAULTS: dict = {
+    "meta": {"config_version": CONFIG_VERSION},
     "api": {"host": "0.0.0.0", "port": 4444},
     "defaults": {
         "default_model": "",
         "idle_timeout": 3600, # seconds; 0 = never unload
-        "fps": 3.0,
+        # watch sampling rate: the video rate the Qwen3-VL/Cosmos family is trained at
+        "fps": 2.0,
         "frames": 16, # even-sampled frames per video (= the image budget)
         # answer budget knobs. 0 = unset: per-kind built-ins apply (assert 1024, watch
         # 4096/chunk, look 8192; reasoning models 8192 for every kind). A host may pin
@@ -45,6 +50,14 @@ DEFAULTS: dict = {
         "thinking": True,
     },
 }
+
+
+# the fps default before 1.1.0a3, which every save wrote verbatim into config.toml:
+# version-1 files carrying it are migrated to the current default once. Watch used to
+# deliver only 2 fps on the Qwen3-VL/Cosmos family whatever was set (their processor
+# resampled each chunk); now that it delivers the configured rate, 3 fps chunks degraded
+# that family's free-form narration in testing.
+LEGACY_DEFAULT_FPS = 3.0
 
 
 def lan_ip() -> str | None:
@@ -80,6 +93,18 @@ def load() -> dict:
         on_disk = tomllib.loads(p.read_text())
         for section, values in on_disk.items():
             cfg.setdefault(section, {}).update(values)
+        try:
+            version = int((on_disk.get("meta") or {}).get("config_version", 1))
+        except (TypeError, ValueError):
+            version = 1
+        if version < CONFIG_VERSION:
+            if cfg["defaults"].get("fps") == LEGACY_DEFAULT_FPS:
+                cfg["defaults"]["fps"] = DEFAULTS["defaults"]["fps"]
+            cfg["meta"]["config_version"] = CONFIG_VERSION
+            try:
+                save(cfg)  # once, so the file shows what is in effect and an fps set later sticks
+            except OSError:
+                pass  # read-only home: migrate in memory on every load
     return cfg
 
 
