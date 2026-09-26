@@ -225,6 +225,9 @@ CATALOG: dict[str, dict] = {
         "extra_args": ["--hf-overrides", '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
+        # a Qwen3-VL subclass with the same video processor on vLLM 0.25 (validated
+        # 2026-09-26: 2 fps and no frame cap without the pin)
+        "video_loader": UNIFORM_VIDEO_LOADER,
         "reasoning": True,
         "load_timeout": 5400,
         "license": "NVIDIA Open Model",
@@ -254,6 +257,7 @@ CATALOG: dict[str, dict] = {
                        '{"architectures": ["Cosmos3ForConditionalGeneration"]}',
                        "--trust-remote-code", "--kv-cache-dtype", "fp8"],
         "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,  # as cosmos3-nano (validated on v0.24.0)
         "reasoning": True,
         "load_timeout": 10800,
         "license": "NVIDIA Open Model",
