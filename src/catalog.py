@@ -52,8 +52,21 @@ DEFAULT_VIDEO_FRAMES = 96
 # 12 frames instead of 96, a 75 s one 142). Entries on such checkpoints pin the uniform
 # "opencv" loader the frames study above was measured with; dockerctl passes it as the
 # media-io-kwargs video_backend (older vLLM pops that key and defaults to opencv anyway).
+# A pinned loader's frames are final: that processor also resamples to 2 fps any clip the
+# loader passes whole (<= cap frames: short clips, every watch chunk - watch --fps 8 got
+# 2 fps, a 2 s native clip 4 of its 60 frames, on every vLLM so far), so video requests
+# to these entries carry do_sample_frames=false (tasks.video_mm_kwargs; a server-wide
+# --mm-processor-kwargs loses to the loader's per-clip flag).
 # A model TOML may set its own video_loader ("" keeps vLLM's choice).
 UNIFORM_VIDEO_LOADER = "opencv"
+
+
+def video_loader(entry: dict) -> str:
+    """The vLLM video loader an installed entry pins ("" = vLLM's choice): the TOML's own
+    video_loader when set, else the catalog's - decided at use, not frozen at install."""
+    if "video_loader" in entry:
+        return entry["video_loader"] or ""
+    return (CATALOG.get(entry.get("slug", "")) or {}).get("video_loader") or ""
 DEFAULT_MAX_MODEL_LEN = 131072            # upper cap for the auto-sizing
 CONTEXT_CANDIDATES = (262144, 131072, 65536, 32768, 16384, 8192)
 # per-model checkpoint ceiling (max_position_embeddings); auto-sizing never exceeds it.

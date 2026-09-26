@@ -56,6 +56,14 @@ def _thinking_sampling(thinking: bool) -> dict:
         return {"chat_template_kwargs": {"enable_thinking": True}, "temperature": 0.6}
     return {"chat_template_kwargs": {"enable_thinking": False}}
 
+
+def video_mm_kwargs(entry: dict, content: list[dict]) -> dict | None:
+    """Processor kwargs for a request carrying native video to an entry with a pinned
+    loader: keep the loader's frames (see catalog.UNIFORM_VIDEO_LOADER)."""
+    if catalog.video_loader(entry) and any(p.get("type") == "video_url" for p in content):
+        return {"do_sample_frames": False}
+    return None
+
 TERMINAL = ("done", "failed", "canceled")
 
 _SCHEMA = """
@@ -784,10 +792,11 @@ class Core:
             if self._canceled(tid):
                 return
             t1 = time.time()
+            mm_kw = video_mm_kwargs(entry, content)
             if kind == "look":
                 answer, meta = vlm.run_look(entry["port"], entry["hf_id"], content,
                                             max_tokens=max_tokens, timeout=timeout,
-                                            sampling=ts)
+                                            sampling=ts, mm_kwargs=mm_kw)
                 if meta.get("finish_reason") == "length":
                     answer += vlm.truncation_marker(meta)
                 # conservative loop cleanup only (exact match, 4+ cycles): legitimate
@@ -801,7 +810,8 @@ class Core:
                     result["unstable"] = True
             else:
                 result = vlm.run_assert(entry["port"], entry["hf_id"], content,
-                                        max_tokens=max_tokens, timeout=timeout, sampling=ts)
+                                        max_tokens=max_tokens, timeout=timeout, sampling=ts,
+                                        mm_kwargs=mm_kw)
             self.store.update(tid, status="done", result=result,
                               timing={"inference_s": round(time.time() - t1, 1),
                                       "finished_at": time.time()})
@@ -992,7 +1002,8 @@ class Core:
                     t_inf = _account("prep", t_prep)
                     r = vlm.run_assert(port, hf_id, content, max_tokens=max_tokens,
                                        timeout=_remaining(f"chunk {rng}"),
-                                       sampling=assert_sampling)
+                                       sampling=assert_sampling,
+                                       mm_kwargs=video_mm_kwargs(entry, content))
                     _account("infer", t_inf)
                     return {"range": rng, **r}
                 text = vlm.with_context(
@@ -1007,7 +1018,8 @@ class Core:
                 t_inf = _account("prep", t_prep)
                 a, meta = vlm.run_look(port, hf_id, content, max_tokens=max_tokens,
                                        timeout=_remaining(f"chunk {rng}"),
-                                       sampling=look_sampling)
+                                       sampling=look_sampling,
+                                       mm_kwargs=video_mm_kwargs(entry, content))
                 _account("infer", t_inf)
                 if meta.get("finish_reason") == "length":
                     a += vlm.truncation_marker(meta)

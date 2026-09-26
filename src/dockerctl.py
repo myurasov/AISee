@@ -157,9 +157,8 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
     name = container_name(entry["slug"])
     port = int(entry["port"])
     video_io = {"num_frames": entry["video_frames"]}
-    # decided at start, not frozen at install: see catalog.UNIFORM_VIDEO_LOADER
-    loader = entry.get("video_loader",
-                       (catalog.CATALOG.get(entry["slug"]) or {}).get("video_loader"))
+    # see catalog.UNIFORM_VIDEO_LOADER
+    loader = catalog.video_loader(entry)
     if loader:
         video_io["video_backend"] = loader
     serve = [

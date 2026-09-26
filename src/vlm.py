@@ -47,10 +47,12 @@ HONESTY_SYSTEM = (
 
 
 def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
-         timeout: float = 600.0, sampling: dict | None = None) -> tuple[str, dict]:
+         timeout: float = 600.0, sampling: dict | None = None,
+         mm_kwargs: dict | None = None) -> tuple[str, dict]:
     """One chat completion. Returns (text, meta) where meta carries finish_reason,
     completion_tokens, and max_tokens_clamped (set when the requested answer budget had
-    to be shrunk to fit the context next to a large prompt)."""
+    to be shrunk to fit the context next to a large prompt). mm_kwargs go to the
+    model's multimodal processor for this request only."""
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
     clamped = False
     retried_5xx = 0
@@ -58,7 +60,9 @@ def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
         try:
             r = httpx.post(url, json={"model": hf_id, "messages": messages,
                                       "max_tokens": max_tokens, "temperature": 0,
-                                      **(sampling or {})},
+                                      **(sampling or {}),
+                                      **({"mm_processor_kwargs": mm_kwargs}
+                                         if mm_kwargs else {})},
                            timeout=timeout)
         except httpx.HTTPError as e:
             raise RuntimeError(f"cannot reach model endpoint {url}: {e}") from e
@@ -142,18 +146,21 @@ def annotate(result: dict, meta: dict) -> dict:
 
 
 def run_look(port: int, hf_id: str, content: list[dict], *, max_tokens: int,
-             timeout: float, sampling: dict | None = None) -> tuple[str, dict]:
+             timeout: float, sampling: dict | None = None,
+             mm_kwargs: dict | None = None) -> tuple[str, dict]:
     return chat(port, hf_id, [{"role": "system", "content": HONESTY_SYSTEM},
                               {"role": "user", "content": content}],
-                max_tokens=max_tokens, timeout=timeout, sampling=sampling)
+                max_tokens=max_tokens, timeout=timeout, sampling=sampling,
+                mm_kwargs=mm_kwargs)
 
 
 def run_assert(port: int, hf_id: str, content: list[dict], *, max_tokens: int,
-               timeout: float, sampling: dict | None = None) -> dict:
+               timeout: float, sampling: dict | None = None,
+               mm_kwargs: dict | None = None) -> dict:
     messages = [{"role": "system", "content": ASSERT_SYSTEM},
                 {"role": "user", "content": content}]
     raw, meta = chat(port, hf_id, messages, max_tokens=max_tokens, timeout=timeout,
-                     sampling=sampling)
+                     sampling=sampling, mm_kwargs=mm_kwargs)
     if meta.get("finish_reason") == "length":
         # a clipped verdict is unparseable JSON, not a judgment - fail it distinctly
         return annotate({"pass": False,
