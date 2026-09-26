@@ -52,6 +52,17 @@ def docker_available() -> bool:
         return False
 
 
+def container_image(slug: str) -> str | None:
+    """Image the model's container was created from (None when there is no container)."""
+    try:
+        r = _run(["inspect", "-f", "{{.Config.Image}}", container_name(slug)], check=False)
+    except FileNotFoundError:
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.strip() or None
+
+
 def container_state(slug: str) -> str:
     """'running' | 'exited' | 'absent'"""
     try:

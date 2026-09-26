@@ -182,7 +182,8 @@ def cmd_model(args) -> int:
                else f" ({'/'.join(entry.get('capabilities', []))} audio model)")
         _p(f"  gpu: {prof['name']} ({prof['mem_gib']:.0f} GiB{', unified' if prof['unified'] else ''}) "
            f"-> gpu_frac {entry['gpu_frac']}{ctx}")
-        _p(f"  image {entry['image']}, port {entry['port']}")
+        _p(f"  image {entry['image']}{' (pinned)' if entry.get('image_pinned') else ''}, "
+           f"port {entry['port']}")
         _p("start it with: aisee model start " + entry["slug"])
         return 0
     if args.model_cmd == "remove":
@@ -208,7 +209,10 @@ def cmd_model(args) -> int:
                 d = " [default]" if m["default"] else ""
                 # a live loading note is more informative than the bare state word
                 state = m["loading_note"] if m.get("loading_note") else m["state"]
-                _p(f"{m['slug']}{d}: {state} port={m['port']}")
+                # an upgrade moves the registry image; the live container keeps its own
+                old = (f" (still on {m['running_image']} - `aisee model stop {m['slug']}` "
+                       "to switch)" if m.get("running_image") else "")
+                _p(f"{m['slug']}{d}: {state} port={m['port']}{old}")
         else:
             state_names = {"absent": "installed", "exited": "failed", "running": "running"}
             for e in registry.list_installed():

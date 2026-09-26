@@ -98,9 +98,13 @@ def entry_path(slug: str):
 
 
 def _upgrade_image(entry: dict) -> dict:
-    # a superseded default serving image follows the current default (an explicit
-    # --image override to some other image is left alone)
-    if entry.get("image") in catalog.LEGACY_DEFAULT_IMAGES:
+    # a catalog model on a superseded default serving image follows the current default.
+    # Never touched: an explicit --image (image_pinned), so pinning an old image rolls
+    # back; and off-catalog installs (incl. retired catalog slugs), which were validated
+    # - if at all - on the image they were installed with.
+    cat = catalog.CATALOG.get(entry.get("slug"), {})
+    if (not entry.get("image_pinned") and cat.get("image") == catalog.DEFAULT_IMAGE
+            and entry.get("image") in catalog.LEGACY_DEFAULT_IMAGES):
         entry["image"] = catalog.DEFAULT_IMAGE
     return entry
 
@@ -144,6 +148,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
             "slug": slug,
             "hf_id": hf_id,
             "image": image or cat["image"],
+            **({"image_pinned": True} if image else {}),
             "engine": engine,
             "modality": cat.get("modality", "audio"),
             "capabilities": list(cat.get("capabilities", [])),
@@ -188,6 +193,7 @@ def install(name: str, *, image: str | None = None, gpu_frac: float | None = Non
         "slug": slug,
         "hf_id": hf_id,
         "image": image or cat.get("image", catalog.DEFAULT_IMAGE),
+        **({"image_pinned": True} if image else {}),
         "port": port or existing.get("port") or _free_port(),
         "gpu_frac": frac,
         **({"mem_gib": mem_gib} if mem_gib else {}),

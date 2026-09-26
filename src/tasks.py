@@ -323,9 +323,10 @@ class Core:
 
     def model_view(self, entry: dict) -> dict:
         slug = entry["slug"]
+        state = self.model_state(slug)
         return {
             "slug": slug, "hf_id": entry["hf_id"], "port": entry["port"],
-            "state": self.model_state(slug),
+            "state": state,
             "modality": entry.get("modality", "vision"),
             "engine": entry.get("engine", "vllm"),
             "mem_gib": entry.get("mem_gib"),
@@ -349,8 +350,17 @@ class Core:
             "fps": entry.get("fps") or float(self.cfg["defaults"]["fps"]),
             "fps_override": entry.get("fps") is not None,
             "image": entry.get("image"),
+            "image_pinned": bool(entry.get("image_pinned")),
+            # a container started before an upgrade keeps its old image until recreated
+            "running_image": self._running_image(entry) if state == "running" else None,
             "loading_note": self._model_loading.get(slug),
         }
+
+    @staticmethod
+    def _running_image(entry: dict) -> str | None:
+        """The live container's image when it differs from the registry's (else None)."""
+        live = dockerctl.container_image(entry["slug"])
+        return live if live and live != entry.get("image") else None
 
     def check_gpu_capacity(self, entry: dict) -> None:
         """Refuse a start that would oversubscribe the GPU - before any container work.

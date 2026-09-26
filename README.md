@@ -205,8 +205,8 @@ Things to know when going off-catalog:
   checkpoint - don't pass `--quantization`.
 - **Custom code models**: add `--arg --trust-remote-code`.
 - **Different serving image**: `--image` swaps the container image per model (e.g. an
-  architecture only supported by a newer vLLM or a vendor build); nvcr.io images need the
-  NGC key.
+  architecture only supported by a newer vLLM or a vendor build) and pins it there; models
+  installed without it follow each release's default image. nvcr.io images need the NGC key.
 - Per-request budgets: max_images sized so 1080p stills fill the context (install default 16;
   see the catalog notes), 1 video (24 server-sampled frames, keeping each frame at ~720p);
   AISee's frame sampling respects them. There is no hard video-length

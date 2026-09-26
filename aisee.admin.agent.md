@@ -50,7 +50,11 @@ ffmpeg) with the exact fix commands. Re-run it until it prints `install: ok`.
 After updating the source on a host: `uv sync`, then restart the API - `./aisee api stop &&
 ./aisee api start`, or `systemctl restart aisee-api` on a persistent (systemd) install, where
 the stop/start pair silently no-ops - a running daemon keeps executing old code. `res/*`
-(console, describe template) is read per request and needs no restart.
+(console, describe template) is read per request and needs no restart. When a release
+changes the default serving image (1.1: `nvcr.io/nvidia/vllm:26.08-py3`), pull it first
+(`docker pull <image>`, ~20+ GB) - otherwise the first start of each model pulls it while
+holding the one-cold-load-at-a-time lock - and stop running models afterwards so they come
+back on it (see Managing models).
 
 ## Auth: consumer and admin tokens
 
@@ -119,6 +123,21 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   next query. `model stop` also cancels a start you issued that is still in progress. A stop
   does not stick while tasks for that model are queued or running - the queue needs the
   model and starts it again; cancel those tasks first.
+- Serving image: catalog models on the NGC default image follow each release's default
+  (currently `nvcr.io/nvidia/vllm:26.08-py3`), including entries written by older
+  releases; the Cosmos3 models (vllm-omni images) and audio models keep their own images,
+  and off-catalog installs - including models dropped from the catalog, like Holo1.5 and
+  UI-TARS-1.5 - keep the image they were installed with (reinstall to move one). A
+  container that was already running when you upgraded keeps its old image until it is
+  recreated - `model list` shows `(still on <image>)`; `model stop <slug>` switches it on
+  the next query (models with `idle_timeout = 0` never switch by themselves).
+- Pinning / rollback: `--image I` at install pins a model to I (`(pinned)` in the install
+  output). A reinstall recomputes every setting and drops hand edits (e.g. a tuned
+  `max_images`), and a reinstall without `--image` unpins. To pin or roll back WITHOUT
+  losing tuning, edit the model's TOML instead: set
+  `image = "nvcr.io/nvidia/vllm:26.06-py3"` and add `image_pinned = true`, then
+  `model stop <slug>`. (Before 1.1.0a2 there was no pin: an explicit 26.06 was treated as
+  the old default and moved to 26.08 - redo such rollbacks on 1.1.0a2+.)
 - Off-catalog Qwen3-VL derivatives on a vLLM >= 0.24 image: vLLM samples their native
   video at a fixed 2 fps and ignores the frame cap. Add `video_loader = "opencv"` to the
   model's TOML (then `model stop`) to get the catalog behavior: up to `video_frames` frames
