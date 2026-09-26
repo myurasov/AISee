@@ -95,7 +95,7 @@ More examples:
 
 ```bash
 ./aisee look shot.png -q "What error message is shown?"
-./aisee look page.png -q "Where is the search box?" --model holo1-5-7b
+./aisee look page.png -q "Where is the search box?" --model nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad
 ./aisee assert run.mp4 -e "the app launches into the main menu" --native
 ./aisee watch run.mp4 -e "the frame counter increases monotonically" --fps 8
 ./aisee watch run.mp4 -q "describe what the user does" --fps 2
@@ -123,19 +123,18 @@ drops the entry; weights stay in the shared cache.
 
 ### Built-In Catalog
 
-The built-in catalog covers eight vision models and two audio models, measured on a DGX Spark
-GB10 (2026-07 / 2026-08). Installing by slug applies the serving flags each one needs:
+The built-in catalog covers six vision models and two audio models, measured on a DGX Spark
+GB10 (2026-07 / 2026-08) and served from the NGC vLLM 26.08 image (vLLM 0.27.1). Installing by
+slug applies the serving flags each one needs:
 
 | Slug | GPU memory | Context | Notes |
 |---|---|---|---|
 | `qwen3-vl-30b-a3b-instruct` | 92 GiB | 256k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
 | `qwen3-vl-32b-instruct` | 102 GiB | 256k/128k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs; 128k on 96 GB |
 | `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 28 GiB | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
-| `holo1-5-7b` | 38 GiB | 128k | UI element grounding; stills only |
 | `cosmos-reason2-8b` | 66 GiB | 256k | temporal / physical video reasoning |
 | `cosmos3-nano` | 72 GiB | 256k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
 | `cosmos3-super` | 102 GiB | 256k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 256k on GB10, 128k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
-| `ui-tars-1-5-7b` | 38 GiB | 128k | GUI-agent model (action generation later); stills only |
 | `parakeet-tdt-0.6b-v3` | 7 GiB | audio | ASR default: 25 languages incl. Russian, word timestamps, 12-87x realtime, no hallucination loops |
 | `pyannote/speaker-diarization-3.1` | 4 GiB | audio | diarization default: unbounded speaker count, ~25x realtime (HF-gated: accept 3 repo licenses) |
 
@@ -149,7 +148,7 @@ up to the checkpoint's native limit - whose KV cache fits inside that slice. The
 and Cosmos families serve with an **fp8 KV cache** (halves KV cost; validated with exact-OCR
 and deep needle-retrieval tests with no quality loss), which is what makes their native
 **256k contexts** affordable. On the known tiers: **GB10** (~120 GiB unified) serves the
-whole catalog at 256k (128k for Nemotron/Holo/UI-TARS - their checkpoints' native limit);
+whole catalog at 256k (128k for Nemotron - its checkpoint's native limit);
 a **96 GB** discrete card serves everything at 256k except the two dense-KV 32B-class models
 (`qwen3-vl-32b`, `cosmos3-super` - 128k there); a **48 GB** card fits the 7-17 GiB models,
 while the two big Qwens (~62 GiB weights) do not fit at all (install warns). A model start
@@ -157,7 +156,7 @@ is refused up front - with a GiB message - when the requirement does not fit nex
 already-running models (plus a system reserve), or when the GPU's actually-free memory says
 otherwise (measured margins: a large load must leave 10 GiB free on unified hosts, audio
 engines 3 GiB, discrete GPUs 2 GiB). On unified hosts a large model is also refused while
-audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: short clips cost only the frames they contain; each sampled frame keeps ~720p detail at any cap, ~515 tokens/frame, so cost grows linearly with sampled frames). Execution mode is also per-GPU:
+audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 36 for Nemotron); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: short clips cost only the frames they contain; each sampled frame keeps ~720p detail at any cap, ~515 tokens/frame, so cost grows linearly with sampled frames). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`

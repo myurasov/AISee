@@ -162,7 +162,6 @@ Measured components (fp8 KV is on by default for the Qwen3-VL + Cosmos families)
 | qwen3-vl-30b-a3b-instruct / -thinking | 62 | 10.5 | yes | 2200 | 256k |
 | qwen3-vl-32b-instruct | 63 | 34 | yes | 2200 | 256k |
 | nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad | 11 | 5 | no | 3300 | 128k |
-| holo1-5-7b / ui-tars-1-5-7b | 16 | 7 | no | 2700 | 128000 |
 | cosmos-reason2-8b | 17 | 17.5 | yes | 2200 | 256k |
 | cosmos3-nano | 32 | 14.5 | yes | 2200 | 256k |
 | cosmos3-super | 64 | 30.5 | yes | 2200 | 256k |
@@ -177,7 +176,6 @@ RTX PRO 6000 Blackwell -> 96, DGX Spark GB10 (unified) -> 120u, H200 -> 141:
 | qwen3-vl-30b (both) | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | qwen3-vl-32b-instruct | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
 | nemotron-nano-12b (nvfp4) | 8k/4* | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 |
-| holo1-5-7b / ui-tars | - | 32k/9 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 | 125k/44 |
 | cosmos-reason2-8b | - | 32k/11 | 128k/55 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | cosmos3-nano | - | - | - | 32k/11 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | cosmos3-super | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |

@@ -13,7 +13,7 @@ recording is read at native resolution or silently downscaled.
 Known preprocessor schemes:
 - Qwen3-VL style (Qwen3VLProcessor: Qwen3-VL, Cosmos3, Cosmos-Reason2): pixel budgets in
   size.shortest_edge/longest_edge; the VIDEO budget is TOTAL across all sampled frames.
-- Qwen2-VL style (Qwen2_5_VLProcessor: Holo1.5, UI-TARS): min_pixels/max_pixels (or the
+- Qwen2-VL style (Qwen2_5_VLProcessor, off-catalog Qwen2.5-VL derivatives): min_pixels/max_pixels (or the
   same size keys); the video budget applies PER FRAME.
 - Nemotron tile style (NemotronNanoVLV2*): fixed image_size tiles, up to max_num_tiles
   (+ optional thumbnail tile).
@@ -54,10 +54,6 @@ _CATALOG_FALLBACKS: dict[str, dict] = {
                      "still_min": 65536, "still_max": 16777216, "video_total": 25165824},
     "cosmos3-super": {"scheme": "qwen3", "patch": 16, "merge": 2, "tps": 2,
                       "still_min": 65536, "still_max": 16777216, "video_total": 25165824},
-    "holo1-5-7b": {"scheme": "qwen2", "patch": 14, "merge": 2, "tps": 2,
-                   "still_min": 3136, "still_max": 3686400, "video_frame": 3686400},
-    "ui-tars-1-5-7b": {"scheme": "qwen2", "patch": 14, "merge": 2, "tps": 2,
-                       "still_min": 3136, "still_max": 12845056, "video_frame": 12845056},
     "nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad": {"scheme": "tiles", "tile_px": 512,
                                                  "patch": 16, "downsample": 0.5,
                                                  "max_tiles": 12, "thumbnail": True},

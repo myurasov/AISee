@@ -22,7 +22,7 @@ DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
 # conservative install default; deployments tune it per model so a full batch of 1080p
 # stills fills the context (a 1080p still costs ~2k tokens on 32 px cell models, ~2.7k on
 # 28 px cells, ~3.3k on the tiled Nemotron; keep a ~4k reserve for prompt + answer -
-# e.g. 60 for the Qwen3/Cosmos family at 128k, 46 for Holo/UI-TARS, 36 for Nemotron,
+# e.g. 60 for the Qwen3/Cosmos family at 128k, 36 for Nemotron,
 # 28 for a 64k context). Targeting 4K stills instead roughly quarters the Qwen-family
 # numbers; models whose pixel ceiling is below 4K (Holo 3.69 MP, Nemotron tiles) gain
 # no detail from 4K inputs.
@@ -169,23 +169,6 @@ CATALOG: dict[str, dict] = {
         "pitfalls": "Needs --trust-remote-code and --enforce-eager. NVFP4 quantization is "
                     "auto-detected - do NOT pass --quantization.",
     },
-    "holo1-5-7b": {
-        "hf_id": "Hcompany/Holo1.5-7B",
-        "tokens_per_image": 2700,
-        "ctx_native": 128000,
-        "image": DEFAULT_IMAGE,
-        "weights_gib": 16, "kv_gib_128k": 7,
-        "mem_gib": 38,
-        "extra_args": [],
-        "supports_native_video": False,
-        "reasoning": False,
-        "load_timeout": 7200,
-        "license": "Apache-2.0",
-        "strengths": "Pixel-precise UI element grounding (computer-use lineage); very fast stills "
-                     "(~1.4 s OCR, ~2.4 s grounding); low memory (~16 GB).",
-        "weaknesses": "Stills-only: reads a video clip as a single frame. Terse answers.",
-        "pitfalls": "Hangs during CUDA-graph capture unless served with --enforce-eager.",
-    },
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
         "tokens_per_image": 2200,
@@ -260,23 +243,6 @@ CATALOG: dict[str, dict] = {
                     "checkpoint although only the reasoner half loads. Requires a "
                     "vLLM >= 0.24 serving image. One-time ~35 s first-call warmup "
                     "after load.",
-    },
-    "ui-tars-1-5-7b": {
-        "hf_id": "ByteDance-Seed/UI-TARS-1.5-7B",
-        "tokens_per_image": 2700,
-        "ctx_native": 128000,
-        "image": DEFAULT_IMAGE,
-        "weights_gib": 16, "kv_gib_128k": 7,
-        "mem_gib": 38,
-        "extra_args": ["--trust-remote-code"],
-        "supports_native_video": False,
-        "reasoning": False,
-        "load_timeout": 7200,
-        "license": "Apache-2.0",
-        "strengths": "GUI-agent lineage: can emit click/type actions (future action generation); "
-                     "correct OCR; solid still judgments.",
-        "weaknesses": "Stills-only: reads a video clip as a single frame.",
-        "pitfalls": "Needs --trust-remote-code and --enforce-eager.",
     },
     # ---- audio models (engine != vllm; modality "audio") ----
     # Serving images are built locally on the host from res/serving/<engine dir>/
