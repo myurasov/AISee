@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 
+import httpx
+
 from . import __version__, config, creds, dockerctl, paths, registry
 from .client import Client, is_local
 
@@ -184,6 +186,16 @@ def cmd_model(args) -> int:
         _p("start it with: aisee model start " + entry["slug"])
         return 0
     if args.model_cmd == "remove":
+        # this host's daemon only (AISEE_SERVER may point at a remote host): stopping via
+        # the API also cancels an admin start still in flight
+        local = Client(server=f"http://127.0.0.1:{config.load()['api']['port']}",
+                       autostart=False)
+        if local.api_running():
+            try:
+                local.model_stop(args.slug)
+            except (RuntimeError, httpx.HTTPError) as e:
+                _p(f"  warning: the local API did not stop {args.slug} ({e}); "
+                   "removing its container directly")
         dockerctl.stop_model(args.slug)
         ok = registry.remove(args.slug)
         _p(f"removed {args.slug}" if ok else f"{args.slug} was not installed")
