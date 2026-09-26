@@ -173,6 +173,16 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
         # ("Expected a cached item for mm_hash=..."); re-preprocessing is cheap - disable it
         "--mm-processor-cache-gb", "0",
     ] + list(entry.get("extra_args", []))
+    # vLLM reads --max_num_seqs as --max-num-seqs; a --config YAML may set it too
+    flags = {str(a).split("=")[0].replace("_", "-") for a in serve if str(a).startswith("--")}
+    if not flags & {"--max-num-seqs", "--config"}:
+        # AISee keeps at most concurrency^2 requests in flight per model (task workers x
+        # watch chunk threads). vLLM's default (1024 on >= 70 GB GPUs) sizes CUDA graphs
+        # and vLLM 0.27's post-profile sampler warmup (~0.6 GB, outside the memory budget)
+        # for that many - enough to OOM Qwen3-VL-32B on a 96 GB card at gpu_frac 0.97.
+        # Fixed at container creation: a concurrency change needs a model stop to apply
+        conc = max(1, int(entry.get("concurrency", 1)))
+        serve += ["--max-num-seqs", str(min(max(16, conc * conc), 256))]
     _run(["rm", "-f", name], check=False)
     args = [
         "run", "-d", "--name", name, "--restart", "unless-stopped",
