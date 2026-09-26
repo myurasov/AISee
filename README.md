@@ -30,7 +30,9 @@ There are five kinds of queries:
 - `look` - free-form question, returns text. OCR, descriptions, "where is the button".
 - `assert` - an expectation to verify, returns `{pass, reason, evidence}`. Meant for visual
   regression and e2e checks; the CLI exit code follows the verdict.
-- `watch` - whole-video analysis, chunk by chunk, at a chosen fps. Given an expectation it
+- `watch` - whole-video analysis, chunk by chunk, at a chosen fps (default 2, the rate the
+  Qwen3-VL/Cosmos family is trained at; higher rates suit targeted checks like flicker
+  hunting). Given an expectation it
   returns per-chunk verdicts and `failing_ranges` (the time spans where it broke); given a
   question it returns per-chunk notes and a synthesized answer for the whole video.
 - `transcribe` - word-timestamped transcript of EVERY audio lane of a recording (an audio
@@ -159,11 +161,13 @@ is refused up front - with a GiB message - when the requirement does not fit nex
 already-running models (plus a system reserve), or when the GPU's actually-free memory says
 otherwise (measured margins: a large load must leave 10 GiB free on unified hosts, audio
 engines 3 GiB, discrete GPUs 2 GiB). On unified hosts a large model is also refused while
-audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 36 for Nemotron); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: short clips cost only the frames they contain; each sampled frame keeps ~720p detail at any cap, ~515 tokens/frame, so cost grows linearly with sampled frames). Execution mode is also per-GPU:
+audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 36 for Nemotron); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: a short clip sends only the frames it has; on the Qwen3-VL/Cosmos family all frames of a video share one ~12k-token budget, so a 1080p frame keeps ~1344x768 at 24 frames and ~672x384 at 96). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`
-chunks are processed in parallel. Context length is the
+chunks are processed in parallel. The container's vLLM sequence cap is sized from
+`concurrency` when it starts (concurrency squared, 16-256), so raising `concurrency` above 4
+takes a `model stop`. Context length is the
 expensive knob - vLLM reserves KV-cache memory for the full `max_model_len` inside the model's
 `gpu_frac` slice, so raising it costs GPU memory even for short requests; override with
 `--max-model-len` / `--gpu-frac` at install.
@@ -211,7 +215,7 @@ Things to know when going off-catalog:
   architecture only supported by a newer vLLM or a vendor build) and pins it there; models
   installed without it follow each release's default image. nvcr.io images need the NGC key.
 - Per-request budgets: max_images sized so 1080p stills fill the context (install default 16;
-  see the catalog notes), 1 video (24 server-sampled frames, keeping each frame at ~720p);
+  see the catalog notes), 1 video (up to `video_frames` server-sampled frames, default 96);
   AISee's frame sampling respects them. There is no hard video-length
   limit - only temporal resolution (the frame budget spread over the clip); use `watch` for
   long videos.
@@ -421,8 +425,10 @@ python-multipart, mcp). Nothing outside the checkout.
   models/<slug>.toml   # per-model serving config: image, port, mem_gib/gpu_frac, vllm args
   hf-cache/            # shared model-weights cache, mounted into every container;
                        #   by far the biggest item (tens of GB per model)
-  cache/jit/<image>/   # kernel caches kept across model restarts (Triton kernels, FlashInfer
-                       #   autotune results; NGC vLLM images only, tens of MB each)
+  cache/jit/<image>-<id>/  # kernel caches kept across model restarts, per image build (Triton
+                       #   kernels, FlashInfer autotune results, CUDA's PTX JIT cache; NGC
+                       #   vLLM and vllm-omni images only; typically a few hundred MB each,
+                       #   the CUDA part capped at 1 GiB)
   tasks/tasks.db       # sqlite task store (statuses, progress, timings, results)
   tasks/blobs/         # content-addressed uploads (sha256-named; upload dedup); GC'd
                        #   after blob_ttl_hours (default 24), refreshed on reuse

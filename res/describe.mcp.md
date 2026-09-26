@@ -82,14 +82,20 @@ each reuse).
   within the host's request_timeout (default 1 h).
 - **Media budgets are serving config, not model limits** (per-model `max_images` is sized
   so a full batch of 1080p stills fills the context - see each model's `Image budget:`
-  line below; 1 video sampled to 24 frames server-side - 24 keeps each frame at ~720p,
-  since the video pixel budget is shared across frames). There is **no maximum video length - only temporal
+  line below; 1 video sampled server-side to at most the model's frame budget - 96 on most
+  models; on the Qwen3-VL/Cosmos family the frames share one pixel budget, so a 1080p frame
+  keeps ~1344x768 at 24 frames but ~672x384 at 96; `fps` with `native` re-encodes the clip at
+  that rate first, for fewer, sharper frames). There is **no maximum video length - only temporal
   resolution**: a `native` video is reduced to the frame budget spread evenly over the clip;
   `watch` chunks the video so every chunk gets the full budget - chunk length is frame
-  budget / fps (24 s per chunk at fps=1; sparser fps means longer chunks), up to 64 chunks
-  (~25 min at fps=1) per call - raise `chunk_seconds` or lower `fps` for longer clips.
+  budget / fps (96 s per chunk at fps=1 on a 96-frame model; sparser fps means longer
+  chunks), up to 64 chunks (~100 min at fps=1) per call - raise `chunk_seconds` or lower
+  `fps` for longer clips, or pass a shorter `chunk_seconds` for more detail per frame
+  (fewer frames per chunk, more chunks).
   Chunks queue within one call, expect tens of seconds each. fps=1 suits "what happens";
-  8-15 hunts flicker/glitches.
+  the default is 2 (the rate the Qwen3-VL/Cosmos family is trained at); 8-15 hunts
+  flicker/glitches with targeted questions or expectations - above 2 fps that family's
+  free-form narration gets less reliable.
 - **Every catalog model reads native video**; off-catalog models on a host may be stills-only
   (they read a video as a single frame) - check `native video` in the model guide below
   before sending video to a non-default model.

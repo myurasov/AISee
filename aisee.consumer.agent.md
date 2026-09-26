@@ -92,7 +92,8 @@ aisee status | model list | task list | task show <id>
 
 Useful flags: `--model <slug>` (else the default model), `--context "<background the model
 cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--native` (send the
-video itself, video-capable models only), `--max-tokens N` (answer budget),
+video itself, video-capable models only), `--chunk-seconds S` / `--server-frames N` (watch:
+chunk length / frames per chunk), `--max-tokens N` (answer budget),
 `--no-thinking` (skip chain-of-thought on thinking-toggle models), `--no-wait` (print task
 id, poll later), `--server URL`, `--token T`. Transcribe flags: `--diarize` (add per-lane
 speaker attribution), `--diarize-model` (diarizer slug), `--min-speakers/--max-speakers/--num-speakers` (per-lane diarization
@@ -112,7 +113,7 @@ POST /v1/tasks     multipart: files=<media>..., params=<JSON string>
                    params: {"kind":"look|assert|watch|transcribe|diarize",
                             "question"|"expectation":"..." (vision kinds only),
                             "model":"<slug>?", "fps"?, "frames"?, "native"?, "chunk_seconds"?,
-                            "context"?, "max_tokens"?, "thinking"?,
+                            "server_frames"? (watch), "context"?, "max_tokens"?, "thinking"?,
                             "diarize"? (transcribe), "min_speakers"?, "max_speakers"?,
                             "num_speakers"?}
   -> {"id": "..."}
@@ -162,27 +163,36 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
 - **Non-blocking + queued.** Submitting returns immediately. Each model runs a limited number
   of inferences in parallel (default 3); excess tasks queue FIFO. Never assume instant results.
 - **`model_loading` can take minutes.** First-ever use downloads weights (10-60+ min);
-  a model idle-unloaded (default after 15 min) reloads from cache in ~2-3 min. Keep polling -
+  a model idle-unloaded (default after 60 min) reloads from cache in ~2-3 min. Keep polling -
   `progress.detail` explains what is happening. Do not resubmit; that just queues more work.
 - **Media budgets are serving config, not model limits.** Per-model `max_images` is sized
   so a full batch of 1080p stills fills the context: a 1080p still costs ~2k tokens on
   32 px cell models (Qwen3-VL/Cosmos), ~3.3k on the
   tiled Nemotron - so e.g. ~60 fit half a 256k context with room to spare (4K
   stills cost ~4x, and models capped below 4K gain no detail from them). Video: 1 per
-  request, sampled up to the model's frame budget (default 96; a CAP, not a quota - short
-  clips cost only the frames they contain). Each sampled frame keeps ~720p detail
-  regardless of the cap (~515 tokens/frame, measured); total cost grows linearly with
-  sampled frames, so long-clip looks trade latency, never per-frame detail.
+  request, sampled up to the model's frame budget (default 96; a CAP, not a quota - a clip
+  with fewer frames sends all it has). On the Qwen3-VL/Cosmos family all frames of one video
+  share a ~12k-token pixel budget: a 1080p clip costs about that whatever its frame count,
+  and per-frame detail falls as frames rise - a 1080p frame keeps ~1344x768 at 24 frames,
+  ~672x384 at 96 (a 3 s clip at 30 fps already sends 90). For fine text, send a still (or
+  sampled `frames`) instead, or pass a low `fps` with `native` (the clip is re-encoded at
+  that rate first: `fps` 2 turns that 3 s clip into 6 sharp frames).
   `/v1/describe` states each model's exact budgets on its `Image budget:` and
   `Input resolution:` lines.
 - **There is no maximum video length - only temporal resolution.** A `native` video is reduced
   to the frame budget spread evenly over the clip. For anything longer than a few minutes use
   `watch`: it chunks the video so every chunk gets the full frame budget - chunk length is
-  frame budget / fps (24 s per chunk at fps=1; sparser fps means longer chunks), up to 64
-  chunks (~25 min at fps=1) per call - raise `chunk_seconds` or lower `fps` for longer clips.
-  Chunks queue within one call, and the whole watch (all chunks + synthesis) must finish
-  within the host's request_timeout (default 1 h). High fps hunts flicker/glitches; fps=1 is enough for "what
-  happens".
+  frame budget / fps (96 s per chunk at fps=1 on a 96-frame model; sparser fps means longer
+  chunks), up to 64 chunks (~100 min at fps=1) per call - raise `chunk_seconds` or lower
+  `fps` for longer clips. On the Qwen3-VL/Cosmos family every sampled frame reaches the
+  model and the frames of one request share one pixel budget (a full 96-frame chunk of 1080p
+  video gets ~672x384 per frame) - lower `server_frames` (frames per chunk, default the
+  model's frame budget) when per-frame detail matters more than coverage. Chunks queue
+  within one call, and the whole watch (all chunks + synthesis) must finish within the
+  host's request_timeout (default 1 h). The default fps is 2 (the host may change
+  it), the rate the Qwen3-VL/Cosmos family is trained at. High fps hunts flicker/glitches
+  with targeted questions or expectations; above 2 fps that family's free-form narration
+  gets less reliable (misplaced times, invented steps). fps=1 is enough for "what happens".
 - **Every catalog model reads native video**; a host may also run off-catalog models that are
   stills-only (they read a video as a single frame) - check `native video` in `/v1/describe`
   before sending video to a non-default model.

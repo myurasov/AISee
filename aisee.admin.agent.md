@@ -138,15 +138,32 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   `image = "nvcr.io/nvidia/vllm:26.06-py3"` and add `image_pinned = true`, then
   `model stop <slug>`. (Before 1.1.0a2 there was no pin: an explicit 26.06 was treated as
   the old default and moved to 26.08 - redo such rollbacks on 1.1.0a2+.)
-- Off-catalog Qwen3-VL derivatives on a vLLM >= 0.24 image: vLLM samples their native
-  video at a fixed 2 fps and ignores the frame cap. Add `video_loader = "opencv"` to the
-  model's TOML (then `model stop`) to get the catalog behavior: up to `video_frames` frames
-  spread evenly over the clip.
-- Kernel caches: models on NGC images keep compiled Triton kernels and FlashInfer autotune
-  picks in `~/.aisee/cache/jit/<image>-<id>/` (one directory per image build, root-owned,
-  tens of MB), which cut Nemotron's engine init on a GB10 from ~207 s to ~44 s. Picks
-  measured while the GPU was busy persist too, and directories of old images stay behind;
-  `sudo rm -rf ~/.aisee/cache/jit` resets everything (the next start re-tunes).
+- Off-catalog Qwen3-VL derivatives: add `video_loader = "opencv"` to the model's TOML
+  (then `model stop`) to get the catalog behavior - up to `video_frames` frames spread
+  evenly over the clip, and every frame of a shorter clip or watch chunk. Without it, vLLM
+  >= 0.24 samples their native video at a fixed 2 fps and ignores the frame cap, and any
+  vLLM resamples a clip with no more frames than the cap to 2 fps.
+- Kernel caches: models on NGC and vllm-omni images keep compiled Triton kernels,
+  FlashInfer autotune picks, and the CUDA driver's PTX JIT cache in
+  `~/.aisee/cache/jit/<image>-<id>/` (one directory per image build, root-owned, typically
+  a few hundred MB; the CUDA part is capped at 1 GiB). On a GB10 they cut Nemotron's engine
+  init from ~207 s to ~44 s and its first request after a load from ~140 s to seconds
+  (Cosmos3-Nano's from ~24 s to ~9 s); on an RTX PRO 6000, Cosmos3-Nano's first request
+  went from ~10 s to ~1.5 s - only the first load on a new image pays.
+  Picks measured while the GPU was busy persist too, and directories of old images stay
+  behind; `sudo rm -rf ~/.aisee/cache/jit` resets everything (the next start re-tunes).
+- Concurrency: a model TOML's `concurrency` (default 3) applies to the task queue live, but
+  the container's vLLM sequence cap (`--max-num-seqs`: concurrency squared, at least 16 and
+  at most 256, unless `extra_args` sets it) is fixed when the container starts - after
+  raising `concurrency` above 4, `model stop <slug>` so the next start sizes it.
+- Watch rate: config.toml `[defaults] fps` is the default watch sampling rate - 2 since
+  1.1.0a3. A config.toml from before 1.1.0a3 still carries the old default `fps = 3.0`
+  (every config write stored all defaults): the first load after the upgrade rewrites it
+  to 2 once and stamps `[meta] config_version = 2`; an fps you set after that sticks.
+  Watch now delivers the configured rate; before, the Qwen3-VL/Cosmos family got at most
+  2 fps whatever was set, and at 3 fps its free-form chunk narration degraded in testing.
+  A model TOML's own `fps` overrides the default. A Cosmos3 container that was running
+  when you upgraded keeps the old 2 fps loader until it is recreated - `model stop <slug>`.
 - Remote equivalents exist over REST with the admin token:
   `POST /v1/models {"name": ...}`, `DELETE /v1/models/{slug}`,
   `POST /v1/models/{slug}/start|stop` - so a remote admin does not need ssh once the API
@@ -267,7 +284,7 @@ port, idle_timeout, and default flag, and recomputes everything else consistentl
   Consumers can hash locally (`sha256sum` / `shasum -a 256`), probe `GET /v1/blobs/{sha}`,
   and pass `sha256:<hash>` media refs - see `aisee.consumer.agent.md`.
 - `./aisee uninstall` removes all AISee containers and `~/.aisee` (`--keep-cache` spares the
-  downloaded weights); the source checkout and docker images stay.
+  downloaded weights and kernel caches); the source checkout and docker images stay.
 
 ## What to hand a consumer
 

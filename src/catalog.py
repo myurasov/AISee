@@ -41,11 +41,12 @@ def max_images_for(cat: dict, max_model_len: int) -> int:
         return cat.get("max_images", DEFAULT_MAX_IMAGES)
     return max(4, min(120, (max_model_len - PROMPT_RESERVE_TOKENS) // tpi))
 # 96 frames (measured 2026-08-14, frames-study): num_frames is a CAP, not a quota -
-# the engine samples min(cap, frames in the clip) and per-frame resolution does NOT
-# shrink as the cap rises (~515 tokens/frame flat at 24 vs 96; 14 px text read at both).
-# Total cost is linear (~50k tokens worst case), so high caps only cost latency on long
-# clips (2-3x look time on GB10). Temporal recall on a 2 s event stream reached 1.0 only
-# at 96 on the Qwen/Cosmos family; detail stayed 1.0 from 24 up on every model.
+# the engine samples min(cap, frames in the clip). On the Qwen3-VL/Cosmos family all
+# frames of one video share a 24 Mpx budget (~12k tokens), so cost stays flat while
+# per-frame detail falls as frames rise: a 1080p frame keeps ~1344x768 at 24 frames,
+# ~672x384 at 96. High caps cost latency on long clips (2-3x look time on GB10).
+# Temporal recall on a 2 s event stream reached 1.0 only at 96 on that family; the
+# study's small-text detail test stayed 1.0 from 24 up on every model.
 DEFAULT_VIDEO_FRAMES = 96
 # vLLM >= 0.24 hands checkpoints whose video processor is Qwen3VLVideoProcessor to its own
 # "qwen3_vl" loader, which ignores num_frames and samples a fixed 2 fps (a 6 s clip gets

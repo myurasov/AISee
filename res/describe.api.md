@@ -93,9 +93,13 @@ Task kinds and their `result` shapes:
 Submission parameters (`POST /v1/tasks`, multipart field `params` as a JSON string, files in
 `files`): `kind` (look|assert|watch|transcribe|diarize), `model` (slug; omit for the default),
 `question` or
-`expectation`, `fps` (video sampling rate: 1 for overviews, 8-15 to hunt flicker/glitches),
+`expectation`, `fps` (video sampling rate: 1 for overviews, watch default 2, 8-15 to hunt
+flicker/glitches with targeted questions - above 2 the Qwen3-VL/Cosmos family narrates less
+reliably),
 `frames` (even-sampled frame count when fps is not set), `native` (send video natively instead of
-frames, if the model supports it), `chunk_seconds` (watch), `context` (extra background text the
+frames, if the model supports it), `chunk_seconds` (watch), `server_frames` (watch: frames per
+chunk sent natively, default the model's frame budget - fewer means shorter chunks with more
+detail per frame), `context` (extra background text the
 model should assume), `max_tokens`, `thinking` (bool; for models marked **Thinking: optional** in
 the model list below - enables/disables chain-of-thought reasoning; default `true`; has no effect
 on always-on reasoning models). Audio kinds: `diarize` (transcribe: also attribute speakers per lane;
@@ -187,14 +191,19 @@ a request fits the context window and the KV cache fits the model's GPU slice).
 There is **no hard maximum video length** - only temporal resolution:
 
 - `native`: the video is reduced server-side to the model's frame budget (see its Serving
-  line), spread evenly over the whole clip. A 60 s clip at a 24-frame budget keeps ~2.5 s
-  resolution; a 10 min clip drops to one frame per ~25 s.
+  line), spread evenly over the whole clip; a shorter clip keeps every frame. A 60 s clip at
+  a 96-frame budget keeps ~0.6 s resolution; a 10 min clip drops to one frame per ~6 s. On
+  the Qwen3-VL/Cosmos family the frames share one pixel budget: a 1080p frame keeps
+  ~1344x768 at 24 frames, ~672x384 at 96. `fps` with `native` re-encodes the clip at that
+  rate first - fewer, sharper frames (`fps` 2 turns a 3 s 30 fps clip into 6 frames instead
+  of 90).
 - `frames` / `fps`: sampled client-side into the model's image budget (its `Image budget:`
   line above), so e.g. 1 fps covers max_images seconds per request.
 - **Use `watch` for anything longer than a few minutes**: it splits the video into chunks of
   `server_frames/fps` seconds so every chunk gets the full frame budget, up to 64 chunks per
-  call (about 25 min at fps=1 with 24 s chunks - raise `chunk_seconds` or lower `fps` for
-  longer clips, trading per-frame resolution or temporal resolution for reach). A full-budget
+  call (about 100 min at fps=1 with 96 s chunks - raise `chunk_seconds` or lower `fps` for
+  longer clips, trading per-frame resolution or temporal resolution for reach; lower
+  `server_frames` for more detail per frame). A full-budget
   chunk is a big request; expect tens of seconds per chunk. The whole watch (all chunks +
   the final synthesis) must finish within the host's request_timeout (default 1 h).
 - Stills-only models (native video: no in the guide above) read a clip as a single frame - use
