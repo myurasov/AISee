@@ -122,8 +122,8 @@ def health_url(entry: dict) -> str:
 def _jit_cache_args(image: str) -> list[str]:
     """docker-run args that keep kernel caches across container recreation.
 
-    Persists Triton kernels, vLLM's FlashInfer autotune results, and the CUDA driver's
-    PTX JIT cache - files the runtimes write atomically; vLLM's torch.compile cache stays
+    Persists Triton kernels and vLLM's FlashInfer autotune results (files their runtimes
+    write atomically) and the CUDA driver's PTX JIT cache; vLLM's torch.compile cache stays
     inside the container. Measured on a GB10 with Nemotron NVFP4: engine init 207 -> 44 s,
     and its first request after a load ~140 s -> seconds (vLLM's FlashAttention ships no
     SASS for the GB10's sm_121, so the driver compiles its PTX on first use). Discrete
