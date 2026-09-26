@@ -122,16 +122,18 @@ def health_url(entry: dict) -> str:
 def _jit_cache_args(image: str) -> list[str]:
     """docker-run args that keep kernel caches across container recreation.
 
-    Persists Triton kernels and vLLM's FlashInfer autotune results - files the runtimes
-    write atomically; vLLM's torch.compile cache stays inside the container. The win is
-    on eager (unified-memory) hosts - measured on a GB10 with Nemotron NVFP4: engine init
-    207 -> 44 s. With torch.compile on (discrete GPUs), vLLM points Triton at its own
-    in-container compile cache, and 26.06 keeps FlashInfer autotuning in memory, so there
-    the mount mostly idles. NGC vLLM images only (they run as root and bake nothing at
-    these paths). Keyed by image id, so a re-pushed tag never reuses kernels built against
-    another stack. Best effort: any failure just means a re-JIT. Tuning picks persist
-    until the directory is removed (`sudo rm -rf ~/.aisee/cache/jit`)."""
-    if not image.startswith("nvcr.io/nvidia/vllm"):
+    Persists Triton kernels, vLLM's FlashInfer autotune results, and the CUDA driver's
+    PTX JIT cache - files the runtimes write atomically; vLLM's torch.compile cache stays
+    inside the container. Measured on a GB10 with Nemotron NVFP4: engine init 207 -> 44 s,
+    and its first request after a load ~140 s -> seconds (vLLM's FlashAttention ships no
+    SASS for the GB10's sm_121, so the driver compiles its PTX on first use). Discrete
+    Blackwell cards get native SASS (the CUDA cache stays empty) but still reuse Triton
+    kernels: Cosmos3-Nano's first request on an RTX PRO 6000 ~10 s -> ~1.5 s. NGC vLLM and
+    vllm-omni images only (they run as root and bake nothing at these paths). Keyed by
+    image id, so a re-pushed tag never reuses kernels built against another stack. Best
+    effort: any failure just means a re-JIT. Tuning picks persist until the directory is
+    removed (`sudo rm -rf ~/.aisee/cache/jit`)."""
+    if not image.startswith(("nvcr.io/nvidia/vllm", "vllm/vllm-omni")):
         return []
     try:
         r = _run(["image", "inspect", "-f", "{{.Id}}", image], check=False)
@@ -147,7 +149,11 @@ def _jit_cache_args(image: str) -> list[str]:
         return []
     return ["-v", f"{jit}:/aisee-jit",
             "-e", "TRITON_CACHE_DIR=/aisee-jit/triton",
-            "-e", "VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/aisee-jit/flashinfer-autotune"]
+            "-e", "VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/aisee-jit/flashinfer-autotune",
+            "-e", "CUDA_CACHE_PATH=/aisee-jit/cuda",
+            # one model writes ~55-125 MB (Nemotron, Cosmos3-Nano); the cap bounds what
+            # all models on one image build accumulate in their shared directory
+            "-e", f"CUDA_CACHE_MAXSIZE={1 << 30}"]
 
 
 def start_model(entry: dict, hf_token: str | None = None) -> None:

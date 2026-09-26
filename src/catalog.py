@@ -190,8 +190,9 @@ CATALOG: dict[str, dict] = {
         "weaknesses": "Fumbled a dense number in testing (OCR digit slip) - do not trust it for "
                       "exact figures.",
         "pitfalls": "Needs --trust-remote-code and --enforce-eager. NVFP4 quantization is "
-                    "auto-detected - do NOT pass --quantization. One-time first-call warmup "
-                    "after each load (~2.5 min measured on a GB10); later calls take seconds.",
+                    "auto-detected - do NOT pass --quantization. On a GB10 the first request "
+                    "after its first load on a new serving image takes up to ~2.5 min "
+                    "(one-time kernel JIT, cached for later loads); later calls take seconds.",
     },
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
@@ -232,7 +233,9 @@ CATALOG: dict[str, dict] = {
         "load_timeout": 5400,
         "license": "NVIDIA Open Model",
         "strengths": "Strong temporal/physical video reasoning; correct OCR; handles native video.",
-        "weaknesses": "Slow to come up; one-time ~59 s first-call warmup after load.",
+        "weaknesses": "Slow to come up. The first request after its first load on a new "
+                      "serving image compiles kernels (~24 s on a GB10, ~10 s on an RTX PRO "
+                      "6000); they are kept, so later loads add a second or two.",
         "pitfalls": "Serves only on the vllm-omni image (multi-arch) with architecture override "
                     "Cosmos3ForConditionalGeneration; ~9-minute quiet init before weight shards "
                     "load - it is not hung.",
@@ -270,8 +273,7 @@ CATALOG: dict[str, dict] = {
         "pitfalls": "Understanding only - the generator tower is not loaded, so no "
                     "image/video generation. First install downloads the full ~130 GB "
                     "checkpoint although only the reasoner half loads. Requires a "
-                    "vLLM >= 0.24 serving image. One-time ~35 s first-call warmup "
-                    "after load.",
+                    "vLLM >= 0.24 serving image.",
     },
     # ---- audio models (engine != vllm; modality "audio") ----
     # Serving images are built locally on the host from res/serving/<engine dir>/
