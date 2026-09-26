@@ -187,6 +187,8 @@ def apply_image_patches(entry: dict, wait_s: int = 150) -> bool:
         if r.returncode == 0:
             _run(["restart", name])
             return True
+        if container_state(entry["slug"]) == "absent":
+            return False  # removed (stopped) meanwhile: nothing left to patch
         time.sleep(5)
     return False
 

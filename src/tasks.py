@@ -300,6 +300,10 @@ class Core:
         self._workers: dict[str, list[threading.Thread]] = {}
         self._cancel: set[str] = set()
         self._model_loading: dict[str, str] = {}  # slug -> phase note
+        # bumped by every stop: an admin start issued before the stop must not bring the
+        # container back afterwards (it checks this at each step of the load)
+        self._stop_gen: dict[str, int] = {}
+        self._stop_gen_lock = threading.Lock()
         self._rtfx_seen: dict[str, float] = {}    # engine kind -> last observed rtfx
         self._stop = threading.Event()
 
@@ -412,12 +416,26 @@ class Core:
     def _lock_for(self, slug: str) -> threading.Lock:
         return self._model_locks.setdefault(slug, threading.Lock())
 
-    def ensure_running(self, slug: str, progress=None) -> dict:
-        """Start the model if needed and wait until it serves. Returns the registry entry."""
+    def _stopped_since(self, slug: str, gen: int | None) -> bool:
+        return gen is not None and self._stop_gen.get(slug, 0) != gen
+
+    def _check_not_stopped(self, slug: str, gen: int | None) -> None:
+        if self._stopped_since(slug, gen):
+            raise RuntimeError(f"start of '{slug}' canceled: the model was stopped while "
+                               "it was starting")
+
+    def ensure_running(self, slug: str, progress=None, gen: int | None = None) -> dict:
+        """Start the model if needed and wait until it serves. Returns the registry entry.
+
+        gen: the stop generation an ADMIN start was issued under (start_model_async); that
+        start is abandoned if the model is stopped before it finishes. Task-driven starts
+        pass None and always proceed - the queued work needs the model (so a stop does not
+        stick while tasks for it are queued; cancel them first)."""
         entry = registry.get(slug)
         if not entry:
             raise RuntimeError(f"model '{slug}' is not installed")
         with self._lock_for(slug):
+            self._check_not_stopped(slug, gen)
             if dockerctl.container_state(slug) == "running":
                 try:
                     dockerctl.wait_ready(entry, timeout=15)
@@ -442,6 +460,7 @@ class Core:
                     pass  # container died or timed out -> full recreate below
                 finally:
                     self._model_loading.pop(slug, None)
+                self._check_not_stopped(slug, gen)  # "died" may just be a stop
             self.check_gpu_capacity(entry)  # fail fast before any container work
             hf_token = creds.resolve("HF_TOKEN")
             modality = entry.get("modality", "vision")
@@ -451,42 +470,74 @@ class Core:
                 self._model_loading[slug] = "queued"
                 if progress:
                     progress("queued")
+            acquired = False
             try:
-                with load_lock:  # admission control: one cold load at a time per modality
-                    if self._model_loading.get(slug) == "queued":
-                        # the world changed while we waited (the other model is
-                        # resident now) - re-verify before touching the GPU
-                        self.check_gpu_capacity(entry)
-                    self._model_loading[slug] = "starting container"
-                    if progress:
-                        progress("starting container")
-                    if not dockerctl.image_present(entry["image"]):
-                        engine = entry.get("engine", "vllm")
-                        if engine in dockerctl.ENGINE_BUILD_DIRS:
-                            # audio serving images are built locally, not pulled
-                            self._model_loading[slug] = "building image (~10+ min)"
-                            if progress:
-                                progress("building image (~10+ min)")
-                            dockerctl.build_image(entry["image"], engine)
-                        else:
-                            self._model_loading[slug] = "pulling image"
-                            if progress:
-                                progress("pulling image")
-                            dockerctl.pull(entry["image"], creds.resolve("NGC_API_KEY"))
-                    dockerctl.start_model(entry, hf_token=hf_token)
-                    self._model_loading[slug] = "applying image patches"
-                    dockerctl.apply_image_patches(entry)
-                    self._model_loading[slug] = "loading weights"
-
-                    def _p(note):
-                        self._model_loading[slug] = note
-                        if progress:
-                            progress(note)
-                    dockerctl.wait_ready(entry, progress=_p)
+                # admission control: one cold load at a time per modality; poll so a stop
+                # of a queued admin start is noticed now, not after the other load ends
+                while not load_lock.acquire(timeout=1.0):
+                    self._check_not_stopped(slug, gen)
+                acquired = True
+                self._cold_load(slug, entry, gen, hf_token, progress)
             finally:
+                if acquired:
+                    load_lock.release()
                 self._model_loading.pop(slug, None)
             self.store.touch_model(slug)
             return entry
+
+    def _cold_load(self, slug: str, entry: dict, gen: int | None, hf_token: str | None,
+                   progress) -> None:
+        """Create the container and wait until it serves (caller holds the load lock)."""
+        self._check_not_stopped(slug, gen)
+        if self._model_loading.get(slug) == "queued":
+            # the world changed while we waited (the other model is resident now) -
+            # re-verify before touching the GPU
+            self.check_gpu_capacity(entry)
+        self._model_loading[slug] = "starting container"
+        if progress:
+            progress("starting container")
+        if not dockerctl.image_present(entry["image"]):
+            engine = entry.get("engine", "vllm")
+            if engine in dockerctl.ENGINE_BUILD_DIRS:
+                # audio serving images are built locally, not pulled
+                self._model_loading[slug] = "building image (~10+ min)"
+                if progress:
+                    progress("building image (~10+ min)")
+                dockerctl.build_image(entry["image"], engine)
+            else:
+                self._model_loading[slug] = "pulling image"
+                if progress:
+                    progress("pulling image")
+                dockerctl.pull(entry["image"], creds.resolve("NGC_API_KEY"))
+        self._check_not_stopped(slug, gen)  # pulls and builds take minutes
+        try:
+            dockerctl.start_model(entry, hf_token=hf_token)
+        except RuntimeError:
+            self._check_not_stopped(slug, gen)  # a stop reads as a docker error
+            raise
+        if self._stopped_since(slug, gen):
+            dockerctl.stop_model(slug)  # stopped in the window: undo
+            self._check_not_stopped(slug, gen)
+        self._model_loading[slug] = "applying image patches"
+        try:
+            dockerctl.apply_image_patches(entry)
+        except RuntimeError:
+            self._check_not_stopped(slug, gen)
+            raise
+        self._model_loading[slug] = "loading weights"
+
+        def _p(note):
+            self._model_loading[slug] = note
+            if progress:
+                progress(note)
+        try:
+            dockerctl.wait_ready(entry, progress=_p)
+        except RuntimeError:
+            self._check_not_stopped(slug, gen)  # a stop reads as a crash
+            raise
+        if self._stopped_since(slug, gen):
+            dockerctl.stop_model(slug)
+            self._check_not_stopped(slug, gen)
 
     def start_model_async(self, slug: str) -> None:
         # capacity-check synchronously so the API can reject with a clear error
@@ -494,15 +545,19 @@ class Core:
         entry = registry.get(slug)
         if entry and dockerctl.container_state(slug) != "running":
             self.check_gpu_capacity(entry)
-        threading.Thread(target=self._safe_ensure, args=(slug,), daemon=True).start()
+        # the generation is read NOW, so a stop sent right after this call returns wins
+        gen = self._stop_gen.get(slug, 0)
+        threading.Thread(target=self._safe_ensure, args=(slug, gen), daemon=True).start()
 
-    def _safe_ensure(self, slug: str) -> None:
+    def _safe_ensure(self, slug: str, gen: int | None = None) -> None:
         try:
-            self.ensure_running(slug)
-        except RuntimeError:
+            self.ensure_running(slug, gen=gen)
+        except (RuntimeError, OSError):
             pass  # state surfaces via model_state()/logs
 
     def stop_model(self, slug: str) -> None:
+        with self._stop_gen_lock:
+            self._stop_gen[slug] = self._stop_gen.get(slug, 0) + 1
         dockerctl.stop_model(slug)
 
     # ---------------- tasks ----------------

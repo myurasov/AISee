@@ -115,7 +115,10 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
 - The first installed model becomes the default. Models co-reside when their GiB
   requirements fit together (the ~11 GiB audio pair next to a VLM is the normal case);
   to co-locate more, lower `--gpu-frac`/`--max-model-len` per model.
-- Idle models auto-stop after `idle_timeout` (default 900 s) and restart on the next query.
+- Idle models auto-stop after `idle_timeout` (default 3600 s; `0` never) and restart on the
+  next query. `model stop` also cancels a start you issued that is still in progress. A stop
+  does not stick while tasks for that model are queued or running - the queue needs the
+  model and starts it again; cancel those tasks first.
 - Off-catalog Qwen3-VL derivatives on a vLLM >= 0.24 image: vLLM samples their native
   video at a fixed 2 fps and ignores the frame cap. Add `video_loader = "opencv"` to the
   model's TOML (then `model stop`) to get the catalog behavior: up to `video_frames` frames
