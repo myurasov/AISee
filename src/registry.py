@@ -232,9 +232,12 @@ def remove(slug: str) -> bool:
         p.unlink()
         cfg = config.load()
         if cfg["defaults"].get("default_model") == slug:
-            remaining = [e["slug"] for e in list_installed()
-                         if e.get("modality", "vision") == "vision"]
-            config.set_value("defaults", "default_model", remaining[0] if remaining else "")
+            vision = [e for e in list_installed() if e.get("modality", "vision") == "vision"]
+            # successor: the recommended default if installed, else a non-reasoning model
+            # (a reasoning default makes every quick check pay a chain-of-thought tax)
+            ranked = sorted(vision, key=lambda e: (e["slug"] != catalog.RECOMMENDED_DEFAULT,
+                                                   bool(e.get("reasoning")), e["slug"]))
+            config.set_value("defaults", "default_model", ranked[0]["slug"] if ranked else "")
         for cap in entry.get("capabilities", []):
             key = f"default_{cap}_model"
             if cfg["defaults"].get(key) == slug:
