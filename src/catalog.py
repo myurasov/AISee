@@ -7,7 +7,10 @@ Entries carry serving requirements plus agent-facing strengths / weaknesses / pi
 (measured on a DGX Spark GB10, 2026-07) that feed the /v1/describe model guide.
 """
 
-DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.06-py3"
+DEFAULT_IMAGE = "nvcr.io/nvidia/vllm:26.08-py3"  # vLLM 0.27.1 (26.06 was 0.22.1)
+# earlier defaults, still recorded in registry TOMLs on hosts installed before the bump;
+# the registry maps them to DEFAULT_IMAGE at read time so an upgrade reaches installed models
+LEGACY_DEFAULT_IMAGES = ("nvcr.io/nvidia/vllm:26.06-py3",)
 
 # Serving requirements are stated in absolute GiB (mem_gib) and adapted to the detected
 # GPU at install time (registry.gpu_profile / fit_max_model_len): the serving fraction is

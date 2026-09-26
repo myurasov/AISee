@@ -97,18 +97,26 @@ def entry_path(slug: str):
     return paths.models_dir() / f"{slug}.toml"
 
 
+def _upgrade_image(entry: dict) -> dict:
+    # a superseded default serving image follows the current default (an explicit
+    # --image override to some other image is left alone)
+    if entry.get("image") in catalog.LEGACY_DEFAULT_IMAGES:
+        entry["image"] = catalog.DEFAULT_IMAGE
+    return entry
+
+
 def get(slug: str) -> dict | None:
     p = entry_path(slug)
     if not p.exists():
         return None
-    return tomllib.loads(p.read_text())
+    return _upgrade_image(tomllib.loads(p.read_text()))
 
 
 def list_installed() -> list[dict]:
     out = []
     for p in sorted(paths.models_dir().glob("*.toml")):
         try:
-            out.append(tomllib.loads(p.read_text()))
+            out.append(_upgrade_image(tomllib.loads(p.read_text())))
         except tomllib.TOMLDecodeError:
             continue
     return out

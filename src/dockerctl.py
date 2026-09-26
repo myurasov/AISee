@@ -17,7 +17,8 @@ import httpx
 from . import paths
 
 # vLLM 26.06 image bug: prometheus-fastapi-instrumentator 8.0.0 crashes on routers without
-# .path, 500-ing every request. Patched None-safe inside the container after start.
+# .path, 500-ing every request. Patched None-safe inside the container after start; a no-op
+# on images that already ship the fix (26.08+), kept for per-model --image overrides.
 _INSTRUMENTATOR_PATCH = """
 import pathlib
 p = pathlib.Path("/usr/local/lib/python3.12/dist-packages/prometheus_fastapi_instrumentator/routing.py")
