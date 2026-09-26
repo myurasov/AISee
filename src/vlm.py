@@ -19,10 +19,16 @@ ASSERT_SYSTEM = (
 )
 
 
-# vLLM's context-overflow 400: "...maximum context length is X tokens. However, you
-# requested Y tokens (Z in the messages, W in the completion)..." (wording varies slightly)
+# vLLM's context-overflow 400. Older vLLM: "...maximum context length is X tokens. However,
+# you requested Y tokens (Z in the messages, W in the completion)" - Z is exact. vLLM 0.22+
+# (every catalog image): "...your prompt contains [at least ]Z input tokens, ..." - checked
+# on the TEXT before media tokens exist, and the tokenizer truncates at the limit, so Z is
+# only a lower bound when "at least" is present. (Media overflows never reach this: vLLM
+# lowers max_tokens itself or rejects with other wording.)
 _CTX_OVERFLOW_RE = re.compile(
-    r"maximum context length is (\d+) tokens.*?(\d+)\s+(?:tokens?\s+)?in the messages",
+    r"maximum context length is (\d+) tokens.*?"
+    r"(?:prompt contains (at least )?(\d+) input tokens"
+    r"|(\d+)\s+(?:tokens?\s+)?in the messages)",
     re.DOTALL | re.IGNORECASE)
 
 
@@ -63,11 +69,17 @@ def chat(port: int, hf_id: str, messages: list[dict], *, max_tokens: int = 1024,
             time.sleep(1.5 * retried_5xx)
             continue
         if r.status_code == 400 and not clamped:
-            # answer budget + prompt overflow the context: vLLM reports the exact prompt
-            # size, so clamp max_tokens to what actually fits and retry once
+            # answer budget + prompt overflow the context: with an exact prompt size,
+            # clamp max_tokens to what actually fits and retry once
             m = _CTX_OVERFLOW_RE.search(r.text)
+            if m and m.group(2):
+                # a lower bound only: a clamp computed from it cannot be trusted to fit
+                raise RuntimeError(
+                    f"the prompt text alone is at least {m.group(3)} tokens, which leaves no "
+                    f"room for a {max_tokens}-token answer in the {m.group(1)}-token context "
+                    "- shorten the question/context or lower max_tokens")
             if m:
-                ctx, prompt_tokens = int(m.group(1)), int(m.group(2))
+                ctx, prompt_tokens = int(m.group(1)), int(m.group(3) or m.group(4))
                 fitting = ctx - prompt_tokens - 16
                 if fitting >= 256 and fitting < max_tokens:
                     max_tokens, clamped = fitting, True
