@@ -156,6 +156,8 @@ class TaskStore:
                 # terminal is final: a worker finishing after a cancel must not flip
                 # canceled back to done (it checks for cancellation only between steps)
                 return
+            if r["status"] == "canceled":
+                progress = None  # nor bury "canceled" under a winding-down model load's notes
             sets, args = ["updated=?"], [time.time()]
             if status:
                 sets.append("status=?")
@@ -437,23 +439,41 @@ class Core:
     def _stopped_since(self, slug: str, gen: int | None) -> bool:
         return gen is not None and self._stop_gen.get(slug, 0) != gen
 
-    def _check_not_stopped(self, slug: str, gen: int | None) -> None:
+    def _check_not_stopped(self, slug: str, gen: int | None, canceled=None) -> None:
         if self._stopped_since(slug, gen):
             raise RuntimeError(f"start of '{slug}' canceled: the model was stopped while "
                                "it was starting")
+        if canceled is not None and canceled():
+            raise RuntimeError(f"start of '{slug}' abandoned: its task was canceled")
 
-    def ensure_running(self, slug: str, progress=None, gen: int | None = None) -> dict:
+    def _abandoned(self, slug: str, gen: int | None, canceled, gen0: int) -> bool:
+        """Should a start remove the container it created? An admin start (gen) yields to
+        any stop since it was issued; a task-driven one to a stop since it began (gen0)
+        plus its task's cancel - both landing during `docker run` leave the stop nothing
+        to remove."""
+        if gen is not None:
+            return self._stopped_since(slug, gen)
+        return (canceled is not None and self._stop_gen.get(slug, 0) != gen0
+                and canceled())
+
+    def ensure_running(self, slug: str, progress=None, gen: int | None = None,
+                       canceled=None) -> dict:
         """Start the model if needed and wait until it serves. Returns the registry entry.
 
         gen: the stop generation an ADMIN start was issued under (start_model_async); that
         start is abandoned if the model is stopped before it finishes. Task-driven starts
-        pass None and always proceed - the queued work needs the model (so a stop does not
-        stick while tasks for it are queued; cancel them first)."""
+        pass None - their queued work needs the model, so a stop does not stick while tasks
+        for it are queued (cancel them first); a stop mid-load still fails the task whose
+        load it interrupts - and pass `canceled` (reports their task canceled): such a start
+        creates no container once its task is canceled, and removes the one it created if
+        the model was also stopped since the start began, so a cancel plus `model stop`
+        sticks."""
         entry = registry.get(slug)
         if not entry:
             raise RuntimeError(f"model '{slug}' is not installed")
+        gen0 = self._stop_gen.get(slug, 0)  # before the lock: a stop while queued counts
         with self._lock_for(slug):
-            self._check_not_stopped(slug, gen)
+            self._check_not_stopped(slug, gen, canceled)
             if dockerctl.container_state(slug) == "running":
                 try:
                     dockerctl.wait_ready(entry, timeout=15)
@@ -478,7 +498,7 @@ class Core:
                     pass  # container died or timed out -> full recreate below
                 finally:
                     self._model_loading.pop(slug, None)
-                self._check_not_stopped(slug, gen)  # "died" may just be a stop
+                self._check_not_stopped(slug, gen, canceled)  # "died" may just be a stop
             self.check_gpu_capacity(entry)  # fail fast before any container work
             hf_token = creds.resolve("HF_TOKEN")
             modality = entry.get("modality", "vision")
@@ -493,9 +513,9 @@ class Core:
                 # admission control: one cold load at a time per modality; poll so a stop
                 # of a queued admin start is noticed now, not after the other load ends
                 while not load_lock.acquire(timeout=1.0):
-                    self._check_not_stopped(slug, gen)
+                    self._check_not_stopped(slug, gen, canceled)
                 acquired = True
-                self._cold_load(slug, entry, gen, hf_token, progress)
+                self._cold_load(slug, entry, gen, hf_token, progress, canceled, gen0)
             finally:
                 if acquired:
                     load_lock.release()
@@ -504,9 +524,9 @@ class Core:
             return entry
 
     def _cold_load(self, slug: str, entry: dict, gen: int | None, hf_token: str | None,
-                   progress) -> None:
+                   progress, canceled=None, gen0: int = 0) -> None:
         """Create the container and wait until it serves (caller holds the load lock)."""
-        self._check_not_stopped(slug, gen)
+        self._check_not_stopped(slug, gen, canceled)
         if self._model_loading.get(slug) == "queued":
             # the world changed while we waited (the other model is resident now) -
             # re-verify before touching the GPU
@@ -527,15 +547,15 @@ class Core:
                 if progress:
                     progress("pulling image")
                 dockerctl.pull(entry["image"], creds.resolve("NGC_API_KEY"))
-        self._check_not_stopped(slug, gen)  # pulls and builds take minutes
+        self._check_not_stopped(slug, gen, canceled)  # pulls and builds take minutes
         try:
             dockerctl.start_model(entry, hf_token=hf_token)
         except RuntimeError:
             self._check_not_stopped(slug, gen)  # a stop reads as a docker error
             raise
-        if self._stopped_since(slug, gen):
+        if self._abandoned(slug, gen, canceled, gen0):
             dockerctl.stop_model(slug)  # stopped in the window: undo
-            self._check_not_stopped(slug, gen)
+            self._check_not_stopped(slug, gen, canceled)
         self._model_loading[slug] = "applying image patches"
         try:
             dockerctl.apply_image_patches(entry)
@@ -553,9 +573,9 @@ class Core:
         except RuntimeError:
             self._check_not_stopped(slug, gen)  # a stop reads as a crash
             raise
-        if self._stopped_since(slug, gen):
+        if self._abandoned(slug, gen, canceled, gen0):
             dockerctl.stop_model(slug)
-            self._check_not_stopped(slug, gen)
+            self._check_not_stopped(slug, gen, canceled)
 
     def start_model_async(self, slug: str) -> None:
         # capacity-check synchronously so the API can reject with a clear error
@@ -675,6 +695,8 @@ class Core:
             except Exception as e:  # never kill the worker on a task error
                 self.store.update(task["id"], status="failed",
                                   error={"message": str(e)[:2000], "hint": ""})
+            finally:
+                self._cancel.discard(task["id"])  # a hint no check consumed (abandoned start)
 
     def _reaper(self) -> None:
         """Stop containers idle past their timeout; GC old tasks."""
@@ -712,6 +734,13 @@ class Core:
         t = self.store.get(tid)
         return bool(t) and t["status"] == "canceled"
 
+    def _canceled_peek(self, tid: str) -> bool:
+        """_canceled without consuming the fast-path hint (for repeated polling)."""
+        if tid in self._cancel:
+            return True
+        t = self.store.get(tid)
+        return bool(t) and t["status"] == "canceled"
+
     def _progress(self, tid: str, step: str, detail: str = "", pct: int | None = None,
                   **extra) -> None:
         # pct is set only where real completion is computable (chunks, lanes) -
@@ -730,18 +759,20 @@ class Core:
             raise RuntimeError(f"model '{slug}' was removed while the task was queued")
 
         # model lifecycle (may cold-load)
+        canceled = lambda: self._canceled_peek(tid)  # noqa: E731
         if self.model_state(slug) != "running":
             self.store.update(tid, status="model_loading")
             self._progress(tid, "model_loading", "model is loading")
             t0 = time.time()
-            self.ensure_running(slug, progress=lambda note: self._progress(tid, "model_loading", note))
+            self.ensure_running(slug, canceled=canceled,
+                                progress=lambda note: self._progress(tid, "model_loading", note))
             self.store.update(tid, timing={"model_load_s": round(time.time() - t0, 1)})
         else:
             # normally instant; if the container turns out to be mid-load, surface it
             def _late(note):
                 self.store.update(tid, status="model_loading")
                 self._progress(tid, "model_loading", note)
-            self.ensure_running(slug, progress=_late)
+            self.ensure_running(slug, progress=_late, canceled=canceled)
         if self._canceled(tid):
             return
 
@@ -1379,8 +1410,8 @@ class Core:
         if self.model_state(diar_slug) != "running":
             self._progress(tid, "running", "loading the diarization model")
         return self.ensure_running(
-            diar_slug, progress=lambda note: self._progress(
-                tid, "running", f"diarization model: {note}"))
+            diar_slug, canceled=lambda: self._canceled_peek(tid),
+            progress=lambda note: self._progress(tid, "running", f"diarization model: {note}"))
 
     def _diarize(self, tid: str, entry: dict, p: dict, work_dir, *,
                  timeout: float) -> None:
