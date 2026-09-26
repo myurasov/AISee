@@ -218,7 +218,10 @@ def _start_audio_model(entry: dict, hf_token: str | None = None) -> None:
 
 
 def apply_image_patches(entry: dict, wait_s: int = 150) -> bool:
-    """Apply the instrumentator patch (nvcr vLLM images) and restart so it takes effect."""
+    """Apply the instrumentator patch (nvcr vLLM images) and restart so it takes effect.
+
+    Restarts only when the patch actually changed a file: images that already ship the
+    fix (26.08+) would otherwise pay a pointless container restart on every start."""
     if not entry["image"].startswith("nvcr.io/nvidia/vllm"):
         return False
     name = container_name(entry["slug"])
@@ -228,6 +231,8 @@ def apply_image_patches(entry: dict, wait_s: int = 150) -> bool:
         r = _run(["exec", name, "python3", "-c",
                   f"import base64; exec(base64.b64decode('{b64}').decode())"], check=False)
         if r.returncode == 0:
+            if "patched" not in r.stdout.split():
+                return False
             _run(["restart", name])
             return True
         if container_state(entry["slug"]) == "absent":
