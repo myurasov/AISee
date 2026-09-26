@@ -3,6 +3,8 @@
 
 """Global config: ~/.aisee/config.toml (read with tomllib, written with a tiny serializer)."""
 
+import os
+import threading
 import tomllib
 
 from . import paths
@@ -83,7 +85,14 @@ def load() -> dict:
 
 def save(cfg: dict) -> None:
     paths.ensure_layout()
-    paths.config_path().write_text(_dump_toml(cfg))
+    p = paths.config_path()
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(_dump_toml(cfg))
+        os.replace(tmp, p)  # atomic: a concurrent load() never reads a half-written file
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def set_value(section: str, key: str, value) -> dict:
