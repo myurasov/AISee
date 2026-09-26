@@ -24,8 +24,8 @@ DEFAULT_CONCURRENCY = 3  # concurrent inferences per model (vLLM batches them)
 # 28 px cells, ~3.3k on the tiled Nemotron; keep a ~4k reserve for prompt + answer -
 # e.g. 60 for the Qwen3/Cosmos family at 128k, 36 for Nemotron,
 # 28 for a 64k context). Targeting 4K stills instead roughly quarters the Qwen-family
-# numbers; models whose pixel ceiling is below 4K (Holo 3.69 MP, Nemotron tiles) gain
-# no detail from 4K inputs.
+# numbers; models whose pixel ceiling is below 4K (Nemotron tiles) gain no detail from
+# 4K inputs.
 DEFAULT_MAX_IMAGES = 16
 PROMPT_RESERVE_TOKENS = 8192  # question + answer/thinking headroom inside the context
 
@@ -177,7 +177,8 @@ CATALOG: dict[str, dict] = {
         "weaknesses": "Fumbled a dense number in testing (OCR digit slip) - do not trust it for "
                       "exact figures.",
         "pitfalls": "Needs --trust-remote-code and --enforce-eager. NVFP4 quantization is "
-                    "auto-detected - do NOT pass --quantization.",
+                    "auto-detected - do NOT pass --quantization. One-time first-call warmup "
+                    "after each load (~2.5 min measured on a GB10); later calls take seconds.",
     },
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",
@@ -194,7 +195,7 @@ CATALOG: dict[str, dict] = {
         "license": "NVIDIA Open Model",
         "strengths": "Purpose-built temporal / physical video reasoning; fast (~5 s asserts); "
                      "handles native video well.",
-        "weaknesses": "Not a UI specialist; weaker on dense-text stills than the Qwen/Holo family.",
+        "weaknesses": "Not a UI specialist; weaker on dense-text stills than the Qwen family.",
         "pitfalls": "Reasoning model: answers can arrive in reasoning_content with content null "
                     "(AISee falls back automatically); give it headroom in max_tokens.",
     },

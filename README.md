@@ -123,13 +123,16 @@ drops the entry; weights stay in the shared cache.
 
 ### Built-In Catalog
 
-The built-in catalog covers six vision models and two audio models, measured on a DGX Spark
-GB10 (2026-07 / 2026-08) and served from the NGC vLLM 26.08 image (vLLM 0.27.1). Installing by
-slug applies the serving flags each one needs:
+The built-in catalog covers seven vision models and two audio models, measured on a DGX Spark
+GB10 (2026-07 / 2026-08; all nine re-validated on 1.1). The Qwen and Nemotron models serve
+from the NGC vLLM 26.08 image (vLLM 0.27.1), the Cosmos3 models from vllm-omni images, and
+the audio models from locally built images. Installing by slug applies the serving flags
+each one needs:
 
 | Slug | GPU memory | Context | Notes |
 |---|---|---|---|
 | `qwen3-vl-30b-a3b-instruct` | 92 GiB | 256k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
+| `qwen3-vl-30b-a3b-thinking` | 92 GiB | 256k | the default's always-thinking twin: chain-of-thought for harder checks, a few seconds slower |
 | `qwen3-vl-32b-instruct` | 102 GiB | 256k/128k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs; 128k on 96 GB |
 | `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 28 GiB | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
 | `cosmos-reason2-8b` | 66 GiB | 256k | temporal / physical video reasoning |
@@ -221,7 +224,7 @@ memory - is refused up front with a clear GiB-denominated error (HTTP 409) inste
 the container crash-loop. To co-locate more, lower `--gpu-frac` / `--max-model-len` per model
 at install. Tasks queue FIFO per model, with up to `concurrency` running at once.
 
-A model idle longer than its `idle_timeout` (default 900 s, `0` disables) is stopped
+A model idle longer than its `idle_timeout` (default 3600 s, `0` disables) is stopped
 automatically to free the GPU. The next query targeting it starts it again; the task reports
 `model_loading` in the meantime.
 

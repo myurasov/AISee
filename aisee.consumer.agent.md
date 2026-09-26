@@ -183,11 +183,12 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
   Chunks queue within one call, and the whole watch (all chunks + synthesis) must finish
   within the host's request_timeout (default 1 h). High fps hunts flicker/glitches; fps=1 is enough for "what
   happens".
-- **Some models are stills-only** (they read a video as a single frame). Check `native video`
-  in `/v1/describe` before sending video to a non-default model.
+- **Every catalog model reads native video**; a host may also run off-catalog models that are
+  stills-only (they read a video as a single frame) - check `native video` in `/v1/describe`
+  before sending video to a non-default model.
 - **Model choice matters.** The default (Qwen3-VL MoE) is the safe all-rounder: correct OCR,
-  video, ~1-4 s per still. Specialists exist for UI element grounding, temporal/physical video
-  reasoning, and minimal GPU footprint; one known model reads dense numbers unreliably. Always
+  video, ~1-4 s per still. Specialists exist for temporal/physical video reasoning (Cosmos)
+  and minimal GPU footprint (Nemotron NVFP4); one known model reads dense numbers unreliably. Always
   consult the model guide in `/v1/describe` - it states each model's measured strengths,
   weaknesses, and pitfalls.
 - **Trust but verify verdicts.** `assert` returns `evidence`; when a verdict is surprising,

@@ -90,8 +90,9 @@ each reuse).
   (~25 min at fps=1) per call - raise `chunk_seconds` or lower `fps` for longer clips.
   Chunks queue within one call, expect tens of seconds each. fps=1 suits "what happens";
   8-15 hunts flicker/glitches.
-- **Some models are stills-only** (they read a video as a single frame) - check `native
-  video` in the model guide below before sending video to a non-default model.
+- **Every catalog model reads native video**; off-catalog models on a host may be stills-only
+  (they read a video as a single frame) - check `native video` in the model guide below
+  before sending video to a non-default model.
 - **Spatial resolution**: AISee sends media at source resolution (`look` extracts
   native-resolution frames; the only AISee-side downscale is the optional `scale` param on
   `watch`) - the model's preprocessor is the only implicit resizer. Each model's
