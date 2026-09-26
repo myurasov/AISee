@@ -142,6 +142,11 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   video at a fixed 2 fps and ignores the frame cap. Add `video_loader = "opencv"` to the
   model's TOML (then `model stop`) to get the catalog behavior: up to `video_frames` frames
   spread evenly over the clip.
+- Kernel caches: models on NGC images keep compiled Triton kernels and FlashInfer autotune
+  picks in `~/.aisee/cache/jit/<image>-<id>/` (one directory per image build, root-owned,
+  tens of MB), which cut Nemotron's engine init on a GB10 from ~207 s to ~44 s. Picks
+  measured while the GPU was busy persist too, and directories of old images stay behind;
+  `sudo rm -rf ~/.aisee/cache/jit` resets everything (the next start re-tunes).
 - Remote equivalents exist over REST with the admin token:
   `POST /v1/models {"name": ...}`, `DELETE /v1/models/{slug}`,
   `POST /v1/models/{slug}/start|stop` - so a remote admin does not need ssh once the API

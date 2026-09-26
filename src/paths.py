@@ -27,6 +27,15 @@ def hf_cache() -> Path:
     return home() / "hf-cache"
 
 
+def jit_cache(image: str, image_id: str) -> Path:
+    """Host-side kernel caches for one serving image build (see dockerctl._jit_cache_args).
+
+    Model containers are recreated on every start, so without this each cold load
+    re-JITs and re-autotunes its kernels."""
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in image)
+    return home() / "cache" / "jit" / f"{safe}-{image_id}"
+
+
 def tasks_dir() -> Path:
     return home() / "tasks"
 

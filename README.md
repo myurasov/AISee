@@ -418,6 +418,8 @@ python-multipart, mcp). Nothing outside the checkout.
   models/<slug>.toml   # per-model serving config: image, port, mem_gib/gpu_frac, vllm args
   hf-cache/            # shared model-weights cache, mounted into every container;
                        #   by far the biggest item (tens of GB per model)
+  cache/jit/<image>/   # kernel caches kept across model restarts (Triton kernels, FlashInfer
+                       #   autotune results; NGC vLLM images only, tens of MB each)
   tasks/tasks.db       # sqlite task store (statuses, progress, timings, results)
   tasks/blobs/         # content-addressed uploads (sha256-named; upload dedup); GC'd
                        #   after blob_ttl_hours (default 24), refreshed on reuse

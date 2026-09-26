@@ -119,6 +119,37 @@ def health_url(entry: dict) -> str:
     return f"http://127.0.0.1:{entry['port']}{path}"
 
 
+def _jit_cache_args(image: str) -> list[str]:
+    """docker-run args that keep kernel caches across container recreation.
+
+    Persists Triton kernels and vLLM's FlashInfer autotune results - files the runtimes
+    write atomically; vLLM's torch.compile cache stays inside the container. The win is
+    on eager (unified-memory) hosts - measured on a GB10 with Nemotron NVFP4: engine init
+    207 -> 44 s. With torch.compile on (discrete GPUs), vLLM points Triton at its own
+    in-container compile cache, and 26.06 keeps FlashInfer autotuning in memory, so there
+    the mount mostly idles. NGC vLLM images only (they run as root and bake nothing at
+    these paths). Keyed by image id, so a re-pushed tag never reuses kernels built against
+    another stack. Best effort: any failure just means a re-JIT. Tuning picks persist
+    until the directory is removed (`sudo rm -rf ~/.aisee/cache/jit`)."""
+    if not image.startswith("nvcr.io/nvidia/vllm"):
+        return []
+    try:
+        r = _run(["image", "inspect", "-f", "{{.Id}}", image], check=False)
+    except FileNotFoundError:
+        return []
+    image_id = r.stdout.strip().rpartition(":")[2][:12] if r.returncode == 0 else ""
+    if not image_id:
+        return []
+    jit = paths.jit_cache(image, image_id)
+    try:
+        jit.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return []
+    return ["-v", f"{jit}:/aisee-jit",
+            "-e", "TRITON_CACHE_DIR=/aisee-jit/triton",
+            "-e", "VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/aisee-jit/flashinfer-autotune"]
+
+
 def start_model(entry: dict, hf_token: str | None = None) -> None:
     """(Re)create and start the container. Non-blocking: readiness is wait_ready()."""
     if entry.get("engine", "vllm") != "vllm":
@@ -151,6 +182,7 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
         "-v", f"{paths.hf_cache()}:/hf-cache",
         "-p", f"{port}:{port}",
     ]
+    args += _jit_cache_args(entry["image"])
     if hf_token:
         args += ["-e", f"HF_TOKEN={hf_token}", "-e", f"HUGGING_FACE_HUB_TOKEN={hf_token}"]
     args += [entry["image"]] + serve
