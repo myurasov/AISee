@@ -437,7 +437,10 @@ image store (`nvcr.io/nvidia/vllm` is ~20 GB, shared by most catalog models) and
 container per model, named `aisee-<slug>`. Weights download into `hf-cache/` on the first load.
 
 **`./aisee uninstall`** stops and removes all `aisee-*` containers and deletes `~/.aisee/`
-(`--keep-cache` spares the weights). It does not touch the docker images, the source checkout,
+(`--keep-cache` spares `hf-cache/` and `cache/`: the weights and kernel caches). The model
+containers run as root, so the files they wrote (downloaded weights, kernel caches) are
+root-owned; uninstall removes what it can and prints the `sudo rm -rf ...` that finishes the
+job. It does not touch the docker images, the source checkout,
 or `.venv` - remove those by hand (`docker rmi ...`, `rm -rf ~/aisee`) if you want a clean host.
 
 ## Troubleshooting

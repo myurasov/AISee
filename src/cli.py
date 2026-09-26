@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -83,11 +84,17 @@ def cmd_install(args) -> int:
     return 0
 
 
+# what --keep-cache spares: model weights and kernel caches (both written by the containers)
+_KEPT_CACHES = ("hf-cache", "cache")
+
+
 def cmd_uninstall(args) -> int:
-    target = paths.home()
+    home = paths.home()
+    # a symlinked home (e.g. onto a data disk) is emptied at its target, then unlinked
+    target = home.resolve()
+    kept = " except hf-cache/ and cache/" if args.keep_cache else ""
     if not args.yes:
-        resp = input(f"Remove ALL AISee state ({target}, containers aisee-*)"
-                     f"{' except hf-cache' if args.keep_cache else ''}? [y/N] ")
+        resp = input(f"Remove ALL AISee state ({target}, containers aisee-*){kept}? [y/N] ")
         if resp.strip().lower() != "y":
             _p("aborted")
             return 1
@@ -95,14 +102,46 @@ def cmd_uninstall(args) -> int:
     for name in dockerctl.list_aisee_containers():
         subprocess.run(["docker", "rm", "-f", name], capture_output=True)
         _p(f"  removed container {name}")
-    if args.keep_cache:
-        for child in target.iterdir():
-            if child.name != "hf-cache":
-                shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink()
-        _p(f"  removed {target} (kept hf-cache/)")
-    else:
-        shutil.rmtree(target, ignore_errors=True)
-        _p(f"  removed {target}")
+
+    def doomed() -> list:
+        if not target.is_dir():
+            return []
+        return [c for c in target.iterdir()
+                if not (args.keep_cache and c.name in _KEPT_CACHES)]
+
+    for child in doomed():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            try:
+                child.unlink()  # files, and symlinks (never followed)
+            except OSError:
+                pass
+    left = doomed()
+    if not args.keep_cache:
+        if not left and target.exists():
+            try:
+                target.rmdir()
+            except OSError:
+                left = [target]
+        if left:
+            left = [target]  # one command finishes the whole directory
+        if home.is_symlink():
+            if left:
+                left.append(home)
+            else:
+                try:
+                    home.unlink()
+                except OSError:
+                    left = [home]
+    if left:
+        # the model containers run as root, so what they wrote (downloaded weights,
+        # kernel caches) is root-owned and this user cannot delete it
+        _p(f"  removed {target}{kept} except files this user cannot delete (the model "
+           "containers run as root); finish with:")
+        _p("    sudo rm -rf " + " ".join(shlex.quote(str(p)) for p in left))
+        return 1
+    _p(f"  removed {target}{kept}")
     return 0
 
 
@@ -434,7 +473,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_install)
 
     p = sub.add_parser("uninstall", help="remove everything AISee put on this host")
-    p.add_argument("--keep-cache", action="store_true", help="keep hf-cache/ (weights)")
+    p.add_argument("--keep-cache", action="store_true",
+                   help="keep hf-cache/ and cache/ (model weights and kernel caches)")
     p.add_argument("--yes", action="store_true")
     p.set_defaults(fn=cmd_uninstall)
 
