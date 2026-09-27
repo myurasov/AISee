@@ -236,7 +236,7 @@ def remove(slug: str) -> bool:
             # successor: the recommended default if installed, else a non-reasoning model
             # (a reasoning default makes every quick check pay a chain-of-thought tax; a
             # thinking-toggle model counts as reasoning while this host thinks by default)
-            thinks = bool(cfg["defaults"].get("thinking", True))
+            thinks = bool(cfg["defaults"].get("thinking", False))
             ranked = sorted(vision, key=lambda e: (
                 e["slug"] != catalog.RECOMMENDED_DEFAULT,
                 bool(e.get("reasoning") or (e.get("thinking_toggle") and thinks)), e["slug"]))

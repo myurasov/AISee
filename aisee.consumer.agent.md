@@ -94,7 +94,8 @@ Useful flags: `--model <slug>` (else the default model), `--context "<background
 cannot see in pixels>"`, `--frames N` / `--fps R` (video frame sampling), `--native` (send the
 video itself, video-capable models only), `--chunk-seconds S` / `--server-frames N` (watch:
 chunk length / frames per chunk), `--max-tokens N` (answer budget),
-`--no-thinking` (skip chain-of-thought on thinking-toggle models), `--no-wait` (print task
+`--thinking` / `--no-thinking` (chain-of-thought on / off for this call on thinking-toggle
+models; unset = the host default), `--no-wait` (print task
 id, poll later), `--server URL`, `--token T`. Transcribe flags: `--diarize` (add per-lane
 speaker attribution), `--diarize-model` (diarizer slug), `--min-speakers/--max-speakers/--num-speakers` (per-lane diarization
 hints - pass them when the count is roughly known), `--format text|json|srt|vtt`.
@@ -127,9 +128,9 @@ splits `model_load_s` / `media_prep_s` / `inference_s` and, once terminal, inclu
 
 **Thinking (`thinking`):** each model's `Thinking:` line in describe gives its class -
 always-on reasoning models think on every call and cannot be switched off; models marked
-`Thinking: optional` follow the host's default, which the line states (ON unless the admin
-turned it off), and take `thinking: false` per call for a faster direct answer (or `true`
-to opt in); models with no `Thinking:` line never think. Thinking calls are slower and
+`Thinking: optional` follow the host's default, which the line states (OFF unless the admin
+turned it on), and take `thinking: true` per call for harder questions (or `false` for a
+fast direct answer); models with no `Thinking:` line never think. Thinking calls are slower and
 spend the same `max_tokens` budget as the answer.
 
 **Answer budgets (`max_tokens`):** per-kind defaults when not passed - `assert` 1024, `watch`

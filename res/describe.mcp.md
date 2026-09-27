@@ -29,8 +29,8 @@ Optional parameters on the query tools: `model` (slug from the guide below; omit
 default), `frames` / `fps` (video frame sampling), `native` (send the video itself instead of
 sampled frames; video-capable models only), `context` (background the model cannot see in the
 pixels), `max_tokens`, `thinking` (bool; enables/disables chain-of-thought for models marked
-**Thinking: optional** in the model list below; default `true`; no effect on always-on reasoning
-models); `watch` adds `chunk_seconds` and `wait`.
+**Thinking: optional** in the model list below; default: the host's setting, `false` unless
+configured - each model's Thinking line states it; no effect on always-on reasoning models); `watch` adds `chunk_seconds` and `wait`.
 
 Audio tools: `transcribe(media, diarize=false, min/max/num_speakers?, model?, diarize_model?, wait?)` and
 `diarize(media, min/max/num_speakers?, model?, wait?)`. Every audio track - and every

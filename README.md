@@ -162,8 +162,8 @@ and Cosmos families serve with an **fp8 KV cache** (halves KV cost; validated wi
 and deep needle-retrieval tests with no quality loss), which is what makes their native
 **256k contexts** affordable. The three Qwen3.5-family entries (`qwen3-6-35b-a3b`,
 `qwen3-8-27b`, `qwen3-5-9b`) are hybrids - only every 4th layer keeps a KV cache - and
-think or not per call: pass `thinking` on a look / assert / watch; calls without it follow
-`defaults.thinking` in config.toml (on unless set to false). Their thinking-on sampling
+think or not per call: pass `thinking` on a look / assert / watch (`--thinking` on the CLI);
+calls without it follow `defaults.thinking` in config.toml (off unless set to true). Their thinking-on sampling
 (temperature 0.6 and the checkpoint's own top-p / top-k) can be tuned per host with a
 `thinking_sampling = { temperature = 1.0, presence_penalty = 1.5 }` table in the model's TOML
 (a reinstall rewrites the TOML and drops it). On the known tiers: **GB10** (~120 GiB unified) serves the

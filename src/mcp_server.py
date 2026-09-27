@@ -79,7 +79,7 @@ async def look(media: list[str], question: str, model: str | None = None,
     POST /v1/blobs. Video is frame-sampled (frames/fps) unless native=true (video-capable
     models only). context: background the model cannot see in the pixels. thinking:
     enable/disable chain-of-thought on models with a thinking toggle (unset = the host's
-    default, on unless configured off - describe says which; ignored by always-on
+    default, off unless configured on - describe says which; ignored by always-on
     reasoning models and plain models). Blocks until the answer is
     ready (a cold model may take minutes to load)."""
     return await _run(_query, "look", media,

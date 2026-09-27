@@ -321,7 +321,9 @@ def _query_params(args, kind: str) -> dict:
             params[k] = v
     if getattr(args, "native", False):
         params["native"] = True
-    if getattr(args, "no_thinking", False):
+    if getattr(args, "thinking", False):
+        params["thinking"] = True
+    elif getattr(args, "no_thinking", False):
         params["thinking"] = False
     ctx = getattr(args, "context", None)
     if getattr(args, "context_file", None):
@@ -472,6 +474,14 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--no-autostart", action="store_true",
                        help="do not auto-start a local API daemon")
 
+    def add_thinking(p):
+        # unset = the host's defaults.thinking (off unless configured on)
+        g = p.add_mutually_exclusive_group()
+        g.add_argument("--thinking", action="store_true",
+                       help="chain-of-thought on for this call (thinking-toggle models)")
+        g.add_argument("--no-thinking", action="store_true",
+                       help="chain-of-thought off for this call (thinking-toggle models)")
+
     p = sub.add_parser("install", help="check/init host components + ~/.aisee")
     p.add_argument("--with-models", nargs="*", help="catalog slugs/HF ids to register")
     p.set_defaults(fn=cmd_install)
@@ -547,8 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--context")
         p.add_argument("--context-file")
         p.add_argument("--max-tokens", type=int)
-        p.add_argument("--no-thinking", action="store_true",
-                       help="disable chain-of-thought on thinking-toggle models")
+        add_thinking(p)
         p.add_argument("--no-wait", action="store_true", help="print task id and exit")
         add_server(p)
 
@@ -573,8 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--context")
     p.add_argument("--context-file")
     p.add_argument("--max-tokens", type=int)
-    p.add_argument("--no-thinking", action="store_true",
-                   help="disable chain-of-thought on thinking-toggle models")
+    add_thinking(p)
     p.add_argument("--no-wait", action="store_true")
     add_server(p)
     p.set_defaults(fn=lambda a: cmd_query(a, "watch"))

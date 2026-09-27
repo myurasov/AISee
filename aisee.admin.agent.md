@@ -165,8 +165,10 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   A model TOML's own `fps` overrides the default. A Cosmos3 container that was running
   when you upgraded keeps the old 2 fps loader until it is recreated - `model stop <slug>`.
 - Thinking toggle (the Qwen3.5-family entries, `thinking_toggle = true`): config.toml
-  `[defaults] thinking` (default true) decides what a call without `thinking` gets; the
-  per-call flag wins. Thinking calls sample at temperature 0.6 with an 8192-token budget.
+  `[defaults] thinking` (default false since 1.1.0b1) decides what a call without
+  `thinking` gets; the per-call flag wins. A config.toml from an older version that carried
+  the old default `thinking = true` is switched to false once, on the first load after the
+  upgrade (`[meta] config_version = 3`); set it back to true afterwards and it sticks. Thinking calls sample at temperature 0.6 with an 8192-token budget.
   A model TOML's `thinking_sampling = { temperature = 1.0, top_p = 0.95 }` table replaces
   that sampling for one model (`max_tokens`, `messages`, `stream` and other request fields
   are ignored; `enable_thinking` is always kept). These models are hybrids: vLLM serves

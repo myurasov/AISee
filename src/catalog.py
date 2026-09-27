@@ -154,10 +154,10 @@ CATALOG: dict[str, dict] = {
                      "own items, fewer false passes) at the same per-token speed; thinking on it "
                      "beat Qwen3-VL-30B-A3B-Thinking. Only 10 of 40 layers keep a KV cache, so "
                      "256k context costs little memory.",
-        "weaknesses": "Thinking is long: ~1,100 tokens per answer (1.9-3.6x Qwen3-VL-30B-A3B-"
-                      "Thinking's) and ~5% of answers hit the 8192-token budget - pass "
-                      "thinking=false for quick checks. Asking again about the same media re-pays "
-                      "the full prefill (vLLM keeps prefix caching off for hybrid models).",
+        "weaknesses": "Thinking (opt-in per call) is long: ~1,100 tokens per answer (1.9-3.6x "
+                      "Qwen3-VL-30B-A3B-Thinking's) and ~5% of answers hit the 8192-token budget - "
+                      "keep it for hard questions. Asking again about the same media re-pays the "
+                      "full prefill (vLLM keeps prefix caching off for hybrid models).",
         "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. First install "
                     "downloads ~72 GB.",
     },
@@ -205,8 +205,8 @@ CATALOG: dict[str, dict] = {
                      "by 6-12 points on every benchmark set (UI click points 0.89 vs 0.29, "
                      "75-image looks) in an 18 GiB BF16 checkpoint.",
         "weaknesses": "BF16: decodes at about half Nemotron NVFP4's rate (12.8 vs 25 tok/s on a "
-                      "GB10), made up by shorter answers. Thinking (~1,100 tokens per answer) "
-                      "costs ~90 s per call on a GB10 - pass thinking=false for quick checks.",
+                      "GB10), made up by shorter answers. Thinking (opt-in per call, ~1,100 "
+                      "tokens per answer) costs ~90 s per call on a GB10.",
         "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. First install "
                     "downloads ~19 GB.",
     },

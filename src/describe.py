@@ -98,7 +98,7 @@ def _model_lines(core) -> list[dict]:
             "reasoning": entry.get("reasoning", False),
             "thinking_toggle": entry.get("thinking_toggle", False),
             # what a call without `thinking` gets on a toggle model (host config)
-            "thinking_default": bool(core.cfg["defaults"].get("thinking", True)),
+            "thinking_default": bool(core.cfg["defaults"].get("thinking", False)),
             "serving": {
                 "max_model_len": entry.get("max_model_len"),
                 "max_images": entry.get("max_images"),

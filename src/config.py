@@ -10,7 +10,7 @@ import tomllib
 from . import paths
 
 # bumped when load() must migrate older files (save() stamps it: every save writes it)
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 # Sized for the main mode of operation: one resident model on a 96 GB-class GPU
 # (or a GB10) with the dense serving profile (128k context, 16 images / 96 video frames).
@@ -45,9 +45,10 @@ DEFAULTS: dict = {
         "default_transcribe_model": "",
         "default_diarize_model": "",
         # chain-of-thought default for models with a thinking toggle (thinking_toggle=true
-        # in the model TOML: the hybrid-template Qwen3.5-family entries):
-        # per-call `thinking` wins. Always-on reasoning models think regardless of this.
-        "thinking": True,
+        # in the model TOML: the hybrid-template Qwen3.5-family entries): off, so a quick
+        # check stays greedy and fast; per-call `thinking` wins. Always-on reasoning models
+        # think regardless of this.
+        "thinking": False,
     },
 }
 
@@ -98,11 +99,15 @@ def load() -> dict:
         except (TypeError, ValueError):
             version = 1
         if version < CONFIG_VERSION:
-            if cfg["defaults"].get("fps") == LEGACY_DEFAULT_FPS:
+            if version < 2 and cfg["defaults"].get("fps") == LEGACY_DEFAULT_FPS:
                 cfg["defaults"]["fps"] = DEFAULTS["defaults"]["fps"]
+            # before 1.1.0b1 no catalog model had a toggle, so a stored thinking = true is
+            # the old default written out by a config save, not a choice
+            if version < 3 and cfg["defaults"].get("thinking") is True:
+                cfg["defaults"]["thinking"] = False
             cfg["meta"]["config_version"] = CONFIG_VERSION
             try:
-                save(cfg)  # once, so the file shows what is in effect and an fps set later sticks
+                save(cfg)  # once, so the file shows what is in effect and a value set later sticks
             except OSError:
                 pass  # read-only home: migrate in memory on every load
     return cfg

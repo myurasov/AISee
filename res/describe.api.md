@@ -101,8 +101,9 @@ frames, if the model supports it), `chunk_seconds` (watch), `server_frames` (wat
 chunk sent natively, default the model's frame budget - fewer means shorter chunks with more
 detail per frame), `context` (extra background text the
 model should assume), `max_tokens`, `thinking` (bool; for models marked **Thinking: optional** in
-the model list below - enables/disables chain-of-thought reasoning; default `true`; has no effect
-on always-on reasoning models). Audio kinds: `diarize` (transcribe: also attribute speakers per lane;
+the model list below - enables/disables chain-of-thought reasoning; default: the host's setting,
+`false` unless configured - each model's Thinking line states it; has no effect on always-on
+reasoning models). Audio kinds: `diarize` (transcribe: also attribute speakers per lane;
 default `false`), `diarize_model` (diarizer slug; default: the capability default),
 `min_speakers` / `max_speakers` / `num_speakers` (per-lane diarization hints -
 pass them when the count is roughly known; long multi-party audio tends to over-split). A

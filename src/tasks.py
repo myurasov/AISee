@@ -48,7 +48,7 @@ def resolve_thinking(params: dict, entry: dict, defaults: dict) -> bool | None:
     if "thinking" in params:
         return bool(params["thinking"])
     v = defaults.get("thinking")
-    return bool(v) if v is not None else True  # default on
+    return bool(v) if v is not None else False  # default off (config.DEFAULTS)
 
 
 def _thinking_sampling(thinking: bool, entry: dict | None = None) -> dict:
