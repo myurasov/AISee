@@ -45,7 +45,7 @@ def resolve_thinking(params: dict, entry: dict, defaults: dict) -> bool | None:
     """Returns True/False for thinking state on toggle models; None if model doesn't support it."""
     if not entry.get("thinking_toggle"):
         return None
-    if "thinking" in params:
+    if params.get("thinking") is not None:  # null means unset, as the docs promise
         return bool(params["thinking"])
     v = defaults.get("thinking")
     return bool(v) if v is not None else False  # default off (config.DEFAULTS)

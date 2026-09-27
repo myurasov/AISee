@@ -81,6 +81,8 @@ def thinking_sampling(entry: dict) -> dict:
     if not isinstance(v, dict):
         raise TypeError(f"thinking_sampling in {where} must be a table, e.g. "
                          f"thinking_sampling = {{ temperature = 1.0 }} - got {v!r}")
+    if not isinstance(v.get("chat_template_kwargs", {}), dict):
+        raise TypeError(f"thinking_sampling.chat_template_kwargs in {where} must be a table")
     return {k: x for k, x in v.items() if k not in _RESERVED_SAMPLING}
 
 
