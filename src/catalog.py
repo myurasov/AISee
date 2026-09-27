@@ -62,6 +62,28 @@ DEFAULT_VIDEO_FRAMES = 96
 UNIFORM_VIDEO_LOADER = "opencv"
 
 
+# request fields AISee sets per call - a sampling table must not override them
+_RESERVED_SAMPLING = {"model", "messages", "max_tokens", "max_completion_tokens", "stream",
+                      "stream_options", "n"}
+
+
+def thinking_sampling(entry: dict) -> dict:
+    """Sampling overrides for a thinking-toggle entry's thinking-on requests (merged over
+    the default temperature 0.6; always-thinking reasoning entries keep their own): the
+    TOML's thinking_sampling table when set, else the catalog's - decided at use, not
+    frozen at install. Reserved request fields are dropped; a non-table value raises."""
+    if "thinking_sampling" in entry:
+        v, where = entry["thinking_sampling"], f"{entry.get('slug', '?')}.toml"
+    else:
+        v, where = (CATALOG.get(entry.get("slug", "")) or {}).get("thinking_sampling"), "catalog"
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        raise TypeError(f"thinking_sampling in {where} must be a table, e.g. "
+                         f"thinking_sampling = {{ temperature = 1.0 }} - got {v!r}")
+    return {k: x for k, x in v.items() if k not in _RESERVED_SAMPLING}
+
+
 def video_loader(entry: dict) -> str:
     """The vLLM video loader an installed entry pins ("" = vLLM's choice): the TOML's own
     video_loader when set, else the catalog's - decided at use, not frozen at install."""
@@ -170,6 +192,90 @@ CATALOG: dict[str, dict] = {
         "weaknesses": "4-9x slower than small/MoE models on bandwidth-bound GPUs (24-45 s per still "
                       "assert). Use only when maximum reasoning depth matters.",
         "pitfalls": "gpu_frac below ~0.70 crash-loops ('No available memory for the cache blocks').",
+    },
+    # ---- Qwen3.5 family: natively multimodal hybrids. 3 of 4 layers are Gated DeltaNet
+    # linear attention with a fixed-size state, so only every 4th layer keeps a KV cache
+    # (~4-5x cheaper per token than Qwen3-VL). One checkpoint thinks or not per call via
+    # the chat template's enable_thinking (thinking_toggle). Same Qwen3-VL processors
+    # (32 px cells, one pixel budget per video), hence the same loader pin.
+    # --reasoning-parser qwen3 is required: a thinking answer carries its chain of thought
+    # before </think>; with thinking off the template closes the think block in the prompt.
+    "qwen3-6-35b-a3b": {
+        "hf_id": "Qwen/Qwen3.6-35B-A3B",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
+        "image": DEFAULT_IMAGE,
+        # 10 of 40 layers hold KV (2 KV heads x 256): 20 KiB/token BF16
+        "weights_gib": 67, "kv_gib_128k": 2.5,
+        "mem_gib": 78,
+        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
+        "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
+        "reasoning": False,
+        "thinking_toggle": True,
+        "load_timeout": 3600,
+        "license": "Apache-2.0",
+        "strengths": "Successor to both Qwen3-VL-30B-A3B checkpoints in one (MoE, ~3B active "
+                     "params; thinking switches per call). Thinking off it matched or beat "
+                     "Qwen3-VL-30B-A3B-Instruct on every benchmark suite (+5 points on AISee's "
+                     "own items, fewer false passes) at the same per-token speed; thinking on it "
+                     "beat Qwen3-VL-30B-A3B-Thinking. Only 10 of 40 layers keep a KV cache, so "
+                     "256k context costs little memory.",
+        "weaknesses": "Thinking is long: ~1,100 tokens per answer (1.9-3.6x Qwen3-VL-30B-A3B-"
+                      "Thinking's) and ~5% of answers hit the 8192-token budget - pass "
+                      "thinking=false for quick checks. Asking again about the same media re-pays "
+                      "the full prefill (vLLM keeps prefix caching off for hybrid models).",
+        "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. First install "
+                    "downloads ~72 GB.",
+    },
+    "qwen3-8-27b": {
+        "hf_id": "Qwen/Qwen3.8-27B",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
+        "image": DEFAULT_IMAGE,
+        # 16 of 64 layers hold KV (4 KV heads x 256): 64 KiB/token BF16
+        "weights_gib": 52, "kv_gib_128k": 8,
+        "mem_gib": 76,
+        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
+        "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
+        "reasoning": False,
+        "thinking_toggle": True,
+        "load_timeout": 3600,
+        "license": "Apache-2.0",
+        "strengths": "Successor to Qwen3-VL-32B (dense 27B, per-call thinking toggle): same "
+                     "accuracy on AISee's items, top DocVQA / ScreenSpot scores in our benchmark. "
+                     "Only 16 of 64 layers do full attention, so video prefills ~3.7x faster "
+                     "than the 32B's on a GB10 and 256k context fits in 76 GiB.",
+        "weaknesses": "Dense: every token reads all ~52 GiB of weights - ~4.5 tok/s on a GB10 "
+                      "(~25 s per still assert); thinking multiplies that. Prefer the MoE "
+                      "default unless depth matters.",
+        "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. First install "
+                    "downloads ~56 GB.",
+    },
+    "qwen3-5-9b": {
+        "hf_id": "Qwen/Qwen3.5-9B",
+        "tokens_per_image": 2200,
+        "ctx_native": 262144,
+        "image": DEFAULT_IMAGE,
+        # 8 of 32 layers hold KV (4 KV heads x 256): 32 KiB/token BF16
+        "weights_gib": 18, "kv_gib_128k": 4,
+        "mem_gib": 32,
+        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
+        "supports_native_video": True,
+        "video_loader": UNIFORM_VIDEO_LOADER,
+        "reasoning": False,
+        "thinking_toggle": True,
+        "load_timeout": 3600,
+        "license": "Apache-2.0",
+        "strengths": "Small dense 9B with a per-call thinking toggle: beat Nemotron-Nano-12B-VL "
+                     "by 6-12 points on every benchmark set (UI click points 0.89 vs 0.29, "
+                     "75-image looks) in an 18 GiB BF16 checkpoint.",
+        "weaknesses": "BF16: decodes at about half Nemotron NVFP4's rate (12.8 vs 25 tok/s on a "
+                      "GB10), made up by shorter answers. Thinking (~1,100 tokens per answer) "
+                      "costs ~90 s per call on a GB10 - pass thinking=false for quick checks.",
+        "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. First install "
+                    "downloads ~19 GB.",
     },
     "nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad": {
         "hf_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",

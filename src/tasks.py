@@ -51,9 +51,12 @@ def resolve_thinking(params: dict, entry: dict, defaults: dict) -> bool | None:
     return bool(v) if v is not None else True  # default on
 
 
-def _thinking_sampling(thinking: bool) -> dict:
+def _thinking_sampling(thinking: bool, entry: dict | None = None) -> dict:
     if thinking:
-        return {"chat_template_kwargs": {"enable_thinking": True}, "temperature": 0.6}
+        extra = catalog.thinking_sampling(entry or {})
+        # merged key by key: a table's own chat_template_kwargs must not drop enable_thinking
+        ctk = {**(extra.pop("chat_template_kwargs", None) or {}), "enable_thinking": True}
+        return {"temperature": 0.6, **extra, "chat_template_kwargs": ctk}
     return {"chat_template_kwargs": {"enable_thinking": False}}
 
 
@@ -757,6 +760,8 @@ class Core:
         entry = registry.get(slug)
         if not entry:
             raise RuntimeError(f"model '{slug}' was removed while the task was queued")
+        if entry.get("thinking_toggle"):
+            catalog.thinking_sampling(entry)  # a malformed TOML table fails before a cold load
 
         # model lifecycle (may cold-load)
         canceled = lambda: self._canceled_peek(tid)  # noqa: E731
@@ -793,7 +798,7 @@ class Core:
         max_tokens = resolve_max_tokens(kind, p, entry, d, thinking=thinking)
         timeout = float(d["request_timeout"])
         context = p.get("context") or None
-        ts = _thinking_sampling(thinking) if thinking is not None else None
+        ts = _thinking_sampling(thinking, entry) if thinking is not None else None
 
         t0 = time.time()
         if kind in ("look", "assert"):
@@ -904,9 +909,14 @@ class Core:
                         f"Expectation to verify: {expect}", None), frames=1, fps=None,
                         native=False, max_images=entry["max_images"],
                         work_dir=frame.parent / "c")
+                    # thinking off on toggle models: their templates think unless told
+                    # not to, and a chain of thought would overrun this small budget
                     verdict = vlm.run_assert(entry["port"], entry["hf_id"], content,
                                              max_tokens=1024,
-                                             timeout=timeout_fn("a still cross-check"))
+                                             timeout=timeout_fn("a still cross-check"),
+                                             sampling=(_thinking_sampling(False)
+                                                       if entry.get("thinking_toggle")
+                                                       else None))
                     if verdict.get("pass"):
                         confirmed = True
                         confirmed_at = t_probe
@@ -982,7 +992,7 @@ class Core:
         # mild anti-repetition sampling for chunk narration (config-escapable; see config)
         rp = float(self.cfg["defaults"].get("watch_repetition_penalty") or 0)
         rp_kw = {"repetition_penalty": rp} if rp and rp != 1.0 else {}
-        thinking_kw = _thinking_sampling(thinking) if thinking is not None else {}
+        thinking_kw = _thinking_sampling(thinking, entry) if thinking is not None else {}
         # look chunks: repetition penalty + thinking; assert chunks: thinking only
         look_sampling = {**rp_kw, **thinking_kw} or None
         assert_sampling = thinking_kw or None

@@ -45,7 +45,7 @@ DEFAULTS: dict = {
         "default_transcribe_model": "",
         "default_diarize_model": "",
         # chain-of-thought default for models with a thinking toggle (thinking_toggle=true
-        # in the model TOML; none in the current catalog - hybrid-template models only):
+        # in the model TOML: the hybrid-template Qwen3.5-family entries):
         # per-call `thinking` wins. Always-on reasoning models think regardless of this.
         "thinking": True,
     },

@@ -164,6 +164,14 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   2 fps whatever was set, and at 3 fps its free-form chunk narration degraded in testing.
   A model TOML's own `fps` overrides the default. A Cosmos3 container that was running
   when you upgraded keeps the old 2 fps loader until it is recreated - `model stop <slug>`.
+- Thinking toggle (the Qwen3.5-family entries, `thinking_toggle = true`): config.toml
+  `[defaults] thinking` (default true) decides what a call without `thinking` gets; the
+  per-call flag wins. Thinking calls sample at temperature 0.6 with an 8192-token budget.
+  A model TOML's `thinking_sampling = { temperature = 1.0, top_p = 0.95 }` table replaces
+  that sampling for one model (`max_tokens`, `messages`, `stream` and other request fields
+  are ignored; `enable_thinking` is always kept). These models are hybrids: vLLM serves
+  them without prefix caching unless `--enable-prefix-caching` is in `extra_args`, so a
+  repeat question about the same media re-reads it in full.
 - Remote equivalents exist over REST with the admin token:
   `POST /v1/models {"name": ...}`, `DELETE /v1/models/{slug}`,
   `POST /v1/models/{slug}/start|stop` - so a remote admin does not need ssh once the API
@@ -203,13 +211,16 @@ context = largest candidate (native, 128k, 64k, 32k, 16k, 8k) whose KV cost fits
 max_images = clamp((context - 8192) / tokens_per_image, 4..120)
 ```
 
-Measured components (fp8 KV is on by default for the Qwen3-VL + Cosmos families):
+Measured components (fp8 KV is on by default for the Qwen3-VL, Qwen3.5 and Cosmos families):
 
 | model | weights | KV GiB/128k | fp8 | tok/img | native ctx |
 |---|---|---|---|---|---|
 | qwen3-vl-30b-a3b-instruct / -thinking | 62 | 10.5 | yes | 2200 | 256k |
 | qwen3-vl-32b-instruct | 63 | 34 | yes | 2200 | 256k |
 | nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad | 11 | 5 | no | 3300 | 128k |
+| qwen3-6-35b-a3b | 67 | 2.5 | yes | 2200 | 256k |
+| qwen3-8-27b | 52 | 8 | yes | 2200 | 256k |
+| qwen3-5-9b | 18 | 4 | yes | 2200 | 256k |
 | cosmos-reason2-8b | 17 | 17.5 | yes | 2200 | 256k |
 | cosmos3-nano | 32 | 14.5 | yes | 2200 | 256k |
 | cosmos3-super | 64 | 30.5 | yes | 2200 | 256k |
@@ -224,6 +235,9 @@ RTX PRO 6000 Blackwell -> 96, DGX Spark GB10 (unified) -> 120u, H200 -> 141:
 | qwen3-vl-30b (both) | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | qwen3-vl-32b-instruct | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
 | nemotron-nano-12b (nvfp4) | 8k/4* | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 |
+| qwen3-6-35b-a3b | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| qwen3-8-27b | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
+| qwen3-5-9b | - | 64k/26 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | cosmos-reason2-8b | - | 32k/11 | 128k/55 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | cosmos3-nano | - | - | - | 32k/11 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | cosmos3-super | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
