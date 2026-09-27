@@ -12,9 +12,9 @@ module collapses those patterns deterministically after generation.
 Modes:
 - watch chunks: aggressive - sentences are compared with timestamps folded (per-timestamp
   restatements count as repeats) and any block repeated >= 2x consecutively collapses. Only
-  timestamps in a time position fold ("at 12.5s", a leading "12.5s:", a range): other digits
-  are what the model read (a counter, a digit sequence, a timer in seconds), so "7 at 0.0s"
-  and "3 at 0.6s" stay different lines.
+  a timestamp that labels its line folds ("At 12.5s, ...", "12.5s: ...", "[0.0s-6.0s] ..."):
+  other digits are what the model read (a counter, a digit sequence, a timer in seconds), so
+  "7 at 0.0s" and "3 at 0.6s" stay different lines.
 - look: conservative - exact comparison (digits preserved, so table rows and digit runs
   that OCR legitimately repeats survive) and a block must repeat >= 4x to collapse.
 
@@ -39,15 +39,19 @@ def _units(text: str) -> list[str]:
     return units
 
 
-# a timestamp in a time position: "at 12.5s", "from 3 s", a line that starts with its time
-# ("12.5s: ..."), a range end ("0.0s-6.0s"), "t=2.5". A value that merely is in seconds ("the
-# timer shows 9 s") stays, and so do clock forms like 01:36 (a clock on screen reads the same
-# way) - a missed collapse only costs tokens, a wrong one drops what the model read
-_SECS = r"\d+(?:\.\d+)?\s*(?:s|secs?|seconds?)\b"
+# a timestamp that labels its line is what a narration restates frame after frame, so it
+# folds: "At 12.5s, ...", "From 0.0s to 6.0s ...", "12.5s: ...", "[0.0s-6.0s] ...". Nothing
+# else does - a value the model read stays, even in seconds ("the timer is at 10 s", a bare
+# "12.5 s" list, "T-10 s"), and so do clock forms like 01:36 (a clock on screen reads the
+# same way). A missed collapse only costs tokens; a wrong one drops what the model read
+_UNIT = r"(?:s|secs?|seconds?)\b"
+_TIME = r"\d+(?:\.\d+)?\s*" + _UNIT
+_WHEN = r"(?:\d+(?:\.\d+)?\s*(?:s|secs?|seconds?)?\s*(?:-|\u2013|to|and)\s*" + _TIME + "|" + _TIME + ")"
+_BULLET = r"^[\s*\u2022-]*"
 _TIMESTAMP = re.compile(
-    r"\b(?:at|from|to|by|until|till|after|before|around|about|near|since|between|and)\s+~?"
-    + _SECS + r"|^[\s*\[(-]*" + _SECS + r"|(?<=[-\u2013])\s*" + _SECS
-    + r"|\bt\s*=\s*\d+(?:\.\d+)?", re.IGNORECASE)
+    _BULLET + r"(?:at|from|between)\s+(?:(?:approximately|about|around|roughly)\s+)?~?\s*" + _WHEN
+    + "|" + _BULLET + r"[\[(]\s*" + _WHEN + r"\s*[\])]"
+    + "|" + _BULLET + _WHEN + r"(?=\s*[:,]|\s+[-\u2013]\s)", re.IGNORECASE)
 
 
 def _norm(unit: str, fold_times: bool) -> str:
