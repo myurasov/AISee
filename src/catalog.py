@@ -351,10 +351,10 @@ CATALOG: dict[str, dict] = {
 }
 
 # Retired from the catalog: no longer listed or recommended, but a host that has one
-# installed keeps serving it exactly as before - the at-use lookups (video loader,
-# weights, describe) go through known(), and installing one by slug still works with a
-# note that names its successor. 1.1.0b1: the Qwen3.5 family replaced these
-# (res/report-model-refresh-qwen35.md in the project).
+# installed keeps serving it exactly as before - the at-use lookups (video loader, serving
+# image, weights, describe) go through known(), and installing one by slug still works with
+# a note that names its successor. 1.1.0b1: the Qwen3.5 family replaced these after a
+# 391-item benchmark on an RTX PRO 6000 and two GB10s.
 RETIRED: dict[str, dict] = {
     "qwen3-vl-30b-a3b-instruct": {
         "hf_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
