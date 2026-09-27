@@ -97,6 +97,8 @@ def _model_lines(core) -> list[dict]:
             "supports_native_video": entry.get("supports_native_video", True),
             "reasoning": entry.get("reasoning", False),
             "thinking_toggle": entry.get("thinking_toggle", False),
+            # what a call without `thinking` gets on a toggle model (host config)
+            "thinking_default": bool(core.cfg["defaults"].get("thinking", True)),
             "serving": {
                 "max_model_len": entry.get("max_model_len"),
                 "max_images": entry.get("max_images"),
@@ -148,7 +150,9 @@ def _render_models(core) -> str:
             resolution.markdown_line(m["input_resolution"]),
         ]
         if m["thinking_toggle"]:
-            lines.append("- Thinking: optional, ON by default - pass `thinking: false` to disable")
+            lines.append("- Thinking: optional, ON by default - pass `thinking: false` to disable"
+                         if m["thinking_default"] else
+                         "- Thinking: optional, OFF by default - pass `thinking: true` to enable")
         elif m["reasoning"]:
             lines.append("- Thinking: always on (reasoning model; cannot be disabled)")
         if m["image_budget_line"]:

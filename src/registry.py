@@ -234,9 +234,12 @@ def remove(slug: str) -> bool:
         if cfg["defaults"].get("default_model") == slug:
             vision = [e for e in list_installed() if e.get("modality", "vision") == "vision"]
             # successor: the recommended default if installed, else a non-reasoning model
-            # (a reasoning default makes every quick check pay a chain-of-thought tax)
-            ranked = sorted(vision, key=lambda e: (e["slug"] != catalog.RECOMMENDED_DEFAULT,
-                                                   bool(e.get("reasoning")), e["slug"]))
+            # (a reasoning default makes every quick check pay a chain-of-thought tax; a
+            # thinking-toggle model counts as reasoning while this host thinks by default)
+            thinks = bool(cfg["defaults"].get("thinking", True))
+            ranked = sorted(vision, key=lambda e: (
+                e["slug"] != catalog.RECOMMENDED_DEFAULT,
+                bool(e.get("reasoning") or (e.get("thinking_toggle") and thinks)), e["slug"]))
             config.set_value("defaults", "default_model", ranked[0]["slug"] if ranked else "")
         for cap in entry.get("capabilities", []):
             key = f"default_{cap}_model"
