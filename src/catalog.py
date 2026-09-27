@@ -399,7 +399,7 @@ RETIRED: dict[str, dict] = {
         "reasoning": True,
         "load_timeout": 7200,
         "license": "Apache-2.0",
-        "strengths": "The thinking twin of the recommended default (MoE, ~3B active params): "
+        "strengths": "The thinking twin of the default until 1.1.0b1 (MoE, ~3B active params): "
                      "genuine chain-of-thought with clean answers, still fast (~6 s looks, "
                      "~9 s asserts measured on GB10); exact dense OCR; handles native video; "
                      "correctly reports static clips instead of inventing motion.",
