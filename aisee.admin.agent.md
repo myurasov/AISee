@@ -211,13 +211,10 @@ context = largest candidate (native, 128k, 64k, 32k, 16k, 8k) whose KV cost fits
 max_images = clamp((context - 8192) / tokens_per_image, 4..120)
 ```
 
-Measured components (fp8 KV is on by default for the Qwen3-VL, Qwen3.5 and Cosmos families):
+Measured components (fp8 KV is on by default for the Qwen and Cosmos families):
 
 | model | weights | KV GiB/128k | fp8 | tok/img | native ctx |
 |---|---|---|---|---|---|
-| qwen3-vl-30b-a3b-instruct / -thinking | 62 | 10.5 | yes | 2200 | 256k |
-| qwen3-vl-32b-instruct | 63 | 34 | yes | 2200 | 256k |
-| nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad | 11 | 5 | no | 3300 | 128k |
 | qwen3-6-35b-a3b | 67 | 2.5 | yes | 2200 | 256k |
 | qwen3-8-27b | 52 | 8 | yes | 2200 | 256k |
 | qwen3-5-9b | 18 | 4 | yes | 2200 | 256k |
@@ -232,9 +229,6 @@ RTX PRO 6000 Blackwell -> 96, DGX Spark GB10 (unified) -> 120u, H200 -> 141:
 
 | model | 16 | 24 | 32 | 40 | 48 | 80 | 96 | 120u | 141 |
 |---|---|---|---|---|---|---|---|---|---|
-| qwen3-vl-30b (both) | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
-| qwen3-vl-32b-instruct | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
-| nemotron-nano-12b (nvfp4) | 8k/4* | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 | 128k/37 |
 | qwen3-6-35b-a3b | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | qwen3-8-27b | - | - | - | - | - | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | qwen3-5-9b | - | 64k/26 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
@@ -242,12 +236,10 @@ RTX PRO 6000 Blackwell -> 96, DGX Spark GB10 (unified) -> 120u, H200 -> 141:
 | cosmos3-nano | - | - | - | 32k/11 | 128k/55 | 256k/115 | 256k/115 | 256k/115 | 256k/115 |
 | cosmos3-super | - | - | - | - | - | 64k/26 | 128k/55 | 256k/115 | 256k/115 |
 
-(*nemotron on 16 GB: only on cards reporting a full 16.0 GiB (RTX 4080 / V100-16G);
-T4-class cards expose ~15.4 GiB and miss by a hair - and 8k ctx / 4 images is
-demo-grade anyway. 16 GB is below the practical floor of this catalog.)
-
-(Computed with the exact install logic from the component table; audio models are not
-context-sized - parakeet needs ~7 GiB and pyannote ~4 GiB on any GPU.)
+(No catalog vision model fits a 16 GB card. Computed with the exact install logic from the
+component table; audio models are not context-sized - parakeet needs ~7 GiB and pyannote
+~4 GiB on any GPU. The entries retired in 1.1.0b1 - the Qwen3-VL trio and Nemotron-Nano -
+keep the sizing they were installed with; README lists their successors.)
 
 **Changing the configuration.** Reinstall with overrides - reinstalling preserves the
 port, idle_timeout, and default flag, and recomputes everything else consistently
@@ -262,7 +254,7 @@ port, idle_timeout, and default flag, and recomputes everything else consistentl
 
 - **More images per request**: only a bigger context buys more (the budget is derived);
   on a card stuck at a small context, pick a model with cheaper KV (see table - e.g.
-  cosmos-reason2 reaches 256k/115img on 48 GB where qwen32b cannot).
+  the hybrid qwen3-5-9b reaches 256k/115img on 32 GB, where cosmos-reason2-8b gets 128k/55).
 - **A context the auto-sizer refused**: it does not fit - the KV pool is the only
   flexible part, weights + 4 GiB runtime are fixed. Going bigger means fp8 KV (already
   default where supported), a smaller model, or a bigger GPU.

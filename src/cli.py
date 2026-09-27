@@ -213,7 +213,11 @@ def cmd_model(args) -> int:
         prof = registry.gpu_profile()
         _p(f"installed (registry): {entry['slug']} -> {entry['hf_id']}")
         from . import catalog as _cat
-        w = _cat.CATALOG.get(entry["slug"], {}).get("weights_gib")
+        w = _cat.known(entry["slug"]).get("weights_gib")
+        old = _cat.RETIRED.get(entry["slug"])
+        if old:
+            _p(f"  NOTE: retired from the catalog in {old['retired_in']} - its successor is "
+               f"{old['successor']} (aisee model install {old['successor']})")
         if w and w + _cat.ACTIVATION_HEADROOM_GIB > prof["mem_gib"] * entry["gpu_frac"]:
             _p(f"  WARNING: ~{w} GiB of weights will not fit this GPU "
                f"({prof['mem_gib']:.0f} GiB) - the model will fail to load")

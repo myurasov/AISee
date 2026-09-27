@@ -72,7 +72,7 @@ def _template(flavor: str) -> str:
 def _model_lines(core) -> list[dict]:
     out = []
     for entry in registry.list_installed():
-        cat = catalog.CATALOG.get(entry["slug"], {})
+        cat = catalog.known(entry["slug"])
         v = core.model_view(entry)
         if entry.get("modality", "vision") != "vision":
             out.append({
@@ -111,6 +111,7 @@ def _model_lines(core) -> list[dict]:
             "input_resolution": ir,
             "strengths": cat.get("strengths", ""), "weaknesses": cat.get("weaknesses", ""),
             "pitfalls": cat.get("pitfalls", ""), "license": cat.get("license", ""),
+            "retired_in": cat.get("retired_in"), "successor": cat.get("successor"),
         })
     return out
 
@@ -155,6 +156,9 @@ def _render_models(core) -> str:
                          "- Thinking: optional, OFF by default - pass `thinking: true` to enable")
         elif m["reasoning"]:
             lines.append("- Thinking: always on (reasoning model; cannot be disabled)")
+        if m["retired_in"]:
+            lines.append(f"- Retired from the catalog in {m['retired_in']}: prefer "
+                         f"`{m['successor']}` when it is installed")
         if m["image_budget_line"]:
             lines.append(m["image_budget_line"])
         if m["strengths"]:

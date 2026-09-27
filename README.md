@@ -85,7 +85,7 @@ downloaded weights.
 ## Quick Start
 
 ```bash
-./aisee model install qwen3-vl-30b-a3b-instruct
+./aisee model install qwen3-6-35b-a3b
 ./aisee assert shot.png -e "the Start button is visible and enabled"
 ```
 
@@ -97,7 +97,7 @@ More examples:
 
 ```bash
 ./aisee look shot.png -q "What error message is shown?"
-./aisee look page.png -q "Where is the search box?" --model nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad
+./aisee look page.png -q "Where is the search box?" --model qwen3-5-9b
 ./aisee assert run.mp4 -e "the app launches into the main menu" --native
 ./aisee watch run.mp4 -e "the frame counter increases monotonically" --fps 8
 ./aisee watch run.mp4 -q "describe what the user does" --fps 2
@@ -125,27 +125,31 @@ drops the entry; weights stay in the shared cache.
 
 ### Built-In Catalog
 
-The built-in catalog covers ten vision models and two audio models, measured on a DGX Spark
+The built-in catalog covers six vision models and two audio models, measured on a DGX Spark
 GB10 (2026-07 / 2026-08; all re-validated on 1.1; the three Qwen3.5-family entries benchmarked
-2026-09 on GB10 and RTX PRO 6000 against the models they succeed). The Qwen and Nemotron models serve
-from the NGC vLLM 26.08 image (vLLM 0.27.1), the Cosmos3 models from vllm-omni images, and
-the audio models from locally built images. Installing by slug applies the serving flags
-each one needs:
+2026-09 on GB10 and RTX PRO 6000 against the models they replaced). The Qwen models and
+Cosmos-Reason2 serve from the NGC vLLM 26.08 image (vLLM 0.27.1), the Cosmos3 models from
+vllm-omni images, and the audio models from locally built images. Installing by slug applies
+the serving flags each one needs:
 
 | Slug | GPU memory | Context | Notes |
 |---|---|---|---|
-| `qwen3-vl-30b-a3b-instruct` | 92 GiB | 256k | good default: 32B-class answers at ~5 s (MoE, ~3B active), solid OCR, native video |
-| `qwen3-vl-30b-a3b-thinking` | 92 GiB | 256k | the default's always-thinking twin: chain-of-thought for harder checks, a few seconds slower |
-| `qwen3-vl-32b-instruct` | 102 GiB | 256k/128k | deepest synthesis, but 24-45 s per assert on bandwidth-bound GPUs; 128k on 96 GB |
-| `qwen3-6-35b-a3b` | 78 GiB | 256k | successor to both Qwen3-VL-30B-A3B checkpoints: thinking per call, +5 points on AISee's items with thinking off at the same per-token speed; hybrid attention (small KV cache) |
-| `qwen3-8-27b` | 76 GiB | 256k | successor to Qwen3-VL-32B: same accuracy, video prefill ~3.7x faster on GB10, thinking per call; still ~25 s per assert on GB10 (dense) |
-| `qwen3-5-9b` | 32 GiB | 256k | small dense 9B with thinking per call; 6-12 points above Nemotron at about the same per-call latency |
-| `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad` | 28 GiB | 128k | fastest and smallest (NVFP4, ~11 GB); slips digits in dense numbers |
+| `qwen3-6-35b-a3b` | 78 GiB | 256k | the default: MoE (~3B active), thinking per call; beat both Qwen3-VL-30B-A3B checkpoints it replaced (+5 points on AISee's items with thinking off, same per-token speed); hybrid attention (small KV cache) |
+| `qwen3-8-27b` | 76 GiB | 256k | dense and deeper, thinking per call: as accurate as the Qwen3-VL-32B it replaced, video prefill ~3.7x faster on GB10; still ~27 s per assert on GB10 |
+| `qwen3-5-9b` | 32 GiB | 256k | small dense 9B with thinking per call; 6-12 points above the Nemotron-Nano-12B-VL it replaced, at about the same per-call latency |
 | `cosmos-reason2-8b` | 66 GiB | 256k | temporal / physical video reasoning |
 | `cosmos3-nano` | 72 GiB | 256k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
 | `cosmos3-super` | 102 GiB | 256k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 256k on GB10, 128k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |
 | `parakeet-tdt-0.6b-v3` | 7 GiB | audio | ASR default: 25 languages incl. Russian, word timestamps, 12-87x realtime, no hallucination loops |
 | `pyannote/speaker-diarization-3.1` | 4 GiB | audio | diarization default: unbounded speaker count, ~25x realtime (HF-gated: accept 3 repo licenses) |
+
+**Retired in 1.1.0b1** (benchmarked against the Qwen3.5 family and replaced):
+`qwen3-vl-30b-a3b-instruct` and `qwen3-vl-30b-a3b-thinking` (successor `qwen3-6-35b-a3b`),
+`qwen3-vl-32b-instruct` (`qwen3-8-27b`), `nvidia-nemotron-nano-12b-v2-vl-nvfp4-qad`
+(`qwen3-5-9b`). A host that has one installed keeps serving it with its old settings, and
+installing one by slug still works, with a note naming the successor. To move a host over:
+`aisee model install <successor>`, `aisee model default <successor>`, then
+`aisee model remove <old>` (weights stay in the shared cache until you delete them).
 
 Each catalog model states an **absolute GPU-memory requirement in GiB** (weights + ~4 GiB
 runtime + a KV-cache pool sized for ~2.5 full contexts where affordable), so the sizing is
@@ -153,7 +157,7 @@ portable across GPUs. At `model install` time the requirement is adapted to the 
 GPU: the serving fraction becomes `mem_gib / GPU memory` (capped at 0.97 on discrete cards
 and 0.92 on unified-memory systems, where the GPU pool is also system RAM and the reserve
 keeps the OS and the small audio models alive), and the context window is the largest size -
-up to the checkpoint's native limit - whose KV cache fits inside that slice. The Qwen3-VL
+up to the checkpoint's native limit - whose KV cache fits inside that slice. The Qwen
 and Cosmos families serve with an **fp8 KV cache** (halves KV cost; validated with exact-OCR
 and deep needle-retrieval tests with no quality loss), which is what makes their native
 **256k contexts** affordable. The three Qwen3.5-family entries (`qwen3-6-35b-a3b`,
@@ -163,15 +167,15 @@ think or not per call: pass `thinking` on a look / assert / watch; calls without
 (temperature 0.6 and the checkpoint's own top-p / top-k) can be tuned per host with a
 `thinking_sampling = { temperature = 1.0, presence_penalty = 1.5 }` table in the model's TOML
 (a reinstall rewrites the TOML and drops it). On the known tiers: **GB10** (~120 GiB unified) serves the
-whole catalog at 256k (128k for Nemotron - its checkpoint's native limit);
-a **96 GB** discrete card serves everything at 256k except the two dense-KV 32B-class models
-(`qwen3-vl-32b`, `cosmos3-super` - 128k there); a **48 GB** card fits the 7-18 GiB models,
-while the big Qwens (52-67 GiB weights) do not fit at all (install warns). A model start
+whole catalog at 256k; a **96 GB** discrete card serves everything at 256k except the
+dense-KV `cosmos3-super` (128k there); a **48 GB** card fits the models with up to ~32 GiB
+of weights (`qwen3-5-9b`, `cosmos-reason2-8b`, `cosmos3-nano`), while the big Qwens (52-67
+GiB weights) do not fit at all (install warns). A model start
 is refused up front - with a GiB message - when the requirement does not fit next to the
 already-running models (plus a system reserve), or when the GPU's actually-free memory says
 otherwise (measured margins: a large load must leave 10 GiB free on unified hosts, audio
 engines 3 GiB, discrete GPUs 2 GiB). On unified hosts a large model is also refused while
-audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen3/Cosmos family at 128k, 36 for Nemotron); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: a short clip sends only the frames it has; on the Qwen3-VL/Cosmos family all frames of a video share one ~12k-token budget, so a 1080p frame keeps ~1344x768 at 24 frames and ~672x384 at 96). Execution mode is also per-GPU:
+audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen/Cosmos families at 128k); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: a short clip sends only the frames it has; on the Qwen3-VL/Cosmos family all frames of a video share one ~12k-token budget, so a 1080p frame keeps ~1344x768 at 24 frames and ~672x384 at 96). Execution mode is also per-GPU:
 unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
 discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`

@@ -354,7 +354,7 @@ class Core:
             "supports_native_video": entry.get("supports_native_video", True),
             "gpu_frac": entry.get("gpu_frac"),
             # size for "prefer the bigger running model" heuristics; None off-catalog
-            "weights_gib": (catalog.CATALOG.get(slug) or {}).get("weights_gib"),
+            "weights_gib": catalog.known(slug).get("weights_gib"),
             "max_model_len": entry.get("max_model_len"),
             "max_images": entry.get("max_images"),
             "video_frames": entry.get("video_frames"),
@@ -367,6 +367,10 @@ class Core:
             # a container started before an upgrade keeps its old image until recreated
             "running_image": self._running_image(entry) if state == "running" else None,
             "loading_note": self._model_loading.get(slug),
+            # a retired catalog entry still serves; clients may steer to its successor
+            **({"retired": {"in": catalog.RETIRED[slug]["retired_in"],
+                            "successor": catalog.RETIRED[slug]["successor"]}}
+               if slug in catalog.RETIRED else {}),
         }
 
     @staticmethod

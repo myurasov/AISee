@@ -197,9 +197,10 @@ at `/`. Model management (`POST /v1/models`, `DELETE /v1/models/{slug}`,
 - **Every catalog model reads native video**; a host may also run off-catalog models that are
   stills-only (they read a video as a single frame) - check `native video` in `/v1/describe`
   before sending video to a non-default model.
-- **Model choice matters.** The default (Qwen3-VL MoE) is the safe all-rounder: correct OCR,
-  video, ~1-4 s per still. Specialists exist for temporal/physical video reasoning (Cosmos)
-  and minimal GPU footprint (Nemotron NVFP4); one known model reads dense numbers unreliably. Always
+- **Model choice matters.** The default (Qwen3.6-35B-A3B, MoE) is the safe all-rounder:
+  correct OCR, video, ~1-5 s per still. A small fast option (Qwen3.5-9B) and a dense, deeper
+  one (Qwen3.8-27B) exist, plus specialists for temporal/physical video reasoning (Cosmos).
+  A model marked retired in describe still works, but prefer its named successor. Always
   consult the model guide in `/v1/describe` - it states each model's measured strengths,
   weaknesses, and pitfalls.
 - **Trust but verify verdicts.** `assert` returns `evidence`; when a verdict is surprising,
