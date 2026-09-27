@@ -314,7 +314,7 @@ function showTab(name) {
 // ---------------- config tab ----------------
 
 const CONFIG_DOC = {
-  "meta.config_version": "config file format, stamped on every write; an older file is migrated once when loaded (to 2: a leftover fps = 3.0, the pre-1.1.0a3 default, becomes 2) - do not edit",
+  "meta.config_version": "config file format, stamped on every write; an older file is migrated once when loaded (to 2: a leftover fps = 3.0, the pre-1.1.0a3 default, becomes 2; to 3: a stored thinking = true, the pre-1.1.0b1 default, becomes false) - do not edit",
   "api.host": "bind address of the API daemon: 0.0.0.0 serves the whole network, 127.0.0.1 is this-host-only",
   "api.port": "TCP port serving the REST API, this console, and the /mcp endpoint",
   "defaults.default_model": "model used when a query does not name one (first installed model if empty)",
@@ -325,7 +325,7 @@ const CONFIG_DOC = {
   "defaults.watch_still_checks": "risky watch claims (titles, share-state) verified against a still frame, up to this many per chunk; refuted claims are removed/replaced and flagged unstable; 0 disables",
   "defaults.watch_repetition_penalty": "sampling penalty for watch chunk narration (discourages per-frame restatement loops); 1.0 or 0 disables; look/assert always sample neutrally to protect OCR",
   "defaults.request_timeout": "end-to-end budget for one task (default 3600 = 1 h): a look/assert inference, or ALL of a watch's chunks plus its synthesis",
-  "defaults.thinking": "chain-of-thought default for models with a thinking toggle (thinking_toggle=true in the model TOML; hybrid-template models only); per-call `thinking` overrides; always-on reasoning models are unaffected",
+  "defaults.thinking": "chain-of-thought default for models with a thinking toggle (thinking_toggle=true in the model TOML: the Qwen3.5-family entries); off by default since 1.1.0b1; per-call `thinking` overrides; always-on reasoning models are unaffected",
   "defaults.task_keep_max": "keep at most this many finished tasks regardless of age (oldest deleted first; running/queued never touched); 0 = unlimited",
   "defaults.task_ttl_hours": "finished tasks and their media are deleted after this many hours",
   "defaults.blob_ttl_hours": "deduplicated uploads live this long, refreshed on each reuse; 0 disables cleanup"
