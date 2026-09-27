@@ -212,7 +212,7 @@ for the image in use.
 Install by HF id and pass whatever serving flags the model needs:
 
 ```bash
-./aisee model install org/Model --gpu-frac 0.3 --arg --enforce-eager --arg --trust-remote-code
+./aisee model install org/Model --gpu-frac 0.3 --arg=--enforce-eager --arg=--trust-remote-code
 ```
 
 Things to know when going off-catalog:
@@ -224,7 +224,8 @@ Things to know when going off-catalog:
   `--max-tokens 2048`.
 - **Quantized checkpoints** (NVFP4/FP8/AWQ): vLLM auto-detects the quantization from the
   checkpoint - don't pass `--quantization`.
-- **Custom code models**: add `--arg --trust-remote-code`.
+- **Custom code models**: add `--arg=--trust-remote-code`. On a catalog slug, `--arg` replaces
+  the catalog's serving flags rather than adding to them - edit the TOML's `extra_args` instead.
 - **Different serving image**: `--image` swaps the container image per model (e.g. an
   architecture only supported by a newer vLLM or a vendor build) and pins it there; models
   installed without it follow each release's default image. nvcr.io images need the NGC key.

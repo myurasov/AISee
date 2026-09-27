@@ -169,12 +169,16 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   `[defaults] thinking` (default false since 1.1.0b1) decides what a call without
   `thinking` gets; the per-call flag wins. A config.toml from an older version that carried
   the old default `thinking = true` is switched to false once, on the first load after the
-  upgrade (`[meta] config_version = 3`); set it back to true afterwards and it sticks. Thinking calls sample at temperature 0.6 with an 8192-token budget.
-  A model TOML's `thinking_sampling = { temperature = 1.0, top_p = 0.95 }` table replaces
-  that sampling for one model (`max_tokens`, `messages`, `stream` and other request fields
-  are ignored; `enable_thinking` is always kept). These models are hybrids: vLLM serves
-  them without prefix caching unless `--enable-prefix-caching` is in `extra_args`, so a
-  repeat question about the same media re-reads it in full.
+  upgrade (`[meta] config_version = 3`); set it back to true afterwards and it sticks.
+  Thinking calls sample at temperature 0.6 with an 8192-token budget. A model TOML's
+  `thinking_sampling = { temperature = 1.0, top_p = 0.95 }` table overrides that sampling key
+  by key for one model (`max_tokens`, `messages`, `stream` and other request fields are
+  ignored; `enable_thinking` is always kept). These models are hybrids: vLLM serves them
+  without prefix caching, so a repeat question about the same media re-reads it in full. To
+  try it, add `"--enable-prefix-caching"` to the `extra_args` list in the model's TOML, then
+  `model stop <slug>` (`model install --arg` would replace the catalog's flags, not add to
+  them). Models installed before their catalog entry existed (by HF id on 1.1.0a3) keep the
+  flags they were installed with - reinstall them by slug to get the catalog's.
 - Remote equivalents exist over REST with the admin token:
   `POST /v1/models {"name": ...}`, `DELETE /v1/models/{slug}`,
   `POST /v1/models/{slug}/start|stop` - so a remote admin does not need ssh once the API
