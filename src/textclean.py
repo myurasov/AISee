@@ -12,8 +12,9 @@ module collapses those patterns deterministically after generation.
 Modes:
 - watch chunks: aggressive - sentences are compared with timestamps folded (per-timestamp
   restatements count as repeats) and any block repeated >= 2x consecutively collapses. Only
-  timestamps fold: other digits are what the model read (a counter, a digit sequence), so
-  "7 at 0.0s" and "3 at 0.6s" stay different lines.
+  timestamps in a time position fold ("at 12.5s", a leading "12.5s:", a range): other digits
+  are what the model read (a counter, a digit sequence, a timer in seconds), so "7 at 0.0s"
+  and "3 at 0.6s" stay different lines.
 - look: conservative - exact comparison (digits preserved, so table rows and digit runs
   that OCR legitimately repeats survive) and a block must repeat >= 4x to collapse.
 
@@ -38,10 +39,15 @@ def _units(text: str) -> list[str]:
     return units
 
 
-# a timestamp with a seconds unit ("12.5s", "3 s", "4 seconds") or "t=2.5". Clock forms like
-# 01:36 stay: a clock on screen reads the same way, and a missed collapse only costs tokens
-_TIMESTAMP = re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|secs?|seconds?)\b|\bt\s*=\s*\d+(?:\.\d+)?",
-                        re.IGNORECASE)
+# a timestamp in a time position: "at 12.5s", "from 3 s", a line that starts with its time
+# ("12.5s: ..."), a range end ("0.0s-6.0s"), "t=2.5". A value that merely is in seconds ("the
+# timer shows 9 s") stays, and so do clock forms like 01:36 (a clock on screen reads the same
+# way) - a missed collapse only costs tokens, a wrong one drops what the model read
+_SECS = r"\d+(?:\.\d+)?\s*(?:s|secs?|seconds?)\b"
+_TIMESTAMP = re.compile(
+    r"\b(?:at|from|to|by|until|till|after|before|around|about|near|since|between|and)\s+~?"
+    + _SECS + r"|^[\s*\[(-]*" + _SECS + r"|(?<=[-\u2013])\s*" + _SECS
+    + r"|\bt\s*=\s*\d+(?:\.\d+)?", re.IGNORECASE)
 
 
 def _norm(unit: str, fold_times: bool) -> str:
