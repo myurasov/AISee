@@ -136,7 +136,7 @@ the serving flags each one needs:
 |---|---|---|---|
 | `qwen3-6-35b-a3b` | 78 GiB | 256k | the default: MoE (~3B active), thinking per call; beat both Qwen3-VL-30B-A3B checkpoints it replaced (+5 points on AISee's items with thinking off, same per-token speed); hybrid attention (small KV cache) |
 | `qwen3-8-27b` | 76 GiB | 256k | dense and deeper, thinking per call: as accurate as the Qwen3-VL-32B it replaced, video prefill ~3.7x faster on GB10; still ~27 s per assert on GB10 |
-| `qwen3-5-9b` | 32 GiB | 256k | small dense 9B with thinking per call; 6-12 points above the Nemotron-Nano-12B-VL it replaced, at about the same per-call latency |
+| `qwen3-5-9b` | 32 GiB | 256k | small dense 9B with thinking per call, served with MTP speculative decoding (its own draft head: ~20% faster calls, same answers); 6-12 points above the Nemotron-Nano-12B-VL it replaced |
 | `cosmos-reason2-8b` | 66 GiB | 256k | temporal / physical video reasoning |
 | `cosmos3-nano` | 72 GiB | 256k | video reasoning with correct OCR; ~9 min cold load; omni serving image |
 | `cosmos3-super` | 102 GiB | 256k/128k | the 64B omnimodel's 32B Reasoner tower only (no generation); 256k on GB10, 128k on 96 GB; ~130 GB first download; needs a vLLM >= 0.24 image |

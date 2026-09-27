@@ -191,10 +191,15 @@ CATALOG: dict[str, dict] = {
         "tokens_per_image": 2200,
         "ctx_native": 262144,
         "image": DEFAULT_IMAGE,
-        # 8 of 32 layers hold KV (4 KV heads x 256): 32 KiB/token BF16
-        "weights_gib": 18, "kv_gib_128k": 4,
+        # 8 of 32 layers hold KV (4 KV heads x 256): 32 KiB/token BF16, plus the MTP layer's 4
+        "weights_gib": 18, "kv_gib_128k": 4.5,
         "mem_gib": 32,
-        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8"],
+        # MTP: the checkpoint's own draft head proposes 2 tokens per step. Same answers and
+        # verdicts on AISee's benchmark items, calls 0.78x (GB10) / 0.80x (RTX), for ~13% of
+        # the KV pool and ~1 min more load. Not on the 3.6 / 27B: under the watch repetition
+        # penalty vLLM 0.27.1's spec decoding drifts from plain greedy (2026-09 benchmark)
+        "extra_args": ["--reasoning-parser", "qwen3", "--kv-cache-dtype", "fp8",
+                       "--speculative-config", '{"method": "mtp", "num_speculative_tokens": 2}'],
         "supports_native_video": True,
         "video_loader": UNIFORM_VIDEO_LOADER,
         "reasoning": False,
@@ -203,12 +208,15 @@ CATALOG: dict[str, dict] = {
         "license": "Apache-2.0",
         "strengths": "Small dense 9B with a per-call thinking toggle: beat Nemotron-Nano-12B-VL "
                      "by 6-12 points on every benchmark set (UI click points 0.89 vs 0.29, "
-                     "75-image looks) in an 18 GiB BF16 checkpoint.",
-        "weaknesses": "BF16: decodes at about half Nemotron NVFP4's rate (12.8 vs 25 tok/s on a "
-                      "GB10), made up by shorter answers. Thinking (opt-in per call, ~1,100 "
-                      "tokens per answer) costs ~90 s per call on a GB10.",
-        "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. First install "
-                    "downloads ~19 GB.",
+                     "75-image looks) in an 18 GiB BF16 checkpoint. Served with MTP speculative "
+                     "decoding: ~21 tok/s on a GB10, ~110 on an RTX PRO 6000.",
+        "weaknesses": "BF16 dense: decodes slower than a 4-bit model of its size, made up by short "
+                      "answers. Thinking (opt-in per call, ~1,100 tokens per answer) costs ~1 min "
+                      "per call on a GB10.",
+        "pitfalls": "Keep --reasoning-parser qwen3 in the serve args. MTP costs ~13% of the KV "
+                    "cache and ~1 min of load time; remove the --speculative-config pair from "
+                    "extra_args (then model stop) to serve it plain. First install downloads "
+                    "~19 GB.",
     },
     "cosmos-reason2-8b": {
         "hf_id": "nvidia/Cosmos-Reason2-8B",

@@ -219,7 +219,7 @@ Measured components (fp8 KV is on by default for the Qwen and Cosmos families):
 |---|---|---|---|---|---|
 | qwen3-6-35b-a3b | 67 | 2.5 | yes | 2200 | 256k |
 | qwen3-8-27b | 52 | 8 | yes | 2200 | 256k |
-| qwen3-5-9b | 18 | 4 | yes | 2200 | 256k |
+| qwen3-5-9b | 18 | 4.5 (incl. MTP) | yes | 2200 | 256k |
 | cosmos-reason2-8b | 17 | 17.5 | yes | 2200 | 256k |
 | cosmos3-nano | 32 | 14.5 | yes | 2200 | 256k |
 | cosmos3-super | 64 | 30.5 | yes | 2200 | 256k |
