@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "aisee"
-version = "1.1.0a3"
+version = "1.1.0b1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
