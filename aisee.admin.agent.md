@@ -125,9 +125,10 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   model and starts it again; cancel those tasks first.
 - Serving image: catalog models on the NGC default image follow each release's default
   (currently `nvcr.io/nvidia/vllm:26.08-py3`), including entries written by older
-  releases; the Cosmos3 models (vllm-omni images) and audio models keep their own images,
-  and off-catalog installs - including models dropped from the catalog, like Holo1.5 and
-  UI-TARS-1.5 - keep the image they were installed with (reinstall to move one). A
+  releases, and so do the entries retired in 1.1.0b1 (the Qwen3-VL trio and Nemotron-Nano);
+  the Cosmos3 models (vllm-omni images) and audio models keep their own images, and
+  off-catalog installs - including models dropped from the catalog outright, like Holo1.5
+  and UI-TARS-1.5 - keep the image they were installed with (reinstall to move one). A
   container that was already running when you upgraded keeps its old image until it is
   recreated - `model list` shows `(still on <image>)`; `model stop <slug>` switches it on
   the next query (models with `idle_timeout = 0` never switch by themselves).

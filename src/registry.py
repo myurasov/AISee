@@ -98,11 +98,12 @@ def entry_path(slug: str):
 
 
 def _upgrade_image(entry: dict) -> dict:
-    # a catalog model on a superseded default serving image follows the current default.
-    # Never touched: an explicit --image (image_pinned), so pinning an old image rolls
-    # back; and off-catalog installs (incl. retired catalog slugs), which were validated
-    # - if at all - on the image they were installed with.
-    cat = catalog.CATALOG.get(entry.get("slug"), {})
+    # a catalog model on a superseded default serving image follows the current default,
+    # and so does one retired from the catalog in 1.1 (validated on that image as a
+    # catalog entry). Never touched: an explicit --image (image_pinned), so pinning an old
+    # image rolls back; and off-catalog installs (incl. entries dropped outright, like
+    # Holo1.5), which were validated - if at all - on the image they were installed with.
+    cat = catalog.known(entry.get("slug"))
     if (not entry.get("image_pinned") and cat.get("image") == catalog.DEFAULT_IMAGE
             and entry.get("image") in catalog.LEGACY_DEFAULT_IMAGES):
         entry["image"] = catalog.DEFAULT_IMAGE
