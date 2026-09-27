@@ -838,7 +838,7 @@ class Core:
                 # conservative loop cleanup only (exact match, 4+ cycles): legitimate
                 # OCR repetition must survive, degenerate loops must not
                 answer, n_collapsed, unstable = textclean.collapse_repeats(
-                    answer, fold_digits=False, min_cycles=4)
+                    answer, fold_times=False, min_cycles=4)
                 result = vlm.annotate({"answer": answer}, meta)
                 if n_collapsed:
                     result["deduped"] = n_collapsed

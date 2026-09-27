@@ -10,8 +10,10 @@ single-character runs. All of that defeats answer budgets and buries the signal.
 module collapses those patterns deterministically after generation.
 
 Modes:
-- watch chunks: aggressive - sentences are compared with digits folded (per-timestamp
-  restatements count as repeats) and any block repeated >= 2x consecutively collapses.
+- watch chunks: aggressive - sentences are compared with timestamps folded (per-timestamp
+  restatements count as repeats) and any block repeated >= 2x consecutively collapses. Only
+  timestamps fold: other digits are what the model read (a counter, a digit sequence), so
+  "7 at 0.0s" and "3 at 0.6s" stay different lines.
 - look: conservative - exact comparison (digits preserved, so table rows and digit runs
   that OCR legitimately repeats survive) and a block must repeat >= 4x to collapse.
 
@@ -36,10 +38,16 @@ def _units(text: str) -> list[str]:
     return units
 
 
-def _norm(unit: str, fold_digits: bool) -> str:
+# a timestamp with a seconds unit ("12.5s", "3 s", "4 seconds") or "t=2.5". Clock forms like
+# 01:36 stay: a clock on screen reads the same way, and a missed collapse only costs tokens
+_TIMESTAMP = re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|secs?|seconds?)\b|\bt\s*=\s*\d+(?:\.\d+)?",
+                        re.IGNORECASE)
+
+
+def _norm(unit: str, fold_times: bool) -> str:
     u = unit.lower()
-    if fold_digits:
-        u = re.sub(r"\d+", "#", u)
+    if fold_times:
+        u = _TIMESTAMP.sub("#", u)
     return re.sub(r"\s+", " ", u).strip(" \n\t.!?")
 
 
@@ -55,7 +63,7 @@ def squash_char_runs(text: str) -> tuple[str, int]:
     return re.sub(r"(\S)\1{%d,}" % _MAX_CHAR_RUN, repl, text), hits
 
 
-def collapse_repeats(text: str, *, fold_digits: bool = True,
+def collapse_repeats(text: str, *, fold_times: bool = True,
                      min_cycles: int = 2) -> tuple[str, int, bool]:
     """(cleaned_text, units_removed, unstable).
 
@@ -66,7 +74,7 @@ def collapse_repeats(text: str, *, fold_digits: bool = True,
     """
     text, char_hits = squash_char_runs(text)
     units = _units(text)
-    norm = [_norm(u, fold_digits) for u in units]
+    norm = [_norm(u, fold_times) for u in units]
     removed = char_hits  # count degenerate runs as cleanup work too
     unstable = False
     out: list[str] = []
