@@ -176,8 +176,11 @@ already-running models (plus a system reserve), or when the GPU's actually-free 
 otherwise (measured margins: a large load must leave 10 GiB free on unified hosts, audio
 engines 3 GiB, discrete GPUs 2 GiB). On unified hosts a large model is also refused while
 audio jobs are in flight - the cold load would starve them; retry when they finish. Media budgets: max_images is sized per model so a full batch of 1080p stills fills the context (~2-3.3k tokens per still depending on the preprocessor - e.g. 60 for the Qwen/Cosmos families at 128k); video is 1 per request, sampled up to the model's frame budget (default 96 - a cap, not a quota: a short clip sends only the frames it has; on the Qwen3-VL/Cosmos family all frames of a video share one ~12k-token budget, so a 1080p frame keeps ~1344x768 at 24 frames and ~672x384 at 96). Execution mode is also per-GPU:
-unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there),
-discrete GPUs keep CUDA graphs (3-4x faster). Each model runs up to `concurrency` inferences
+unified-memory systems serve with `--enforce-eager` (CUDA graphs measured slower there) and
+read each checkpoint shard into memory before loading it (`--safetensors-load-strategy eager`:
+vLLM's default memory-mapped load is page-fault bound there - a 51 GiB model's weights took
+~5.5 min instead of ~1 min), discrete GPUs keep CUDA graphs (3-4x faster) and vLLM's default
+loading. Each model runs up to `concurrency` inferences
 in parallel (default 3; vLLM batches them) - concurrent bursts gain ~1.4-2x and `watch`
 chunks are processed in parallel. The container's vLLM sequence cap is sized from
 `concurrency` when it starts (concurrency squared, 16-256), so raising `concurrency` above 4

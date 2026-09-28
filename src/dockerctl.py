@@ -195,6 +195,15 @@ def prune_jit_caches() -> list[str]:
     return removed
 
 
+def _unified_host() -> bool:
+    """A GB10-class host whose GPU pool is system RAM (registry.gpu_profile)."""
+    try:
+        from . import registry  # lazy: registry pulls in more than start_model needs
+        return bool(registry.gpu_profile()["unified"])
+    except Exception:  # noqa: BLE001 - no GPU view: keep vLLM's default loading
+        return False
+
+
 def start_model(entry: dict, hf_token: str | None = None) -> None:
     """(Re)create and start the container. Non-blocking: readiness is wait_ready()."""
     if entry.get("engine", "vllm") != "vllm":
@@ -228,6 +237,13 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
         # Fixed at container creation: a concurrency change needs a model stop to apply
         conc = max(1, int(entry.get("concurrency", 1)))
         serve += ["--max-num-seqs", str(min(max(16, conc * conc), 256))]
+    if not flags & {"--safetensors-load-strategy", "--load-format", "--model-loader-extra-config",
+                    "--config"} and _unified_host():
+        # GB10-class unified memory: vLLM's default mmap load is page-fault bound there - a
+        # 51 GiB checkpoint took 322-345 s cold and 324 s warm, reading each shard into memory
+        # first ("eager") 61 s cold / 40 s warm (Qwen3.8-27B, 2026-09-28). Discrete GPUs keep
+        # vLLM's default; a strategy (or loader) set in extra_args wins
+        serve += ["--safetensors-load-strategy", "eager"]
     _run(["rm", "-f", name], check=False)
     args = [
         "run", "-d", "--name", name, "--restart", "unless-stopped",

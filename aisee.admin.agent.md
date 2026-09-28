@@ -144,6 +144,12 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   evenly over the clip, and every frame of a shorter clip or watch chunk. Without it, vLLM
   >= 0.24 samples their native video at a fixed 2 fps and ignores the frame cap, and any
   vLLM resamples a clip with no more frames than the cap to 2 fps.
+- Weight loading on unified-memory hosts (GB10): AISee adds `--safetensors-load-strategy eager`
+  at model start - each shard is read into memory first instead of memory-mapped, which is
+  page-fault bound there. Qwen3.8-27B's 51 GiB loaded in 61 s instead of 322-345 s cold (40 s
+  vs 324 s with the files already cached); vLLM's `prefetch` strategy and its multi-thread
+  loader did not help. A strategy, `--load-format`, `--model-loader-extra-config` or `--config`
+  in the model's `extra_args` switches this off. Discrete GPUs keep vLLM's default.
 - Kernel caches: models on NGC and vllm-omni images keep compiled Triton kernels,
   FlashInfer autotune picks, and the CUDA driver's PTX JIT cache in
   `~/.aisee/cache/jit/<image>-<id>/` (one directory per image build, root-owned, typically
