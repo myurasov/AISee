@@ -675,12 +675,16 @@ class Core:
     def _prune_jit() -> None:
         # kernel caches of image builds that left the host (rmi, re-pull) are dead weight
         try:
-            gone = dockerctl.prune_jit_caches()
+            gone, left = dockerctl.prune_jit_caches()
         except Exception as e:  # noqa: BLE001 - housekeeping must never break startup
             print(f"aisee: kernel-cache prune skipped ({e})", flush=True)
             return
         if gone:
             print(f"aisee: pruned kernel caches of removed images: {', '.join(gone)}", flush=True)
+        if left:
+            print(f"aisee: kernel caches of removed images are root-owned and still there: "
+                  f"{', '.join(left)} - sudo rm -rf them under {paths.home() / 'cache' / 'jit'}",
+                  flush=True)
 
     def _dispatcher(self) -> None:
         """Keep up to `concurrency` workers per model while it has queued tasks.

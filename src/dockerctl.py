@@ -159,49 +159,91 @@ def _jit_cache_args(image: str) -> list[str]:
             "-e", f"CUDA_CACHE_MAXSIZE={1 << 30}"]
 
 
-def prune_jit_caches() -> list[str]:
+def prune_jit_caches() -> tuple[list[str], list[str]]:
     """Remove the kernel-cache directories of serving image builds no longer on this host.
 
-    Each directory is keyed by image id (paths.jit_cache), so once `docker rmi` or a re-pull
-    retires a build, nothing reads its directory again. The model containers write these
-    files as root, so what this user cannot delete goes through a throwaway container of the
-    default serving image (never pulled for this). Best effort; returns the names removed."""
+    Each directory is keyed by image id (paths.jit_cache), so once a build leaves the host
+    (`docker rmi`, or `docker image prune` after a re-pull left it untagged) nothing reads its
+    directory again. The model containers write these files as root, so what this user cannot
+    delete goes through a throwaway container of the default serving image (never pulled for
+    this). Best effort, and conservative: no trustworthy view of the images or containers means
+    no pruning, and a directory any container mounts is kept. Returns (removed, left) names -
+    left = root-owned directories that could not be removed."""
     root = paths.home() / "cache" / "jit"
     if not root.is_dir():
-        return []
+        return [], []
+    # snapshot before listing images: a directory created after this (a model starting on a
+    # freshly pulled image) is never a candidate
+    dirs = [d for d in root.iterdir() if d.is_dir() and not d.is_symlink()
+            and re.fullmatch(r".+-[0-9a-f]{12}", d.name)]
+    if not dirs:
+        return [], []
     try:
-        r = _run(["images", "--no-trunc", "--format", "{{.ID}}"], check=False, timeout=60)
+        imgs = _run(["images", "-a", "--no-trunc", "--format", "{{.ID}}"], check=False, timeout=60)
+        ps = _run(["ps", "-aq"], check=False, timeout=60)
+        if imgs.returncode or ps.returncode:
+            return [], []
+        mounted: set[str] = set()
+        if ps.stdout.split():
+            ins = _run(["inspect", "-f", "{{range .Mounts}}{{.Source}}\n{{end}}", *ps.stdout.split()],
+                       check=False, timeout=60)
+            if ins.returncode:
+                return [], []  # a container vanished mid-scan: try again next start
+            mounted = {ln.strip() for ln in ins.stdout.splitlines() if ln.strip()}
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return []
-    live = {ln.strip().rpartition(":")[2][:12] for ln in r.stdout.splitlines() if ln.strip()}
-    if r.returncode != 0 or not live:
-        return []  # no view of the images: never prune blind
-    stale = [d for d in root.iterdir() if d.is_dir()
-             and (m := re.fullmatch(r".+-([0-9a-f]{12})", d.name)) and m.group(1) not in live]
-    removed, as_root = [], []
+        return [], []
+    live = {m.group(1)[:12] for m in re.finditer(r"sha256:([0-9a-f]{64})", imgs.stdout)}
+    if not live:
+        return [], []  # never prune blind
+    stale = [d for d in dirs if d.name[-12:] not in live and str(d) not in mounted]
+    removed, left = [], []
     for d in stale:
         shutil.rmtree(d, ignore_errors=True)
-        (as_root if d.exists() else removed).append(d.name)
-    if as_root:
+        (left if d.exists() else removed).append(d.name)
+    if left:
         try:
             ok = _run(["image", "inspect", catalog.DEFAULT_IMAGE], check=False,
                       timeout=60).returncode == 0
-            if ok and _run(["run", "--rm", "--entrypoint", "rm", "-v", f"{root}:/jit",
-                            catalog.DEFAULT_IMAGE, "-rf", *[f"/jit/{n}" for n in as_root]],
+            if ok and _run(["run", "--rm", "--pull", "never", "--network", "none",
+                            "--entrypoint", "rm", "-v", f"{root}:/jit", catalog.DEFAULT_IMAGE,
+                            "-rf", *[f"/jit/{n}" for n in left]],
                            check=False, timeout=300).returncode == 0:
-                removed += as_root
+                removed, left = removed + left, []
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
-    return removed
+    return removed, left
 
 
-def _unified_host() -> bool:
-    """A GB10-class host whose GPU pool is system RAM (registry.gpu_profile)."""
+# eager safetensors loading (see start_model): measured on a GB10 with the NGC and vllm-omni
+# images; it holds one whole shard in RAM (~2x while unpacking), outside the capacity check,
+# so it is used only for cached checkpoints whose largest shard stays small (catalog: <= 5 GiB)
+EAGER_LOAD_MAX_SHARD_GIB = 6
+_EAGER_IMAGES = ("nvcr.io/nvidia/vllm:", "vllm/vllm-omni:")
+
+
+def _largest_shard_gib(hf_id: str) -> float | None:
+    """Largest cached .safetensors file of a checkpoint (GiB), None when not downloaded."""
+    snaps = paths.hf_cache() / "hub" / f"models--{hf_id.replace('/', '--')}" / "snapshots"
+    try:
+        sizes = [f.stat().st_size for f in snaps.rglob("*.safetensors")]
+    except OSError:
+        return None
+    return max(sizes) / (1 << 30) if sizes else None
+
+
+def _eager_load(entry: dict) -> bool:
+    """Eager weight loading for this start: a GB10, a tested image family, a cached checkpoint
+    with small shards (the first start downloads and loads the default way)."""
+    if not str(entry.get("image", "")).startswith(_EAGER_IMAGES):
+        return False
     try:
         from . import registry  # lazy: registry pulls in more than start_model needs
-        return bool(registry.gpu_profile()["unified"])
+        if "GB10" not in registry.gpu_profile()["name"].upper():
+            return False
     except Exception:  # noqa: BLE001 - no GPU view: keep vLLM's default loading
         return False
+    largest = _largest_shard_gib(entry["hf_id"])
+    return largest is not None and largest <= EAGER_LOAD_MAX_SHARD_GIB
 
 
 def start_model(entry: dict, hf_token: str | None = None) -> None:
@@ -238,11 +280,11 @@ def start_model(entry: dict, hf_token: str | None = None) -> None:
         conc = max(1, int(entry.get("concurrency", 1)))
         serve += ["--max-num-seqs", str(min(max(16, conc * conc), 256))]
     if not flags & {"--safetensors-load-strategy", "--load-format", "--model-loader-extra-config",
-                    "--config"} and _unified_host():
-        # GB10-class unified memory: vLLM's default mmap load is page-fault bound there - a
-        # 51 GiB checkpoint took 322-345 s cold and 324 s warm, reading each shard into memory
-        # first ("eager") 61 s cold / 40 s warm (Qwen3.8-27B, 2026-09-28). Discrete GPUs keep
-        # vLLM's default; a strategy (or loader) set in extra_args wins
+                    "--config"} and _eager_load(entry):
+        # GB10 unified memory: vLLM's default mmap load is page-fault bound there - a 51 GiB
+        # checkpoint took 322-345 s cold and 324 s warm, reading each shard into memory first
+        # ("eager") 61 s cold / 40 s warm (Qwen3.8-27B, 2026-09-28). Other GPUs keep vLLM's
+        # default; a strategy (or loader) set in extra_args wins
         serve += ["--safetensors-load-strategy", "eager"]
     _run(["rm", "-f", name], check=False)
     args = [
