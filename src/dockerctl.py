@@ -9,6 +9,8 @@ Engines: "vllm" (vision models, OpenAI-compatible) and the audio serving apps
 
 import base64
 import json
+import re
+import shutil
 import subprocess
 import time
 
@@ -132,7 +134,8 @@ def _jit_cache_args(image: str) -> list[str]:
     vllm-omni images only (they run as root and bake nothing at these paths). Keyed by
     image id, so a re-pushed tag never reuses kernels built against another stack. Best
     effort: any failure just means a re-JIT. Tuning picks persist until the directory is
-    removed (`sudo rm -rf ~/.aisee/cache/jit`)."""
+    removed (`sudo rm -rf ~/.aisee/cache/jit`); directories of image builds no longer on the
+    host are pruned when the API starts (prune_jit_caches)."""
     if not image.startswith(("nvcr.io/nvidia/vllm", "vllm/vllm-omni")):
         return []
     try:
@@ -154,6 +157,42 @@ def _jit_cache_args(image: str) -> list[str]:
             # one model writes ~55-125 MB (Nemotron, Cosmos3-Nano); the cap bounds what
             # all models on one image build accumulate in their shared directory
             "-e", f"CUDA_CACHE_MAXSIZE={1 << 30}"]
+
+
+def prune_jit_caches() -> list[str]:
+    """Remove the kernel-cache directories of serving image builds no longer on this host.
+
+    Each directory is keyed by image id (paths.jit_cache), so once `docker rmi` or a re-pull
+    retires a build, nothing reads its directory again. The model containers write these
+    files as root, so what this user cannot delete goes through a throwaway container of the
+    default serving image (never pulled for this). Best effort; returns the names removed."""
+    root = paths.home() / "cache" / "jit"
+    if not root.is_dir():
+        return []
+    try:
+        r = _run(["images", "--no-trunc", "--format", "{{.ID}}"], check=False, timeout=60)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    live = {ln.strip().rpartition(":")[2][:12] for ln in r.stdout.splitlines() if ln.strip()}
+    if r.returncode != 0 or not live:
+        return []  # no view of the images: never prune blind
+    stale = [d for d in root.iterdir() if d.is_dir()
+             and (m := re.fullmatch(r".+-([0-9a-f]{12})", d.name)) and m.group(1) not in live]
+    removed, as_root = [], []
+    for d in stale:
+        shutil.rmtree(d, ignore_errors=True)
+        (as_root if d.exists() else removed).append(d.name)
+    if as_root:
+        try:
+            ok = _run(["image", "inspect", catalog.DEFAULT_IMAGE], check=False,
+                      timeout=60).returncode == 0
+            if ok and _run(["run", "--rm", "--entrypoint", "rm", "-v", f"{root}:/jit",
+                            catalog.DEFAULT_IMAGE, "-rf", *[f"/jit/{n}" for n in as_root]],
+                           check=False, timeout=300).returncode == 0:
+                removed += as_root
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    return removed
 
 
 def start_model(entry: dict, hf_token: str | None = None) -> None:

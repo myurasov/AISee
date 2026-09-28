@@ -151,8 +151,10 @@ start sees the healthy API); logs via `journalctl -u aisee-api`.
   init from ~207 s to ~44 s and its first request after a load from ~140 s to seconds
   (Cosmos3-Nano's from ~24 s to ~9 s); on an RTX PRO 6000, Cosmos3-Nano's first request
   went from ~10 s to ~1.5 s - only the first load on a new image pays.
-  Picks measured while the GPU was busy persist too, and directories of old images stay
-  behind; `sudo rm -rf ~/.aisee/cache/jit` resets everything (the next start re-tunes).
+  Picks measured while the GPU was busy persist too; `sudo rm -rf ~/.aisee/cache/jit` resets
+  everything (the next start re-tunes). Directories of image builds that are no longer on the
+  host (`docker rmi`, or a tag re-pulled to a new build) are pruned when the API starts - the
+  API log names them.
 - Concurrency: a model TOML's `concurrency` (default 3) applies to the task queue live, but
   the container's vLLM sequence cap (`--max-num-seqs`: concurrency squared, at least 16 and
   at most 256, unless `extra_args` sets it) is fixed when the container starts - after
