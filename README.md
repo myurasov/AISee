@@ -451,7 +451,9 @@ python-multipart, mcp). Nothing outside the checkout.
   tasks/blobs/         # content-addressed uploads (sha256-named; upload dedup); GC'd
                        #   after blob_ttl_hours (default 24), refreshed on reuse
   tasks/media/<id>/    # per-task media (hardlinks into blobs/) + derived frames/chunks;
-                       #   GC'd with the task after task_ttl_hours (default 24)
+                       #   GC'd with the task after task_ttl_hours (default 24); folders
+                       #   no task owns go once older than the TTL and 1 h, still-check
+                       #   scratch after 1 h; the API log reports what each GC run freed
   logs/api.log         # API daemon log
   run/api.pid          # daemon pidfile
 ```

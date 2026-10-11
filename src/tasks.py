@@ -9,8 +9,10 @@ All of this lives in the API server process (spec §3): the CLI reaches it over 
 import json
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 import shutil
 import sqlite3
+import stat
 import threading
 import time
 import uuid
@@ -94,8 +96,10 @@ class TaskStore:
                 pass  # column already exists
             self._db.commit()
 
-    def create(self, kind: str, model: str, params: dict) -> str:
-        tid = uuid.uuid4().hex[:12]
+    def create(self, kind: str, model: str, params: dict, tid: str | None = None) -> str:
+        """tid: the id the submit staged its inputs under (media_dir()/tid), so GC
+        removes them with the task."""
+        tid = tid or new_task_id()
         now = time.time()
         with self._lock:
             self._db.execute(
@@ -273,11 +277,20 @@ class TaskStore:
                 self._db.commit()
         return len(ids)
 
-    def gc(self, retention_days: float, keep_max: int = 0) -> int:
+    def gc(self, retention_days: float, keep_max: int = 0) -> dict:
         """Drop finished tasks past the TTL, then - when keep_max > 0 - drop the oldest
         finished tasks beyond the newest keep_max regardless of age. Running/queued
-        tasks are never touched."""
-        cutoff = time.time() - retention_days * 86400
+        tasks are never touched. Also sweeps media folders that no task row owns and
+        old still-check scratch (see _sweep_media). Returns counts and bytes freed."""
+        now = time.time()
+        cutoff = now - retention_days * 86400
+        root = paths.media_dir()
+        # list folders before reading the rows: a submit landing in between then shows
+        # up as a row in the snapshot or as a fresh folder, never as an old orphan
+        try:
+            kids = [k for k in root.iterdir() if k.is_dir() and not k.is_symlink()]
+        except OSError:
+            kids = []
         with self._lock:
             rows = self._db.execute(
                 "SELECT id FROM tasks WHERE updated<? AND status IN (?,?,?)",
@@ -292,9 +305,121 @@ class TaskStore:
             if ids:
                 self._db.executemany("DELETE FROM tasks WHERE id=?", [(i,) for i in ids])
                 self._db.commit()
+            live = set()
+            for r in self._db.execute("SELECT id, params FROM tasks"):
+                live.add(r["id"])
+                live |= _media_folders(r["params"], root)
+        freed = 0
         for tid in ids:
-            shutil.rmtree(paths.media_dir() / tid, ignore_errors=True)
-        return len(ids)
+            freed += _remove_tree(root / tid)
+        orphans, scratch, b = _sweep_media(kids, live | set(ids),
+                                           min(cutoff, now - ORPHAN_MIN_AGE_S),
+                                           now - ORPHAN_MIN_AGE_S)
+        return {"tasks": len(ids), "orphans": orphans, "scratch": scratch,
+                "freed_bytes": freed + b}
+
+
+# a task's media folder is media_dir()/<task id>; anything there without a task row
+# is an orphan (submit used to stage uploads under a second random id, so GC never
+# found them). Orphans go only once older than both the task TTL and this floor, so a
+# submit still staging its upload is never swept; still-check scratch frames (deleted
+# right after use, so only a crash leaves one) go once older than the floor.
+ORPHAN_MIN_AGE_S = 3600
+_TASK_ID = re.compile(r"[0-9a-f]{12}")
+STILLCHECK_DIR = "stillcheck"
+
+
+def new_task_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def _media_folders(params_json: str | None, root: Path) -> set[str]:
+    """media_dir() folders a task's inputs live in. Tasks submitted before inputs were
+    staged under the task id keep them in a folder of their own, which their row still
+    owns until it expires."""
+    try:
+        media_list = json.loads(params_json or "{}").get("media") or []
+    except (ValueError, AttributeError):
+        return set()
+    out = set()
+    for m in media_list:
+        try:
+            rel = Path(str(m)).relative_to(root)
+        except ValueError:
+            continue  # a host path outside the media dir
+        if rel.parts:
+            out.add(rel.parts[0])
+    return out
+
+
+def _freed_bytes(p: Path) -> int:
+    """Bytes removing p gives back: files whose every link lives inside p (an input
+    still hardlinked from the blob store frees nothing until the blob goes too)."""
+    files = [p] if p.is_symlink() or not p.is_dir() else p.rglob("*")
+    seen: dict[tuple[int, int], int] = {}
+    n = 0
+    for f in files:
+        try:
+            st = f.lstat()
+        except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            continue
+        key = (st.st_dev, st.st_ino)
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] == st.st_nlink:
+            n += st.st_size
+    return n
+
+
+def _remove_tree(p: Path) -> int:
+    """Remove a folder or file (symlinks are unlinked, never followed); bytes freed."""
+    if not (p.exists() or p.is_symlink()):
+        return 0
+    n = _freed_bytes(p)
+    if p.is_dir() and not p.is_symlink():
+        shutil.rmtree(p, ignore_errors=True)
+    else:
+        p.unlink(missing_ok=True)
+    return 0 if (p.exists() or p.is_symlink()) else n
+
+
+def _newest_mtime(p: Path) -> float:
+    """Last activity of a media folder: its own mtime or a direct child's (a submit adds
+    files to in/ while it stages)."""
+    t = p.lstat().st_mtime
+    for c in p.iterdir():
+        try:
+            t = max(t, c.lstat().st_mtime)
+        except OSError:
+            pass
+    return t
+
+
+def _sweep_media(kids: list[Path], owned: set[str], cutoff: float,
+                 scratch_cutoff: float) -> tuple[int, int, int]:
+    """Remove task-id folders no row owns, last touched before cutoff, and still-check
+    scratch entries older than scratch_cutoff. Other names are left alone. Returns
+    (orphan folders, scratch entries, bytes freed)."""
+    orphans = scratch = freed = 0
+    for k in kids:
+        try:
+            if k.name == STILLCHECK_DIR:
+                for e in list(k.iterdir()):
+                    if e.lstat().st_mtime < scratch_cutoff:
+                        n = _remove_tree(e)
+                        if not (e.exists() or e.is_symlink()):
+                            scratch += 1
+                            freed += n
+            elif _TASK_ID.fullmatch(k.name) and k.name not in owned \
+                    and _newest_mtime(k) < cutoff:
+                n = _remove_tree(k)
+                if not k.exists():
+                    orphans += 1
+                    freed += n
+        except OSError:
+            continue  # gone or unreadable meanwhile; the next run retries
+    return orphans, scratch, freed
 
 
 class Core:
@@ -607,7 +732,8 @@ class Core:
 
     # ---------------- tasks ----------------
 
-    def submit(self, kind: str, model: str | None, params: dict) -> str:
+    def submit(self, kind: str, model: str | None, params: dict,
+               tid: str | None = None) -> str:
         if kind in catalog.AUDIO_KINDS:
             cap = "transcribe" if kind == "transcribe" else "diarize"
             slug = model or registry.default_for_capability(cap)
@@ -631,7 +757,7 @@ class Core:
             diar = registry.default_for_capability("diarize")
             if diar:
                 params["diarize_model"] = diar
-        return self.store.create(kind, slug, params)
+        return self.store.create(kind, slug, params, tid=tid)
 
     def _hold_in_use(self, slug: str) -> None:
         with self._in_use_lock:
@@ -743,7 +869,11 @@ class Core:
             # task_retention_days is the pre-0.6 name; honor it if a host still sets it
             task_ttl_h = (float(d["task_retention_days"]) * 24 if "task_retention_days" in d
                           else float(d.get("task_ttl_hours", 24)))
-            self.store.gc(task_ttl_h / 24, keep_max=int(d.get("task_keep_max") or 0))
+            g = self.store.gc(task_ttl_h / 24, keep_max=int(d.get("task_keep_max") or 0))
+            if g["tasks"] or g["orphans"] or g["scratch"]:
+                print(f"aisee: task GC removed {g['tasks']} finished task(s), "
+                      f"{g['orphans']} orphan media folder(s), {g['scratch']} still-check "
+                      f"scratch file(s); freed {g['freed_bytes'] / 2**20:.1f} MiB", flush=True)
             # tasks keep hardlinked copies of their media, so blob GC is always safe
             blobs.gc(float(d.get("blob_ttl_hours", 24)))
 
@@ -923,7 +1053,7 @@ class Core:
                     if frame is not None:
                         frame.unlink(missing_ok=True)
                     frame = media.extract_frame(path, t_probe,
-                                                paths.media_dir() / "stillcheck" /
+                                                paths.media_dir() / STILLCHECK_DIR /
                                                 f"{uuid.uuid4().hex[:8]}.png")
                     content = media.build_content([str(frame)], vlm.with_context(
                         f"Expectation to verify: {expect}", None), frames=1, fps=None,
