@@ -305,7 +305,12 @@ port, idle_timeout, and default flag, and recomputes everything else consistentl
 - Uploaded media is content-addressed (SHA-256 of the bytes) under `~/.aisee/tasks/blobs/`
   so repeat uploads are skipped; blobs age out after `blob_ttl_hours` (config.toml
   `[defaults]`, default 24, 0 disables GC; reuse refreshes the clock), and tasks keep
-  hardlinked copies, so blob GC never breaks a task.
+  hardlinked copies, so blob GC never breaks a task. Finished tasks and their media folder
+  (`~/.aisee/tasks/media/<task id>/`) go after `task_ttl_hours` (default 24) or beyond
+  `task_keep_max`; the same GC run (every 30 s) also removes media folders no task owns once
+  they are older than the TTL and 1 h, and leftover still-check frames after 1 h, and logs a
+  "task GC removed ..." line with the space freed (`journalctl --user -u aisee-api` or
+  `logs/api.log`).
   Consumers can hash locally (`sha256sum` / `shasum -a 256`), probe `GET /v1/blobs/{sha}`,
   and pass `sha256:<hash>` media refs - see `aisee.consumer.agent.md`.
 - `./aisee uninstall` removes all AISee containers and `~/.aisee` (`--keep-cache` spares the

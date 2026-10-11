@@ -7,6 +7,7 @@ Also serves the MCP server at /mcp (streamable HTTP) as a thin adapter over the 
 import io
 import json
 import os
+import shutil
 import subprocess
 import threading
 import zipfile
@@ -20,7 +21,7 @@ from starlette.datastructures import UploadFile
 
 from . import (__version__, blobs, catalog, config, creds, describe, media, mcp_server,
                paths, registry)
-from .tasks import Core
+from .tasks import Core, new_task_id
 
 OPEN_PATHS = {"/", "/v1/describe", "/v1/health", "/openapi.json", "/docs", "/redoc"}
 
@@ -272,9 +273,19 @@ def create_app() -> FastAPI:
     async def submit(request: Request):
         """Multipart (files[] + params JSON field) or JSON with media_paths on this host.
         Media entries may be 'sha256:<hash>' references to already-uploaded blobs."""
-        import uuid
+        # inputs are staged under the task's own id, so task GC removes them with it
+        tid = new_task_id()
+        try:
+            return await _submit(request, tid)
+        except BaseException:
+            # no task row means nothing would ever remove what was staged
+            if core.store.get(tid) is None:
+                shutil.rmtree(paths.media_dir() / tid, ignore_errors=True)
+            raise
+
+    async def _submit(request: Request, tid: str) -> dict:
         ctype = request.headers.get("content-type", "")
-        tid_dir = paths.media_dir() / uuid.uuid4().hex[:12]
+        tid_dir = paths.media_dir() / tid
 
         def resolve_blob(ref: str) -> str:
             b = blobs.find(ref[7:])
@@ -349,7 +360,7 @@ def create_app() -> FastAPI:
             raise HTTPException(400, f"{kind} takes exactly one media file")
         model = params.pop("model", None)
         try:
-            tid = core.submit(kind, model, params)
+            core.submit(kind, model, params, tid=tid)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
